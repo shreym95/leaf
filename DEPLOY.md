@@ -3,46 +3,49 @@
 Leaf deploys to Vercel (frontend + serverless API). Supabase stays as-is.
 
 **Live:** https://leaf-black.vercel.app  ·  project `leaf` (scope `leaf23`)
-Redeploy after a change: `npx vercel --prod`
+**Repo:** https://github.com/shreym95/leaf (private)
 
-## First deploy (CLI)
+## Deploying
 
-From the repo root:
+The Vercel project is connected to the GitHub repo, so deploys are automatic:
+
+| Push to | Result |
+|---|---|
+| `dev` (default + production branch) | production deploy → https://leaf-black.vercel.app |
+| any other branch, or a PR | preview deploy (its own URL) |
 
 ```bash
-npx vercel login          # opens a browser; pick your login
-npx vercel                 # links the project — accept the defaults:
-                           #   set up and deploy: yes
-                           #   scope: your account
-                           #   link to existing project: no
-                           #   project name: leaf
-                           #   directory: ./
-                           #   auto-detected settings (Next.js): yes
-npx vercel --prod          # promote to production → prints the live URL
+git push origin dev      # ← this is the deploy
 ```
+
+Env vars are set on the Vercel project for Production / Preview / Development and
+apply to git-triggered deploys automatically.
+
+`npx vercel --prod` still works for a manual deploy from the working tree
+(useful for testing uncommitted changes).
 
 ## Environment variables
 
-Add the three Supabase vars to the Vercel project — dashboard
-(**Project → Settings → Environment Variables**) or CLI:
+Three Supabase vars, set on the Vercel project for all three environments
+(**Project → Settings → Environment Variables**):
 
-```bash
-npx vercel env add NEXT_PUBLIC_SUPABASE_URL production
-npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
-npx vercel env add SUPABASE_SERVICE_ROLE_KEY production
-```
+| var | scope |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | client + server |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client + server (RLS protects every table) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server only** — bypasses RLS |
 
-Paste each value from `.env.local`. Then redeploy: `npx vercel --prod`.
-(Repeat with `preview` + `development` targets if you want preview deploys to work too.)
-
-## Auth wiring (once you have the `*.vercel.app` URL)
+## Auth wiring (already done for the current URL)
 
 - **Supabase → Authentication → URL Configuration**
-  - Site URL: `https://<your-app>.vercel.app`
-  - Redirect URLs → add: `https://<your-app>.vercel.app/**`
-- **Google Cloud → APIs & Services → Credentials → your OAuth client**
-  - Authorized JavaScript origins → add: `https://<your-app>.vercel.app`
-  - (redirect URI stays the `https://<ref>.supabase.co/auth/v1/callback` one — unchanged)
+  - Site URL: `https://leaf-black.vercel.app`
+  - Redirect URLs: `https://leaf-black.vercel.app/**`
+- **Google Cloud → APIs & Services → Credentials → the `leaf-web` OAuth client**
+  - Authorized JavaScript origins: `https://leaf-black.vercel.app`
+  - Authorized redirect URI: `https://<supabase-ref>.supabase.co/auth/v1/callback`
+
+Preview deploys get their own URLs, so Google sign-in only works on the
+production alias unless you add the preview origin too.
 
 ## Notes
 
