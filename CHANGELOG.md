@@ -31,9 +31,20 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   dynamic `import("epubjs")`, SSR-safe) + `ReaderBootstrap` (minimal paginated
   view, section count, prev/next). Proves the pipeline; the designed reader is M3.
 
+### Verification
+- Import (Standard Ebooks + Gutenberg), upload, "Add starter books", reload-shelf
+  all work against the live project. Rows in `books`, files in the `epubs` bucket.
+- Catalog fetches were flaky from the dev server (`fetch failed` / IPv6) — fixed
+  with an IPv4-preferring retry wrapper (`src/lib/import/http.ts`).
+- Reader bootstrap opens SE/Gutenberg/uploaded EPUBs and reports section count,
+  but its minimal `renderTo` only paginates the first section for Standard Ebooks
+  books. **Deferred to M3**, which replaces the bootstrap with the approved v0.1
+  prototype's proven epub.js config. Files verified intact (multi-section spine).
+
 ### Notes for the next-version redesign
 - `source_ref`: Standard Ebooks slug (`mary-shelley/frankenstein`), Gutenberg id
   as string (`"84"`), `null` for uploads.
+- Gutenberg serves the `.epub3.images` edition (large — Pride & Prejudice ~24 MB).
 - Standard Ebooks now gates its crawlable OPDS feeds (401 / Patrons Circle); the
   `?query=` search feed stays open. If it closes, add HTTP Basic (email as user,
   blank password).
