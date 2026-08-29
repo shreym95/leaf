@@ -2,6 +2,9 @@
 
 Leaf deploys to Vercel (frontend + serverless API). Supabase stays as-is.
 
+**Live:** https://leaf-black.vercel.app  ·  project `leaf` (scope `leaf23`)
+Redeploy after a change: `npx vercel --prod`
+
 ## First deploy (CLI)
 
 From the repo root:
