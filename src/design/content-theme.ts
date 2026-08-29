@@ -34,7 +34,7 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
     page: "#f1ebdc",
     ink: "#26200f",
     inkMid: "#5c5237",
-    faint: "#8a7d5e",
+    faint: "#6a5f45",
     accent: "#8a2b1e",
     rule: "#cabf9f",
     selection: "rgba(138, 43, 30, 0.2)",
@@ -43,10 +43,10 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
     page: "#1a1611",
     ink: "#e0d5bd",
     inkMid: "#a89a78",
-    faint: "#7c6f52",
-    accent: "#e0a03c",
+    faint: "#8f815f",
+    accent: "#bd8250",
     rule: "#3a3020",
-    selection: "rgba(224, 160, 60, 0.22)",
+    selection: "rgba(189, 130, 80, 0.24)",
   },
 };
 

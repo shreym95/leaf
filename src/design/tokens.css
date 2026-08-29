@@ -122,11 +122,13 @@
   --leaf-ink-mid: #a89a78;
   /* faint lightened from the prototype's #7c6f52 (~3.9:1, failed AA) to ~5:1 */
   --leaf-faint: #8f815f;
-  --leaf-accent: #e0a03c;
+  /* metallic copper/bronze — calmer + more mature than the prototype's
+     #e0a03c gold; ~6:1 on --leaf-paper, comfortable for small text */
+  --leaf-accent: #bd8250;
   --leaf-rule: #3a3020;
   --leaf-gutter: rgba(0, 0, 0, 0.25);
-  --leaf-focus: #e0a03c;
-  --leaf-selection: rgba(224, 160, 60, 0.22);
+  --leaf-focus: #bd8250;
+  --leaf-selection: rgba(189, 130, 80, 0.24);
   color-scheme: dark;
 }
 
