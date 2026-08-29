@@ -1,23 +1,25 @@
-// Hand-written DB row types from SPEC §5. One row = one interface, snake_case
-// columns to match Postgres.
+// Leaf DB row types — MUST match supabase/migrations/0001_init.sql exactly:
+// snake_case columns, nullability, and the CHECK-constraint unions.
 //
-// M1: replace with `supabase gen types typescript` output
+// Regenerate with: supabase gen types typescript --project-id <ref> > src/lib/types.ts
+// (planned for M1 tail / M2, once the Supabase CLI is set up — see supabase/README.md).
+// Until then this file is hand-maintained; edit it in lockstep with the migration.
 
-/** `profiles (id = auth uid, display_name, default_theme, created_at)` */
+export type ThemeName = "day" | "night";
+export type BookSource = "standardebooks" | "gutenberg" | "upload";
+export type BookStatus = "reading" | "finished";
+export type FontFamily = "serif" | "sans" | "legible";
+export type Margins = "narrow" | "normal" | "wide";
+
+/** `public.profiles` — one row per auth user, keyed by `auth.users.id`. */
 export interface Profile {
   id: string;
   display_name: string | null;
-  default_theme: "day" | "night";
+  default_theme: ThemeName;
   created_at: string;
 }
 
-export type BookSource = "standardebooks" | "gutenberg" | "upload";
-export type BookStatus = "reading" | "finished";
-
-/**
- * `books (id, user_id, title, author, source, source_ref, storage_path,
- * cover_url?, added_at, status)`
- */
+/** `public.books` */
 export interface Book {
   id: string;
   user_id: string;
@@ -26,25 +28,25 @@ export interface Book {
   source: BookSource;
   /** Catalog id / OPDS ref for imported books; null for uploads. */
   source_ref: string | null;
-  /** Path within the per-user Supabase Storage bucket. */
+  /** Object key within the private `epubs` Storage bucket. */
   storage_path: string | null;
-  cover_url?: string | null;
-  added_at: string;
+  cover_url: string | null;
   status: BookStatus;
+  added_at: string;
 }
 
-/** `reading_state (book_id, user_id, cfi, percent, updated_at)` */
+/** `public.reading_state` — composite PK `(book_id, user_id)`. */
 export interface ReadingState {
   book_id: string;
   user_id: string;
-  /** epub.js CFI of the current position. */
+  /** epub.js CFI of the current position; null before the book is opened. */
   cfi: string | null;
   /** 0–1 progress through the book. */
   percent: number;
   updated_at: string;
 }
 
-/** `highlights (id, book_id, user_id, cfi_range, text, color, note?, created_at)` */
+/** `public.highlights` */
 export interface Highlight {
   id: string;
   book_id: string;
@@ -52,21 +54,22 @@ export interface Highlight {
   /** epub.js CFI range covering the highlighted text. */
   cfi_range: string;
   text: string;
+  /** Token name (e.g. `'copper'`); free text in the DB. */
   color: string;
-  note?: string | null;
+  note: string | null;
   created_at: string;
 }
 
 /**
- * `reader_settings (user_id, font_family, font_size, line_spacing, margins,
- * theme)`. Mirrors the `useReaderSettings` store shape (src/store).
+ * `public.reader_settings` — PK `user_id`. Mirrors the `useReaderSettings`
+ * store shape (`src/store/reader-settings.ts`).
  */
 export interface ReaderSettings {
   user_id: string;
-  font_family: "serif" | "sans" | "legible";
-  /** rem */
+  font_family: FontFamily;
+  /** rem multiplier */
   font_size: number;
   line_spacing: number;
-  margins: "narrow" | "normal" | "wide";
-  theme: "day" | "night";
+  margins: Margins;
+  theme: ThemeName;
 }
