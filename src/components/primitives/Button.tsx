@@ -39,7 +39,7 @@ const variants: Record<ButtonVariant, string> = {
 };
 
 const monoClass =
-  "font-mono uppercase [letter-spacing:var(--leaf-tracking-wide)]";
+  "font-mono font-medium uppercase [letter-spacing:var(--leaf-tracking-wide)]";
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {

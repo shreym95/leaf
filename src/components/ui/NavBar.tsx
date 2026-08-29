@@ -12,7 +12,7 @@ import { ThemeToggle } from "@/components/theme/ThemeToggle";
  */
 
 const linkClass =
-  "font-mono uppercase text-ink-mid hover:text-ink transition-colors " +
+  "font-mono font-medium uppercase text-ink-mid hover:text-ink transition-colors " +
   "[transition-duration:var(--leaf-dur-ui)] " +
   "[letter-spacing:var(--leaf-tracking-wide)] [font-size:var(--leaf-text-2xs)]";
 
@@ -31,7 +31,7 @@ export function NavBar() {
       <Link
         href="/library"
         aria-label="Leaf — home"
-        className="flex-none font-mono uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-xs)]"
+        className="flex-none font-mono font-medium uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-xs)]"
       >
         Leaf
       </Link>

@@ -19,6 +19,13 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   Python prototype's tiered heading logic, fixture-tested) + `normalizeChapterDom()` stub (M3).
 - `src/store/` — Zustand stores for reader settings and session (stubs, no persistence yet).
 - Vitest + Testing Library (14 tests: theme toggle, Button, normalizer headings).
+
+### Changed
+- Contrast pass: `--leaf-faint` darkened (day `#8a7d5e`→`#6a5f45`) / lightened
+  (night `#7c6f52`→`#8f815f`) to clear WCAG AA — the prototype values failed on
+  small text. Mono chrome labels bumped to weight 500 for legibility at small sizes.
+- `<html suppressHydrationWarning>` — the pre-paint theme script sets `data-theme`
+  before React hydrates, which is expected, not a bug.
 - Swappable-seam enforcement via core ESLint `no-restricted-imports` (chosen over
   `eslint-plugin-boundaries`, whose v5→v7 config churn wasn't worth the dependency):
   `src/{reader,lib,store,normalizer}` cannot import from `src/design` or `src/components`.

@@ -14,7 +14,7 @@ export function PlaceholderScreen({
 }) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <p className="font-mono uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-2xs)]">
+      <p className="font-mono font-medium uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-2xs)]">
         {milestone}
       </p>
       <h1 className="font-display text-ink [font-size:var(--leaf-text-3xl)]">

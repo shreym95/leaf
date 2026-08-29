@@ -94,7 +94,8 @@
   --leaf-edge: #d8ccae;
   --leaf-ink: #26200f;
   --leaf-ink-mid: #5c5237;
-  --leaf-faint: #8a7d5e;
+  /* faint darkened from the prototype's #8a7d5e (~3.1:1, failed AA) to ~4.8:1 */
+  --leaf-faint: #6a5f45;
   --leaf-accent: #8a2b1e;
   --leaf-rule: #cabf9f;
   --leaf-gutter: rgba(0, 0, 0, 0.05);
@@ -112,7 +113,8 @@
   --leaf-edge: #000000;
   --leaf-ink: #e0d5bd;
   --leaf-ink-mid: #a89a78;
-  --leaf-faint: #7c6f52;
+  /* faint lightened from the prototype's #7c6f52 (~3.9:1, failed AA) to ~5:1 */
+  --leaf-faint: #8f815f;
   --leaf-accent: #e0a03c;
   --leaf-rule: #3a3020;
   --leaf-gutter: rgba(0, 0, 0, 0.25);

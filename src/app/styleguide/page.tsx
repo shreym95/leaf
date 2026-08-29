@@ -67,7 +67,7 @@ function Section({
 }) {
   return (
     <section className="flex flex-col gap-4 border-t border-rule pt-6">
-      <h2 className="font-mono uppercase text-faint [letter-spacing:var(--leaf-tracking-label)] [font-size:var(--leaf-text-2xs)]">
+      <h2 className="font-mono font-medium uppercase text-ink-mid [letter-spacing:var(--leaf-tracking-label)] [font-size:var(--leaf-text-2xs)]">
         {title}
       </h2>
       {children}
@@ -83,7 +83,7 @@ export default function StyleguidePage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 py-10 bg-paper text-ink">
       <header className="flex flex-col gap-3">
-        <p className="font-mono uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-2xs)]">
+        <p className="font-mono font-medium uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-2xs)]">
           Leaf · M0 styleguide
         </p>
         <h1 className="font-display text-ink [font-size:var(--leaf-text-3xl)]">
@@ -95,7 +95,7 @@ export default function StyleguidePage() {
             Current theme: <strong className="text-ink">{themeLabel(theme)}</strong>
           </span>
         </div>
-        <p className="font-body text-ink-mid [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)]">
+        <p className="font-body text-ink [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
           Focus rings are visible on Tab; page-turn / theme motion is instant
           under <code className="font-mono">prefers-reduced-motion</code>.
         </p>
@@ -210,7 +210,7 @@ export default function StyleguidePage() {
               </Button>
             </div>
           ))}
-          <p className="font-body text-ink-mid [font-size:var(--leaf-text-2xs)]">
+          <p className="font-body text-ink-mid [font-size:var(--leaf-text-sm)]">
             Tab to a button to see the focus ring (
             <code className="font-mono">--leaf-shadow-focus</code>).
           </p>
