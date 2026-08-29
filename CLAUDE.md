@@ -16,7 +16,7 @@ Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer
 - a11y floor + reduced-motion always; tests on CFI position, highlights, RLS, import.
 - Ask founder on product ambiguity; pick boring on technical ambiguity.
 
-## Current milestone: M0 — scaffold & the swappable UI seam.
+## Current milestone: M1 — auth + library shell + data.
 
 Build: `npm run dev`  ·  Test: `npm test`  ·  Lint: `npm run lint`  ·  Types: `npm run typecheck`
 

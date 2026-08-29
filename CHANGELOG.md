@@ -2,6 +2,37 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## M1 — Auth + library shell + data
+
+### Added
+- **Schema** (`supabase/migrations/0001_init.sql`, run-once): `profiles`, `books`,
+  `reading_state`, `highlights`, `reader_settings`. Owner-only RLS on all five
+  (`auth.uid() = user_id`, or `= id` for `profiles`). `handle_new_user()` trigger
+  seeds `profiles` + `reader_settings` on signup. Private `epubs` Storage bucket
+  with per-user-folder policies (ready for M2 upload).
+- **Google auth** (Supabase SSR): `src/lib/supabase/{client,server,middleware}.ts`
+  on the current `getAll`/`setAll` cookie API; `/login` + `GoogleSignInButton`;
+  `/auth/callback` (PKCE code exchange) and `/auth/signout` (POST); `getUser()` /
+  `requireUser()` server helpers.
+- **Route protection** in `src/proxy.ts` (single enforcement point) —
+  `/library`, `/settings`, `/reader/*` redirect to `/login?next=…` when signed out.
+  `requireUser()` is kept as defence-in-depth in server routes.
+- **Library shell**: server `library/page.tsx` fetches the user's books via RLS;
+  presentational `Shelf` / `BookCard` / `EmptyState`. NavBar shows signed-in
+  identity + sign-out.
+- `src/lib/db/` typed query helpers (`listBooks`, `getBook`, `getProfile`,
+  `ensureProfile`). `src/lib/safe-redirect.ts` guards the `next=` round-trip
+  against open redirects.
+- RLS cross-user isolation test (`src/lib/db/rls.integration.test.ts`) — runs
+  against a live project when `.env.local` has real keys, skipped otherwise.
+
+### Notes for the next-version redesign
+- Next.js 16 renamed the `middleware` file convention to **`proxy`** — the root
+  file is `src/proxy.ts` exporting `proxy()`. `src/lib/supabase/middleware.ts` is
+  a plain helper module, not the framework file.
+- `src/lib/types.ts` stays hand-maintained in lockstep with `0001_init.sql` until
+  the Supabase CLI is set up (M1 tail / M2), then `supabase gen types` takes over.
+
 ## M0 — Scaffold & the swappable UI seam
 
 ### Added
