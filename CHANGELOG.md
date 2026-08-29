@@ -2,6 +2,43 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## M2 — Import + upload
+
+### Added
+- **EPUB toolkit** (`src/lib/epub/`): `assertValidEpub` (structure), `checkDrm`
+  (rejects `rights.xml` / `license.lcpl` / ADEPT / content-encrypting
+  `encryption.xml`; allows IDPF/Adobe font obfuscation), `extractEpubMetadata`
+  (container.xml → OPF → `dc:title`/`dc:creator`). `fast-xml-parser` added.
+- **Book import** (`src/lib/import/`, `/api/import` + `/api/import/search`):
+  - Standard Ebooks via the open OPDS search feed
+    (`/feeds/opds/all?query=`); download URL constructed with the required
+    `?source=feed` marker.
+  - Project Gutenberg via Gutendex (`gutendex.com/books/?search=`); author names
+    flipped "Last, First" → "First Last".
+  - All third-party bytes are fetched server-side (SPEC §6); `User-Agent: Leaf/0.1`.
+- **Shared ingest** (`src/lib/books/ingest.ts`): `ingestEpub` (from bytes) and
+  `registerUploadedEpub` (already-in-Storage). validate → DRM gate → metadata →
+  Storage `${uid}/${bookId}.epub` → `books` row, with rollback.
+- **DRM-checked upload**: direct-to-Storage via a signed URL (`/api/upload/sign`),
+  then `/api/books/register` downloads + validates + inserts, deleting the
+  orphaned object on any failure. `uploadEpub()` client helper.
+- **Discovery UI**: `AddBooksBar` + `ImportSheet` (Standard Ebooks / Gutenberg
+  search, per-row add), real `EmptyState` CTAs, `/api/library/seed`.
+- **Bundled classics** (`public/bundled/`): Frankenstein, The Wonderful Wizard of
+  Oz, The Time Machine (Standard Ebooks EPUBs, ~1.9 MB) — added by "Add starter
+  books", deduped by `source_ref`.
+- **Thin reader bootstrap** (`/reader/[bookId]`): `src/reader/bootstrap.ts` (logic,
+  dynamic `import("epubjs")`, SSR-safe) + `ReaderBootstrap` (minimal paginated
+  view, section count, prev/next). Proves the pipeline; the designed reader is M3.
+
+### Notes for the next-version redesign
+- `source_ref`: Standard Ebooks slug (`mary-shelley/frankenstein`), Gutenberg id
+  as string (`"84"`), `null` for uploads.
+- Standard Ebooks now gates its crawlable OPDS feeds (401 / Patrons Circle); the
+  `?query=` search feed stays open. If it closes, add HTTP Basic (email as user,
+  blank password).
+- `ReaderBootstrap` / `src/reader/bootstrap.ts` are throwaway scaffolding for M3.
+
 ## M1 — Auth + library shell + data
 
 ### Added
