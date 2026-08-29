@@ -24,6 +24,14 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 - Contrast pass: `--leaf-faint` darkened (day `#8a7d5e`→`#6a5f45`) / lightened
   (night `#7c6f52`→`#8f815f`) to clear WCAG AA — the prototype values failed on
   small text. Mono chrome labels bumped to weight 500 for legibility at small sizes.
+- Font roles split (founder call — the prototype's mono UI text read poorly):
+  - `--leaf-font-ui` = Source Sans 3 (humanist sans) — app chrome default: nav,
+    captions, helper text, buttons, menu items. `<body>` now defaults to this.
+  - `--leaf-font-body` = EB Garamond — reading serif, for book content and
+    long-form host text only (styleguide type-scale sample still demos it).
+  - `--leaf-font-mono` = JetBrains Mono (was IBM Plex Mono) — eyebrows, folios,
+    technical labels. Uppercase-eyebrow treatment kept.
+  - `--leaf-font-display` = Fraunces — unchanged.
 - `<html suppressHydrationWarning>` — the pre-paint theme script sets `data-theme`
   before React hydrates, which is expected, not a bug.
 - Swappable-seam enforcement via core ESLint `no-restricted-imports` (chosen over

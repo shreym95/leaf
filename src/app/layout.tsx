@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import {
   EB_Garamond,
   Fraunces,
-  IBM_Plex_Mono,
+  JetBrains_Mono,
   Atkinson_Hyperlegible,
   Source_Sans_3,
 } from "next/font/google";
@@ -28,11 +28,11 @@ const fraunces = Fraunces({
   style: ["normal", "italic"],
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
-  variable: "--font-ibm-plex-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500"],
+  weight: ["400", "500", "700"],
 });
 
 const atkinson = Atkinson_Hyperlegible({
@@ -52,7 +52,7 @@ const sourceSans = Source_Sans_3({
 const fontVariables = [
   ebGaramond.variable,
   fraunces.variable,
-  ibmPlexMono.variable,
+  jetbrainsMono.variable,
   atkinson.variable,
   sourceSans.variable,
 ].join(" ");

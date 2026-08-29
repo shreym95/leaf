@@ -21,6 +21,7 @@
   --color-focus: var(--leaf-focus);
 
   /* Font families */
+  --font-ui: var(--leaf-font-ui);
   --font-body: var(--leaf-font-body);
   --font-display: var(--leaf-font-display);
   --font-mono: var(--leaf-font-mono);
@@ -85,7 +86,10 @@
   body {
     background: var(--leaf-paper);
     color: var(--leaf-ink);
-    font-family: var(--leaf-font-body);
+    /* App chrome defaults to the UI sans. Reading surfaces opt into the serif
+       explicitly (host excerpts via `font-body`; the book iframe via
+       content-theme.ts). */
+    font-family: var(--leaf-font-ui);
     transition:
       background var(--leaf-dur-theme) var(--leaf-ease),
       color var(--leaf-dur-theme) var(--leaf-ease);

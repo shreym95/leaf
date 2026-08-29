@@ -72,7 +72,7 @@ export const DialogContent = forwardRef<
             </DialogPrimitive.Title>
           )}
           {description ? (
-            <DialogPrimitive.Description className="mt-2 font-body text-ink-mid [font-size:var(--leaf-text-sm)]">
+            <DialogPrimitive.Description className="mt-2 font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
               {description}
             </DialogPrimitive.Description>
           ) : null}

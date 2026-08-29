@@ -21,7 +21,7 @@ export interface ButtonProps
 }
 
 const base =
-  "inline-flex items-center justify-center gap-2 font-body rounded-sm select-none " +
+  "inline-flex items-center justify-center gap-2 font-ui rounded-sm select-none " +
   "transition-colors [transition-duration:var(--leaf-dur-ui)] " +
   "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)] " +
   "disabled:opacity-40 disabled:pointer-events-none";

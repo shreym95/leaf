@@ -43,7 +43,7 @@ describe("Button", () => {
       </Button>,
     );
     const link = screen.getByRole("link", { name: "Link" });
-    expect(link).toHaveClass("font-body");
+    expect(link).toHaveClass("font-ui");
     expect(screen.queryByRole("button")).toBeNull();
   });
 });

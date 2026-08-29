@@ -20,7 +20,7 @@ export function PlaceholderScreen({
       <h1 className="font-display text-ink [font-size:var(--leaf-text-3xl)]">
         {title}
       </h1>
-      <p className="max-w-md font-body text-ink-mid [font-size:var(--leaf-text-lg)] [line-height:var(--leaf-leading-body)]">
+      <p className="max-w-md font-ui text-ink-mid [font-size:var(--leaf-text-lg)] [line-height:var(--leaf-leading-body)]">
         {note}
       </p>
     </main>

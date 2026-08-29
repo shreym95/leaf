@@ -91,11 +91,11 @@ export default function StyleguidePage() {
         </h1>
         <div className="flex items-center gap-4">
           <ThemeToggle mono />
-          <span className="font-body text-ink-mid [font-size:var(--leaf-text-sm)]">
+          <span className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
             Current theme: <strong className="text-ink">{themeLabel(theme)}</strong>
           </span>
         </div>
-        <p className="font-body text-ink [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
+        <p className="font-ui text-ink [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
           Focus rings are visible on Tab; page-turn / theme motion is instant
           under <code className="font-mono">prefers-reduced-motion</code>.
         </p>
@@ -123,7 +123,7 @@ export default function StyleguidePage() {
       </Section>
 
       {/* ---- Type ----------------------------------------------------- */}
-      <Section title="Type scale — font-body">
+      <Section title="Type scale — reading serif (font-body)">
         <div className="flex flex-col gap-2">
           {TYPE_SCALE.map((step) => (
             <div key={step} className="flex items-baseline gap-4">
@@ -210,7 +210,7 @@ export default function StyleguidePage() {
               </Button>
             </div>
           ))}
-          <p className="font-body text-ink-mid [font-size:var(--leaf-text-sm)]">
+          <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
             Tab to a button to see the focus ring (
             <code className="font-mono">--leaf-shadow-focus</code>).
           </p>
@@ -251,7 +251,7 @@ export default function StyleguidePage() {
               </Button>
             </SheetTrigger>
             <SheetContent title="Reading settings">
-              <p className="font-body text-ink-mid [font-size:var(--leaf-text-sm)]">
+              <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
                 The bottom-sheet pattern for reading settings on mobile (SPEC §8).
               </p>
               <div className="mt-4 flex justify-end">

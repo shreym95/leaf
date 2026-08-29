@@ -22,10 +22,17 @@
 
 :root {
   /* --- Font families -------------------------------------------------------
-     These reference the next/font CSS variables that layout.tsx defines. */
+     These reference the next/font CSS variables that layout.tsx defines.
+
+     --leaf-font-ui     : app chrome — nav, captions, helper text, buttons.
+     --leaf-font-body   : reading serif — book excerpts / long-form host text
+                          (the book iframe itself is styled by content-theme.ts).
+     --leaf-font-display: titles.
+     --leaf-font-mono   : eyebrows, folios, technical labels. */
+  --leaf-font-ui: var(--font-source-sans), ui-sans-serif, system-ui, sans-serif;
   --leaf-font-body: var(--font-eb-garamond), Garamond, "Times New Roman", serif;
   --leaf-font-display: var(--font-fraunces), Georgia, serif;
-  --leaf-font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  --leaf-font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
   --leaf-font-reader-serif: var(--font-eb-garamond), Garamond, serif;
   --leaf-font-reader-sans: var(--font-source-sans), system-ui, sans-serif;
   --leaf-font-reader-legible: var(--font-atkinson), var(--font-source-sans), sans-serif;

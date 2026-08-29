@@ -54,7 +54,7 @@ export const MenuItem = forwardRef<
       ref={ref}
       className={clsx(
         "flex cursor-pointer select-none items-center rounded-xs px-3 py-2 outline-none",
-        "font-body text-ink [font-size:var(--leaf-text-sm)]",
+        "font-ui text-ink [font-size:var(--leaf-text-sm)]",
         "data-[highlighted]:bg-edge data-[disabled]:opacity-40 data-[disabled]:pointer-events-none",
         className,
       )}
