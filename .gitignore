@@ -1,5 +1,43 @@
-node_modules/
-dist/
-.env
-*.log
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/dist
+
+# misc
 .DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env
+.env
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# editors
+.idea/
+.vscode/
+*.swp
+
+# raw handoff drop — curated copies are tracked under /reference and /src/normalizer/fixtures
+/Documents/
