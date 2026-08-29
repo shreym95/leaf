@@ -1,0 +1,151 @@
+/* =============================================================================
+   Leaf — design tokens (THE SWAPPABLE LAYER)
+   -----------------------------------------------------------------------------
+   This file, together with globals.css / themes.ts / content-theme.ts, is the
+   ONLY place in the repo permitted to contain literal colour / size / font /
+   easing values. Every other file references these custom properties (directly
+   as `var(--leaf-*)` or via the Tailwind utilities mapped in globals.css).
+
+   A future UI overhaul should touch this layer and nothing else.
+
+   Structure:
+     :root                 -> theme-independent scales (type, space, radii, motion)
+     [data-theme="day"]    -> one palette
+     [data-theme="night"]  -> one palette   (registry default; set elsewhere)
+     :root (elevation)     -> shadows that compose the palette vars above
+     @media reduced-motion -> motion tokens neutralised
+
+   Theme switching is driven by the `data-theme` attribute on <html>, never by
+   the OS colour scheme. Palette hexes are taken verbatim from the approved
+   v0.1 prototype — do not invent new colours here.
+   ========================================================================== */
+
+:root {
+  /* --- Font families -------------------------------------------------------
+     These reference the next/font CSS variables that layout.tsx defines. */
+  --leaf-font-body: var(--font-eb-garamond), Garamond, "Times New Roman", serif;
+  --leaf-font-display: var(--font-fraunces), Georgia, serif;
+  --leaf-font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  --leaf-font-reader-serif: var(--font-eb-garamond), Garamond, serif;
+  --leaf-font-reader-sans: var(--font-source-sans), system-ui, sans-serif;
+  --leaf-font-reader-legible: var(--font-atkinson), var(--font-source-sans), sans-serif;
+
+  /* --- Type scale (rem) -------------------------------------------------- */
+  --leaf-text-3xs: 0.64rem;
+  --leaf-text-2xs: 0.68rem;
+  --leaf-text-xs: 0.74rem;
+  --leaf-text-sm: 0.84rem;
+  --leaf-text-base: 1rem;
+  --leaf-text-lg: 1.15rem;
+  --leaf-text-xl: 1.4rem;
+  --leaf-text-2xl: 1.9rem;
+  --leaf-text-3xl: 2.6rem;
+  --leaf-text-display: clamp(2.4rem, 5vw, 3.6rem);
+
+  /* --- Letter tracking ------------------------------------------------------ */
+  --leaf-tracking-tight: 0.02em;
+  --leaf-tracking-wide: 0.08em;
+  --leaf-tracking-label: 0.16em;
+  --leaf-tracking-eyebrow: 0.34em;
+
+  /* --- Line leading ------------------------------------------------------- */
+  --leaf-leading-tight: 1.2;
+  --leaf-leading-body: 1.62;
+  --leaf-leading-loose: 1.85;
+
+  /* --- Spacing (0.25rem base) ------------------------------------------- */
+  --leaf-space-1: 0.25rem;
+  --leaf-space-2: 0.5rem;
+  --leaf-space-3: 0.75rem;
+  --leaf-space-4: 1rem;
+  --leaf-space-5: 1.5rem;
+  --leaf-space-6: 2rem;
+  --leaf-space-7: 3rem;
+  --leaf-space-8: 4.5rem;
+
+  /* --- Radii ----------------------------------------------------------- */
+  --leaf-radius-xs: 2px;
+  --leaf-radius-sm: 3px;
+  --leaf-radius-md: 6px;
+  --leaf-radius-lg: 12px;
+  --leaf-radius-pill: 999px;
+
+  /* --- Motion -------------------------------------------------------------- */
+  --leaf-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --leaf-ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+  --leaf-dur-theme: 0.6s;
+  --leaf-dur-turn: 0.32s;
+  --leaf-dur-ui: 0.25s;
+
+  /* --- Reader layout knobs ---------------------------------------------------
+     Bound to `reader_settings` at runtime later; these are the defaults. */
+  --leaf-reader-font-size: 1.06rem;
+  --leaf-reader-leading: 1.62;
+  --leaf-reader-margin: clamp(1.6rem, 4vw, 3rem);
+  --leaf-reader-measure: 34rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Palette — DAY
+   ------------------------------------------------------------------------- */
+[data-theme="day"] {
+  --leaf-paper: #e7dfcc;
+  --leaf-page: #f1ebdc;
+  --leaf-edge: #d8ccae;
+  --leaf-ink: #26200f;
+  --leaf-ink-mid: #5c5237;
+  --leaf-faint: #8a7d5e;
+  --leaf-accent: #8a2b1e;
+  --leaf-rule: #cabf9f;
+  --leaf-gutter: rgba(0, 0, 0, 0.05);
+  --leaf-focus: #8a2b1e;
+  --leaf-selection: rgba(138, 43, 30, 0.2);
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------------------
+   Palette — NIGHT
+   ------------------------------------------------------------------------- */
+[data-theme="night"] {
+  --leaf-paper: #100d09;
+  --leaf-page: #1a1611;
+  --leaf-edge: #000000;
+  --leaf-ink: #e0d5bd;
+  --leaf-ink-mid: #a89a78;
+  --leaf-faint: #7c6f52;
+  --leaf-accent: #e0a03c;
+  --leaf-rule: #3a3020;
+  --leaf-gutter: rgba(0, 0, 0, 0.25);
+  --leaf-focus: #e0a03c;
+  --leaf-selection: rgba(224, 160, 60, 0.22);
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+   Elevation — composed from the palette vars above, so it must come after the
+   theme blocks. Declared on :root; the palette vars resolve per active theme.
+   ------------------------------------------------------------------------- */
+:root {
+  --leaf-shadow-book:
+    0 1px 0 var(--leaf-edge),
+    0 24px 60px -20px rgba(0, 0, 0, 0.25),
+    0 4px 16px -8px rgba(0, 0, 0, 0.19);
+  --leaf-shadow-sheet: 0 -8px 40px -12px rgba(0, 0, 0, 0.35);
+  --leaf-shadow-focus:
+    0 0 0 2px var(--leaf-paper),
+    0 0 0 4px var(--leaf-focus);
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion — neutralise the motion tokens so anything that references
+   them animates instantly and linearly.
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --leaf-dur-theme: 0s;
+    --leaf-dur-turn: 0s;
+    --leaf-dur-ui: 0s;
+    --leaf-ease: linear;
+    --leaf-ease-inout: linear;
+  }
+}

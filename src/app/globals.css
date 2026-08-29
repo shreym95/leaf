@@ -1,0 +1,102 @@
+@import "tailwindcss";
+@import "../design/tokens.css";
+
+/* -----------------------------------------------------------------------------
+   Token -> Tailwind utility bridge.
+   `inline` so the utilities resolve against the live `var(--leaf-*)` values
+   (which change with `data-theme`) rather than being frozen at build time.
+   Components should write `bg-page text-ink font-display rounded-md` — never a
+   literal. If a utility is missing here, map it; do not inline a value.
+   -------------------------------------------------------------------------- */
+@theme inline {
+  /* Palette */
+  --color-paper: var(--leaf-paper);
+  --color-page: var(--leaf-page);
+  --color-edge: var(--leaf-edge);
+  --color-ink: var(--leaf-ink);
+  --color-ink-mid: var(--leaf-ink-mid);
+  --color-faint: var(--leaf-faint);
+  --color-accent: var(--leaf-accent);
+  --color-rule: var(--leaf-rule);
+  --color-focus: var(--leaf-focus);
+
+  /* Font families */
+  --font-body: var(--leaf-font-body);
+  --font-display: var(--leaf-font-display);
+  --font-mono: var(--leaf-font-mono);
+  --font-reader-serif: var(--leaf-font-reader-serif);
+  --font-reader-sans: var(--leaf-font-reader-sans);
+  --font-reader-legible: var(--leaf-font-reader-legible);
+
+  /* Type scale */
+  --text-3xs: var(--leaf-text-3xs);
+  --text-2xs: var(--leaf-text-2xs);
+  --text-xs: var(--leaf-text-xs);
+  --text-sm: var(--leaf-text-sm);
+  --text-base: var(--leaf-text-base);
+  --text-lg: var(--leaf-text-lg);
+  --text-xl: var(--leaf-text-xl);
+  --text-2xl: var(--leaf-text-2xl);
+  --text-3xl: var(--leaf-text-3xl);
+  --text-display: var(--leaf-text-display);
+
+  /* Tracking */
+  --tracking-tight: var(--leaf-tracking-tight);
+  --tracking-wide: var(--leaf-tracking-wide);
+  --tracking-label: var(--leaf-tracking-label);
+  --tracking-eyebrow: var(--leaf-tracking-eyebrow);
+
+  /* Leading */
+  --leading-tight: var(--leaf-leading-tight);
+  --leading-body: var(--leaf-leading-body);
+  --leading-loose: var(--leaf-leading-loose);
+
+  /* Spacing — intentionally NOT mapped into Tailwind's numeric scale.
+     Leaf's step ramp (.25/.5/.75/1/1.5/2/3/4.5rem) is non-linear and would
+     silently shadow Tailwind's `p-5`/`gap-6`/etc. Use `var(--leaf-space-N)`
+     directly (or a `p-(--leaf-space-5)` arbitrary value) instead. */
+
+  /* Radii */
+  --radius-xs: var(--leaf-radius-xs);
+  --radius-sm: var(--leaf-radius-sm);
+  --radius-md: var(--leaf-radius-md);
+  --radius-lg: var(--leaf-radius-lg);
+  --radius-pill: var(--leaf-radius-pill);
+
+  /* Easing */
+  --ease-default: var(--leaf-ease);
+  --ease-inout: var(--leaf-ease-inout);
+
+  /* Shadows */
+  --shadow-book: var(--leaf-shadow-book);
+  --shadow-sheet: var(--leaf-shadow-sheet);
+  --shadow-focus: var(--leaf-shadow-focus);
+}
+
+/* -----------------------------------------------------------------------------
+   Base layer
+   -------------------------------------------------------------------------- */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--leaf-paper);
+    color: var(--leaf-ink);
+    font-family: var(--leaf-font-body);
+    transition:
+      background var(--leaf-dur-theme) var(--leaf-ease),
+      color var(--leaf-dur-theme) var(--leaf-ease);
+  }
+
+  ::selection {
+    background: var(--leaf-selection);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--leaf-focus);
+    outline-offset: 2px;
+  }
+}
