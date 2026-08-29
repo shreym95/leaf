@@ -26,10 +26,19 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 - RLS cross-user isolation test (`src/lib/db/rls.integration.test.ts`) — runs
   against a live project when `.env.local` has real keys, skipped otherwise.
 
+### Verification
+- Desktop: Google sign-in + sign-out work end to end.
+- RLS cross-user isolation test: 6/6 green against the live project.
+- **Phone sign-in deferred to the first Vercel deploy** — `http://<LAN-IP>:3000`
+  is not a secure context and Supabase falls back to the Site URL (localhost)
+  for bare-IP `http` redirects. Not reproducible on HTTPS. Nothing mobile-specific
+  is untested (auth flow is device-agnostic; shell is responsive).
+
 ### Notes for the next-version redesign
 - Next.js 16 renamed the `middleware` file convention to **`proxy`** — the root
   file is `src/proxy.ts` exporting `proxy()`. `src/lib/supabase/middleware.ts` is
   a plain helper module, not the framework file.
+- `next.config.ts` carries `allowedDevOrigins` for LAN mobile testing (dev-only).
 - `src/lib/types.ts` stays hand-maintained in lockstep with `0001_init.sql` until
   the Supabase CLI is set up (M1 tail / M2), then `supabase gen types` takes over.
 
