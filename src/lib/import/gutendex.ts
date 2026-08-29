@@ -12,6 +12,7 @@ import {
   normalizeAuthorName,
   type SearchResult,
 } from "./types";
+import { outboundFetch } from "./http";
 
 const GUTENDEX_BASE = "https://gutendex.com/books";
 const EPUB_MIME = "application/epub+zip";
@@ -71,7 +72,7 @@ export async function searchGutendex(query: string): Promise<SearchResult[]> {
   const q = query.trim();
   if (!q) return [];
   const url = `${GUTENDEX_BASE}/?search=${encodeURIComponent(q)}`;
-  const res = await fetch(url, {
+  const res = await outboundFetch(url, {
     headers: { "User-Agent": IMPORT_USER_AGENT, Accept: "application/json" },
   });
   if (!res.ok) {
@@ -86,7 +87,7 @@ async function fetchGutendexBook(id: string): Promise<GutendexBook> {
   if (!/^\d+$/.test(id)) {
     throw new Error(`Invalid Gutenberg id: "${id}"`);
   }
-  const res = await fetch(`${GUTENDEX_BASE}/${id}/`, {
+  const res = await outboundFetch(`${GUTENDEX_BASE}/${id}/`, {
     headers: { "User-Agent": IMPORT_USER_AGENT, Accept: "application/json" },
   });
   if (res.status === 404) {
@@ -111,7 +112,7 @@ export async function resolveGutenbergEpubUrl(id: string): Promise<string> {
 /** Server-fetch the EPUB bytes for a Gutenberg id. */
 export async function fetchGutenbergEpub(id: string): Promise<ArrayBuffer> {
   const url = await resolveGutenbergEpubUrl(id);
-  const res = await fetch(url, {
+  const res = await outboundFetch(url, {
     headers: { "User-Agent": IMPORT_USER_AGENT },
     redirect: "follow",
   });

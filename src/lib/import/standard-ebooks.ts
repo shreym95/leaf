@@ -17,6 +17,7 @@ import {
   IMPORT_USER_AGENT,
   type SearchResult,
 } from "./types";
+import { outboundFetch } from "./http";
 
 const OPDS_SEARCH_URL = "https://standardebooks.org/feeds/opds/all";
 const EBOOKS_BASE = "https://standardebooks.org/ebooks/";
@@ -111,7 +112,7 @@ export function resolveStandardEbooksEpubUrl(ref: string): string {
 
 async function opdsFetch(query: string): Promise<string> {
   const url = `${OPDS_SEARCH_URL}?query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, {
+  const res = await outboundFetch(url, {
     headers: { "User-Agent": IMPORT_USER_AGENT, Accept: "application/atom+xml" },
   });
   if (!res.ok) {
@@ -132,7 +133,7 @@ export async function searchStandardEbooks(
 /** Server-fetch the EPUB bytes for a slug. */
 export async function fetchStandardEbooksEpub(ref: string): Promise<ArrayBuffer> {
   const url = resolveStandardEbooksEpubUrl(ref);
-  const res = await fetch(url, {
+  const res = await outboundFetch(url, {
     headers: { "User-Agent": IMPORT_USER_AGENT },
   });
   if (!res.ok) {
