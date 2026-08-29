@@ -63,6 +63,10 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   `--leaf-reader-viewer-pad-*`, `--leaf-reader-gutter-w`/`-bg`,
   `--leaf-reader-progress-*`.
 
+- Text size steps through a discrete ~10% scale. The original continuous
+  0.04rem step moved the text by under a pixel per click, which read as a
+  dead button on both desktop and phone.
+
 ### Removed
 - Page turns are **instant** — the opacity-dip crossfade read as text flicker
   against the static paper and was removed. Motion stays a next-version item (SPEC §8).

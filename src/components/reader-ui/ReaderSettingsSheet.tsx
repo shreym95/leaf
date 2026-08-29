@@ -28,9 +28,34 @@ export interface ReaderSettingsSheetProps {
 
 /** 100% reference size (matches the store default / `--leaf-reader-font-size`). */
 const READER_BASE_SIZE = 1.06;
-const FONT_SIZE_MIN = 0.85;
-const FONT_SIZE_MAX = 1.6;
-const FONT_SIZE_STEP = 0.04;
+
+/**
+ * Discrete text sizes, in rem. Each step is ~10% — a continuous 0.04rem step
+ * moved the text by well under a pixel, which read as "the button does nothing".
+ * Keep the base size in the list so 100% is always reachable.
+ */
+const FONT_SIZE_STEPS = [0.82, 0.9, 0.98, 1.06, 1.16, 1.28, 1.4, 1.54, 1.7];
+const FONT_SIZE_MIN = FONT_SIZE_STEPS[0];
+const FONT_SIZE_MAX = FONT_SIZE_STEPS[FONT_SIZE_STEPS.length - 1];
+
+/** Index of the step nearest `size` (settings may hold any persisted value). */
+function sizeStepIndex(size: number): number {
+  let best = 0;
+  for (let i = 1; i < FONT_SIZE_STEPS.length; i++) {
+    if (
+      Math.abs(FONT_SIZE_STEPS[i] - size) <
+      Math.abs(FONT_SIZE_STEPS[best] - size)
+    ) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+function stepSize(size: number, direction: 1 | -1): number {
+  const next = sizeStepIndex(size) + direction;
+  return FONT_SIZE_STEPS[Math.min(FONT_SIZE_STEPS.length - 1, Math.max(0, next))];
+}
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
   { value: "serif", label: "Serif" },
@@ -168,8 +193,6 @@ export function ReaderSettingsSheet({
     })),
   );
 
-  const clampSize = (n: number) =>
-    Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(n * 100) / 100));
   const sizePct = Math.round((fontSize / READER_BASE_SIZE) * 100);
 
   return (
@@ -182,7 +205,7 @@ export function ReaderSettingsSheet({
                 label="Smaller text"
                 glyph="−"
                 disabled={fontSize <= FONT_SIZE_MIN}
-                onClick={() => setFontSize(clampSize(fontSize - FONT_SIZE_STEP))}
+                onClick={() => setFontSize(stepSize(fontSize, -1))}
               />
               <span className="min-w-[5ch] text-center font-mono text-ink-mid [font-size:var(--leaf-text-sm)]">
                 {sizePct}%
@@ -191,7 +214,7 @@ export function ReaderSettingsSheet({
                 label="Larger text"
                 glyph="+"
                 disabled={fontSize >= FONT_SIZE_MAX}
-                onClick={() => setFontSize(clampSize(fontSize + FONT_SIZE_STEP))}
+                onClick={() => setFontSize(stepSize(fontSize, 1))}
               />
             </div>
           </Field>
