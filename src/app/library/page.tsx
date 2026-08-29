@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { listBooks } from "@/lib/db";
-import { EmptyState, Shelf } from "@/components/library-ui";
+import { AddBooksBar, EmptyState, Shelf } from "@/components/library-ui";
 
 /* Auth-gated + per-user data: never prerender this route at build time
    (`requireUser` reads cookies, which already forces dynamic). */
@@ -23,7 +23,14 @@ export default async function LibraryPage() {
         )}
       </header>
 
-      {books.length === 0 ? <EmptyState /> : <Shelf books={books} />}
+      {books.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <>
+          <AddBooksBar />
+          <Shelf books={books} />
+        </>
+      )}
     </main>
   );
 }

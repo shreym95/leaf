@@ -1,0 +1,23 @@
+{
+  "note": "Bundled public-domain classics fetched at build time from Standard Ebooks (SPEC §6) with a User-Agent: Leaf/0.1 header. Used by POST /api/library/seed to give a new user an instant first read. sourceRef matches Agent A's Standard Ebooks convention (the slug after https://standardebooks.org/ebooks/) so a seeded title dedupes against a later catalogue import.",
+  "books": [
+    {
+      "sourceRef": "mary-shelley/frankenstein",
+      "title": "Frankenstein",
+      "author": "Mary Shelley",
+      "file": "frankenstein.epub"
+    },
+    {
+      "sourceRef": "l-frank-baum/the-wonderful-wizard-of-oz",
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "file": "wizard-of-oz.epub"
+    },
+    {
+      "sourceRef": "h-g-wells/the-time-machine",
+      "title": "The Time Machine",
+      "author": "H. G. Wells",
+      "file": "time-machine.epub"
+    }
+  ]
+}
