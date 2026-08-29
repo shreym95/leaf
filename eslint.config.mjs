@@ -48,6 +48,28 @@ const eslintConfig = defineConfig([
     },
   },
 
+  // `src/reader/content-hook.ts` is the ONE sanctioned bridge from the reader
+  // logic layer to the design layer: it needs `buildContentTheme` (a plain
+  // selector -> declaration map — data, not presentation code) to feed epub.js
+  // `rendition.themes`. The components ban still applies.
+  {
+    files: ["src/reader/content-hook.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/components", "@/components/*", "**/components/**"],
+              message:
+                "Logic layer must stay style-agnostic (SPEC §3.1): no import from the components layer.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   globalIgnores([
     ".next/**",
     "out/**",

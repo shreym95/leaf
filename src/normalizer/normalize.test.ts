@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import {
   extractChapterHeading,
   extractChapterHeadingFromXhtml,
+  normalizeChapterDom,
+  type NormalizeChapterMeta,
 } from "./normalize";
 
 // fileURLToPath rather than `new URL(..., import.meta.url)` directly: under the
@@ -81,5 +83,108 @@ describe("extractChapterHeading", () => {
     expect(heading.ordinal).toBeNull();
     expect(heading.title).toBeNull();
     expect(heading.hasTitle).toBe(false);
+  });
+});
+
+const META: NormalizeChapterMeta = {
+  bookTitle: "Test Book",
+  author: "A. Writer",
+  index: 4,
+  total: 24,
+};
+
+function parseXml(xhtml: string): Document {
+  // Mirrors the doc epub.js hands the content hook: XHTML, `epub:type` intact.
+  return new DOMParser().parseFromString(xhtml, "application/xml");
+}
+
+describe("normalizeChapterDom", () => {
+  it("Oz (rich): hgroup -> ordinal eyebrow + Fraunces title, body preserved", () => {
+    const doc = parseXml(fixture("oz-chapter.xhtml"));
+    normalizeChapterDom(doc, META);
+
+    const article = doc.querySelector("article.chapter");
+    expect(article).not.toBeNull();
+    expect(doc.querySelector("hgroup")).toBeNull();
+    expect(doc.querySelector("section")).toBeNull();
+
+    const head = doc.querySelector(".chapter-head")!;
+    expect(head.children[0].getAttribute("class")).toBe("chapter-ordinal");
+    expect(head.children[0].textContent).toBe("I");
+    expect(head.children[1].getAttribute("class")).toBe("chapter-title");
+    expect(head.children[1].textContent).toBe("The Cyclone");
+    expect(head.children[1].tagName.toLowerCase()).toBe("h1");
+
+    const paras = doc.querySelectorAll("article.chapter > p");
+    expect(paras[0].getAttribute("class")).toBe("para first");
+    expect(paras[0].textContent).toMatch(/^Dorothy lived in the midst/);
+    expect(paras[1].getAttribute("class")).toBe("para");
+    // Order kept: the fixture's last paragraph is still last.
+    expect(paras[paras.length - 1].textContent).toMatch(/^In spite of the swaying/);
+  });
+
+  it("Frankenstein (ordinal-only): eyebrow, NO invented title", () => {
+    const doc = parseXml(fixture("frankenstein-chapter.xhtml"));
+    normalizeChapterDom(doc, META);
+
+    expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("Chapter V");
+    expect(doc.querySelector(".chapter-title")).toBeNull();
+    expect(doc.querySelector("h2")).toBeNull();
+
+    const first = doc.querySelector("article.chapter > p");
+    expect(first?.getAttribute("class")).toBe("para first");
+    expect(first?.textContent).toMatch(/^It was on a dreary night/);
+
+    // Body content kept (the poem blockquote survives the rewrite).
+    expect(doc.querySelector("article.chapter blockquote")).not.toBeNull();
+  });
+
+  it("strips publisher classes / epub:type off paragraphs, keeps inline emphasis + links", () => {
+    const doc = parseXml(fixture("frankenstein-chapter.xhtml"));
+    normalizeChapterDom(doc, META);
+
+    const clerval = Array.from(doc.querySelectorAll("article.chapter > p.para")).find(
+      (p) => p.querySelector("i"),
+    )!;
+    const italic = clerval.querySelector("i")!;
+    expect(italic.textContent).toBe("The Vicar of Wakefield");
+    expect(italic.hasAttribute("epub:type")).toBe(false);
+
+    const link = doc.querySelector("article.chapter a");
+    expect(link?.getAttribute("href")).toBe("endnotes.xhtml#note-1");
+    expect(link?.hasAttribute("epub:type")).toBe(false);
+    expect(link?.hasAttribute("id")).toBe(false);
+  });
+
+  it("messy fallback: no section, no heading, loose <p> -> ordinal '§', no title, still wrapped", () => {
+    const doc = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>
+         <p>First loose paragraph.</p>
+         <p>Second loose paragraph.</p>
+       </body></html>`,
+    );
+    normalizeChapterDom(doc, META);
+
+    const article = doc.querySelector("article.chapter");
+    expect(article).not.toBeNull();
+    expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("§");
+    expect(doc.querySelector(".chapter-title")).toBeNull();
+
+    const paras = article!.querySelectorAll(":scope > p");
+    expect(paras).toHaveLength(2);
+    expect(paras[0].getAttribute("class")).toBe("para first");
+    expect(paras[1].getAttribute("class")).toBe("para");
+  });
+
+  it("is idempotent — running twice does not double-wrap", () => {
+    const doc = parseXml(fixture("oz-chapter.xhtml"));
+    normalizeChapterDom(doc, META);
+    const before = doc.querySelector("article.chapter")!.outerHTML;
+
+    normalizeChapterDom(doc, META);
+
+    expect(doc.querySelectorAll("article.chapter")).toHaveLength(1);
+    expect(doc.querySelectorAll(".chapter-ordinal")).toHaveLength(1);
+    expect(doc.querySelector("article.chapter")!.outerHTML).toBe(before);
   });
 });

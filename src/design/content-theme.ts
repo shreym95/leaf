@@ -102,6 +102,13 @@ export function buildContentTheme(themeId: ThemeId): ContentThemeStyles {
       margin: "0 0 1.5rem",
     },
 
+    // Chapter header block — left-aligned, with air before the first paragraph.
+    ".chapter-head": {
+      "text-align": "left",
+      "text-indent": "0",
+      margin: "0 0 2.4rem",
+    },
+
     // Ordinal eyebrow (e.g. "I", "V") above the title.
     ".chapter-ordinal": {
       display: "block",

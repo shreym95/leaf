@@ -124,14 +124,157 @@ export function extractChapterHeadingFromXhtml(xhtml: string): ChapterHeading {
 }
 
 // ---------------------------------------------------------------------------
-// M3: runs as an epub.js rendition.hooks.content handler over each rendered
-// chapter DOM. Rewrites the wrapper to <article class="chapter"> with
-// <header>, ordinal eyebrow, Fraunces title, first-paragraph drop-cap/lede,
-// strips publisher CSS, injects our stylesheet. Not implemented in M0.
+// M3: runs as an epub.js `rendition.hooks.content` handler over each rendered
+// chapter DOM (see `src/reader/content-hook.ts`). Ports the Python prototype's
+// DOM rewrite: wrapper -> `<article class="chapter">` with a clean `<header>`
+// (ordinal eyebrow + Fraunces title, tiered), first paragraph flagged for the
+// drop cap / small-caps lede, publisher attributes reset. Pure: mutates the
+// passed `Document` in place, touches DOM + strings only.
 // ---------------------------------------------------------------------------
+
+/** XHTML namespace — epub content is always XHTML/HTML, so mint nodes into it. */
+const XHTML_NS = "http://www.w3.org/1999/xhtml";
+
+/** Per-tag attribute allow-list for the publisher reset (everything else on a
+ *  paragraph + its inline descendants is stripped, mirroring the Python's
+ *  `tag.attrs = {}`). `href` is kept so links keep working. */
+const KEEP_ATTRS: Record<string, ReadonlySet<string>> = {
+  a: new Set(["href"]),
+};
+const NO_ATTRS: ReadonlySet<string> = new Set();
+
+/** Head-ish nodes that must never be swept into the article body. */
+const NON_BODY_TAGS = new Set([
+  "HEAD",
+  "SCRIPT",
+  "STYLE",
+  "LINK",
+  "META",
+  "TITLE",
+  "BASE",
+]);
+
+export interface NormalizeChapterMeta {
+  bookTitle: string;
+  author: string;
+  index: number;
+  total: number;
+}
+
+/** Reset publisher classes / inline styles / `epub:type` on `root` and every
+ *  descendant, keeping only allow-listed attributes (see `KEEP_ATTRS`). */
+function resetPublisherAttrs(root: Element): void {
+  const scrub = (node: Element): void => {
+    const keep = KEEP_ATTRS[node.tagName.toLowerCase()] ?? NO_ATTRS;
+    for (const name of Array.from(node.getAttributeNames())) {
+      if (!keep.has(name)) node.removeAttribute(name);
+    }
+  };
+  scrub(root);
+  root.querySelectorAll("*").forEach((el) => scrub(el));
+}
+
+/**
+ * Rewrite a rendered chapter DOM to Leaf's clean structure, in place.
+ *
+ * Result (tiered — SPEC §7):
+ *   <article class="chapter">
+ *     <header class="chapter-head">
+ *       <p class="chapter-ordinal">…</p>   (when there is an ordinal / fallback "§")
+ *       <h1 class="chapter-title">…</h1>    (only when a real title exists)
+ *     </header>
+ *     <p class="para first">…</p>           (drop cap + small-caps lede target)
+ *     <p class="para">…</p> …               (original body content, kept in order)
+ *   </article>
+ *
+ * Idempotent-ish: a DOM that already carries `article.chapter > header.chapter-head`
+ * is returned untouched (no double-wrap).
+ *
+ * @returns the `<article class="chapter">` element, or `undefined` when there was
+ *   no element to operate on.
+ */
 export function normalizeChapterDom(
-  _doc: Document,
-  _meta: { bookTitle: string; author: string; index: number; total: number },
-): void {
-  throw new Error("normalizeChapterDom: not implemented until M3");
+  doc: Document,
+  _meta: NormalizeChapterMeta,
+): HTMLElement | undefined {
+  // Already normalized — hand back the existing article.
+  const done = doc.querySelector("article.chapter > header.chapter-head");
+  if (done?.parentElement) return done.parentElement;
+
+  const wrapper = findWrapper(doc);
+  if (wrapper.nodeType !== 1) return undefined;
+  const el = wrapper as Element;
+
+  const make = (tag: string): HTMLElement =>
+    doc.createElementNS(XHTML_NS, tag) as HTMLElement;
+
+  const { ordinal, title } = extractChapterHeading(el);
+
+  // Drop the source heading structure (mirrors the Python's `decompose()`).
+  const hgroup = el.querySelector("hgroup");
+  if (hgroup) {
+    hgroup.remove();
+  } else {
+    el.querySelector(HEADING_SELECTOR)?.remove();
+  }
+
+  // Build the clean header.
+  const header = make("header");
+  header.setAttribute("class", "chapter-head");
+
+  const addOrdinal = (text: string): void => {
+    const p = make("p");
+    p.setAttribute("class", "chapter-ordinal");
+    p.textContent = text;
+    header.appendChild(p);
+  };
+
+  if (ordinal) addOrdinal(ordinal);
+  if (title) {
+    const h1 = make("h1");
+    h1.setAttribute("class", "chapter-title");
+    h1.textContent = title;
+    header.appendChild(h1);
+  }
+  if (!ordinal && !title) addOrdinal("§"); // graceful fallback
+
+  // Classify + de-publish the body paragraphs.
+  const paras = Array.from(el.querySelectorAll("p"));
+  paras.forEach((p, i) => {
+    resetPublisherAttrs(p);
+    p.setAttribute("class", i === 0 ? "para first" : "para");
+  });
+
+  // Assemble <article class="chapter">: header, then the kept body nodes.
+  const article = make("article");
+  article.setAttribute("class", "chapter");
+  article.appendChild(header);
+
+  const kept: ChildNode[] = [];
+  el.childNodes.forEach((node) => {
+    if (
+      node.nodeType === 1 &&
+      NON_BODY_TAGS.has((node as Element).tagName.toUpperCase())
+    ) {
+      return;
+    }
+    kept.push(node);
+  });
+  kept.forEach((node) => article.appendChild(node));
+
+  // Put the article where the wrapper's content lived.
+  const parent = el.parentNode;
+  const wrapperIsRootish =
+    el.tagName.toUpperCase() === "BODY" ||
+    el === doc.documentElement ||
+    !parent ||
+    parent.nodeType !== 1;
+
+  if (wrapperIsRootish) {
+    el.appendChild(article);
+  } else {
+    el.replaceWith(article);
+  }
+
+  return article;
 }
