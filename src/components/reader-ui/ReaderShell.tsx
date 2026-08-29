@@ -57,13 +57,11 @@ export function ReaderShell({
   const frameRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<ReaderController | null>(null);
   const trackerRef = useRef<PositionTracker | null>(null);
-  const turnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [load, setLoad] = useState<LoadState>({ state: "loading" });
   const [percent, setPercent] = useState(0);
   const [folio, setFolio] = useState<{ left?: number; right?: number }>({});
   const [immersive, setImmersive] = useState(false);
-  const [turning, setTurning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { setTheme: applyChromeTheme } = useTheme();
@@ -179,34 +177,11 @@ export function ReaderShell({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // ── Page-turn crossfade (instant under prefers-reduced-motion) ────────
+  // ── Page turn — instant (epub.js swaps content itself) ────────────────
   const turn = useCallback((dir: "next" | "prev") => {
     const controller = controllerRef.current;
     if (!controller) return;
-
-    const frame = frameRef.current;
-    if (frame) {
-      const raw = getComputedStyle(frame)
-        .getPropertyValue("--leaf-dur-turn")
-        .trim();
-      const ms = raw.endsWith("ms")
-        ? parseFloat(raw)
-        : parseFloat(raw) * 1000;
-      setTurning(true);
-      if (turnTimer.current) clearTimeout(turnTimer.current);
-      turnTimer.current = setTimeout(
-        () => setTurning(false),
-        Number.isFinite(ms) ? ms : 0,
-      );
-    }
-
     void (dir === "next" ? controller.next() : controller.prev());
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (turnTimer.current) clearTimeout(turnTimer.current);
-    };
   }, []);
 
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
@@ -250,7 +225,6 @@ export function ReaderShell({
       <SpreadFrame
         viewerRef={viewerRef}
         frameRef={frameRef}
-        turning={turning}
         loading={load.state === "loading"}
         folioLeft={folio.left}
         folioRight={folio.right}

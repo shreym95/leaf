@@ -48,7 +48,7 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 - **Reader chrome** (`src/components/reader-ui/`, presentational, token-driven,
   no literal style values): `ReaderShell` (client — owns the epub.js container +
   `createReader`/`trackPosition` lifecycle, fetches EPUB bytes from the signed
-  URL, resize→`relayout`, keyboard ←/→/`F`/`Esc`, the page-turn crossfade),
+  URL, resize→`relayout`, keyboard ←/→/`F`/`Esc`),
   `ReaderTopBar` (Library · book meta · centred LEAF · theme · Aa),
   `ReaderBottomBar` (prev · `--leaf-accent` progress fill · next · `NN%`),
   `SpreadFrame` (open-book frame + `--leaf-shadow-book` + desktop-only gutter
@@ -61,10 +61,11 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   choices survive reload and follow the user across devices (SPEC §8).
 - **Reader layout tokens** (`src/design/tokens.css`): `--leaf-reader-frame-*`,
   `--leaf-reader-viewer-pad-*`, `--leaf-reader-gutter-w`/`-bg`,
-  `--leaf-reader-progress-*`, `--leaf-reader-turn-opacity` (→ `1` under
-  `prefers-reduced-motion`, collapsing the crossfade to a no-op).
+  `--leaf-reader-progress-*`.
 
 ### Removed
+- Page turns are **instant** — the opacity-dip crossfade read as text flicker
+  against the static paper and was removed. Motion stays a next-version item (SPEC §8).
 - `src/reader/bootstrap.ts` + `src/components/reader-ui/ReaderBootstrap.tsx`
   (the M2 smoke reader) — superseded by `engine.ts` + the chrome above.
 
@@ -75,10 +76,6 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   owns `setReaderTheme` and a mount effect that aligns `<html data-theme>` with
   the persisted setting. A redesign that reworks theming touches
   `ReaderShell` + `ReaderTopBar` + `ReaderSettingsSheet`, not the engine.
-- **The page-turn duration is read from the token at runtime.** `ReaderShell`
-  reads the computed `--leaf-dur-turn` off the frame element to time the
-  crossfade class removal (rather than hard-coding 320ms) — the token stays the
-  single source of truth, including its `0s` reduced-motion value.
 - `src/reader/content-hook.ts` is the **one sanctioned import** from `src/reader`
   into `src/design`: it pulls `buildContentTheme` from
   `src/design/content-theme.ts` (a plain selector→declaration map — data, not

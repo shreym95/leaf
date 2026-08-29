@@ -111,7 +111,6 @@
   --leaf-reader-frame-pad-x: clamp(1rem, 5vw, 5rem);
   --leaf-reader-progress-w: min(420px, 40vw);
   --leaf-reader-progress-h: 3px;
-  --leaf-reader-turn-opacity: 0.55;
 }
 
 /* ---------------------------------------------------------------------------
@@ -180,7 +179,5 @@
     --leaf-dur-ui: 0s;
     --leaf-ease: linear;
     --leaf-ease-inout: linear;
-    /* page-turn crossfade collapses to a no-op dip */
-    --leaf-reader-turn-opacity: 1;
   }
 }

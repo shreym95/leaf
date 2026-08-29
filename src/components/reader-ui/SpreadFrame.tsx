@@ -7,16 +7,15 @@ import type { ReactNode, RefObject } from "react";
  * recreates the approved v0.1 `.book-frame` / `.book` / `.book::after` gutter /
  * `.folio` / `.turnzone` rules with Leaf tokens.
  *
- * epub.js mounts its paginated rendition into `viewerRef`. The crossfade on a
- * page turn is a plain opacity dip driven by `--leaf-reader-turn-opacity` +
- * `--leaf-dur-turn` (both collapse to a no-op under prefers-reduced-motion);
- * ReaderShell toggles `turning`.
+ * epub.js mounts its paginated rendition into `viewerRef` and swaps page
+ * content itself. Page turns are instant — no fade (the opacity-dip version
+ * read as text flicker against the static paper). Motion is a next-version
+ * polish item per SPEC §8.
  */
 
 export interface SpreadFrameProps {
   viewerRef: RefObject<HTMLDivElement | null>;
   frameRef: RefObject<HTMLDivElement | null>;
-  turning: boolean;
   loading: boolean;
   folioLeft?: number;
   folioRight?: number;
@@ -32,7 +31,6 @@ const folioClass =
 export function SpreadFrame({
   viewerRef,
   frameRef,
-  turning,
   loading,
   folioLeft,
   folioRight,
@@ -47,11 +45,10 @@ export function SpreadFrame({
     >
       <div
         ref={frameRef}
-        className="relative h-full overflow-hidden rounded-sm bg-page transition-opacity [box-shadow:var(--leaf-shadow-book)] [transition-duration:var(--leaf-dur-turn)] [transition-timing-function:var(--leaf-ease-inout)]"
+        className="relative h-full overflow-hidden rounded-sm bg-page [box-shadow:var(--leaf-shadow-book)]"
         style={{
           width: "var(--leaf-reader-frame-w)",
           maxHeight: "var(--leaf-reader-frame-max-h)",
-          opacity: turning ? "var(--leaf-reader-turn-opacity)" : 1,
         }}
       >
         {/* Centred gutter shadow — desktop only (hidden < 1024px). */}
