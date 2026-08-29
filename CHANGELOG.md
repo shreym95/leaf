@@ -22,7 +22,7 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
 ### Changed
 - Night accent recoloured from the prototype's gold `#e0a03c` to a metallic
-  copper `#bd8250` (founder call — calmer, more mature, ~6:1 on paper).
+  copper `#c58a52` (founder call — calmer, more mature, ~6.5:1 on paper).
   `--leaf-focus` / `--leaf-selection` follow. Day theme unchanged.
 - Contrast pass: `--leaf-faint` darkened (day `#8a7d5e`→`#6a5f45`) / lightened
   (night `#7c6f52`→`#8f815f`) to clear WCAG AA — the prototype values failed on
