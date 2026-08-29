@@ -91,22 +91,25 @@ function serialize(styles: ContentThemeStyles): string {
  */
 function settingsCss(s: ReaderContentSettings): string {
   const font = FONT_STACKS[s.fontFamily];
-  const TEXT = [
-    "p",
-    "div",
-    "li",
-    "blockquote",
-    "td",
-    ".chapter .para",
-    ".chapter p",
-  ]
+
+  // Containers a publisher rule can inflate (a `2em` on any of these used to
+  // cascade into every paragraph, doubling the text). Reset to 1em so the
+  // reading size is decided by `body` / `.chapter`, never by the file.
+  const CONTAINERS = ["div", "section", "article", "main", "body > *"].join(",");
+
+  // Text elements. Headings are deliberately excluded: they stay relative to
+  // the pinned wrapper, so they scale with S/M/L but keep their hierarchy.
+  const TEXT = ["p", "li", "blockquote", "td", "dd", "figcaption"]
     .map((sel) => `${sel}:not(.chapter-ordinal):not(.chapter-title)`)
     .join(",");
 
   return [
     `body{font-family:${font} !important;font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important}`,
+    // Our wrapper is pinned absolutely — it is the size anchor for the chapter,
+    // and its class specificity beats the element reset below.
+    `.chapter{font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important;max-width:${MEASURE[s.margins]};margin-left:auto;margin-right:auto}`,
+    `${CONTAINERS}{font-size:1em !important}`,
     `${TEXT}{font-family:${font} !important;font-size:1em !important;line-height:${s.lineSpacing} !important}`,
-    `.chapter{max-width:${MEASURE[s.margins]};margin-left:auto;margin-right:auto}`,
   ].join("\n");
 }
 

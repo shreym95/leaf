@@ -69,11 +69,16 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 ### Changed
 - Text size is **S / M / L**, not a stepper. The original continuous 0.04rem
   step moved the text by under a pixel per tap and read as a dead button.
-- The injected size / family / spacing rules are `!important` and target the
-  text elements directly, not just `body` — publisher stylesheets (Gutenberg
-  especially) set their own `font-size` on `p`/`div`, which out-specifies an
-  inherited `body` rule and silently pins the reader's text size.
-  Verified in a real browser against a Standard Ebooks and a Gutenberg book.
+- **The reading size no longer depends on the file.** The injected stylesheet
+  now pins `.chapter` (our wrapper) to the chosen size in absolute units,
+  resets every container a publisher can inflate (`div/section/article/main`)
+  to `1em`, and forces the text elements to `1em` — all `!important`.
+  Previously a retail EPUB with `font-size:2em` on a container cascaded into
+  the wrapper and rendered every paragraph at 2x (unreadable on a phone), and
+  Gutenberg's per-element sizes out-specified our inherited `body` rule.
+  Headings are left relative so they still scale with S/M/L but keep hierarchy.
+  Verified in a real browser (Standard Ebooks, Project Gutenberg and a retail
+  upload now render at identical sizes: S 14.4px / M 16.96px / L 20.16px).
 - Reader theme is **single-source**: the toggle writes only the reader-settings
   store; the chrome (`<html data-theme>`) and the book both follow from it.
 

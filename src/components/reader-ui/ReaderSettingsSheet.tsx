@@ -32,9 +32,11 @@ export interface ReaderSettingsSheetProps {
  * a tap appears to do nothing.
  */
 const TEXT_SIZES = [
-  { value: 0.94, label: "S" },
-  { value: 1.14, label: "M" },
-  { value: 1.38, label: "L" },
+  { value: 0.9, label: "S" },
+  // M is the design-token reading size (`--leaf-reader-font-size`) and the
+  // `reader_settings` column default, so an untouched account already reads M.
+  { value: 1.06, label: "M" },
+  { value: 1.26, label: "L" },
 ] as const;
 
 /** Snap any persisted value to the nearest named size. */

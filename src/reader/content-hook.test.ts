@@ -140,6 +140,29 @@ describe("registerContentPipeline", () => {
     expect(style?.parentElement?.lastElementChild).toBe(style);
   });
 
+
+  it("pins the reading size against publisher CSS that inflates a container", () => {
+    // Real-world failure (an uploaded retail EPUB): the file set `font-size:2em`
+    // on a container, our wrapper inherited it, and every paragraph rendered at
+    // 2x. The stylesheet must reset containers AND pin `.chapter` itself.
+    const { rendition, handlers, contents, doc } = makeRendition();
+    registerContentPipeline(rendition, () => ({ ...DAY, fontSize: 1.26 }));
+    handlers[0](contents, rendition);
+
+    const css = doc.querySelector('style[id="leaf-content-pipeline"]')
+      ?.textContent as string;
+
+    // the wrapper is the size anchor, in absolute units
+    expect(css).toMatch(/\.chapter\{[^}]*font-size:1\.26rem !important/);
+    // every container a publisher could inflate is reset
+    for (const sel of ["div", "section", "article", "main"]) {
+      expect(css).toMatch(new RegExp(`(^|,)${sel}(,|\\{)`, "m"));
+    }
+    expect(css).toContain("font-size:1em !important");
+    // …but our own eyebrow and title keep their own sizing
+    expect(css).toContain("p:not(.chapter-ordinal):not(.chapter-title)");
+  });
+
   it("degrades safely on a chapter with no structure (no throw, § fallback)", () => {
     const { rendition, handlers } = makeRendition();
     registerContentPipeline(rendition, () => DAY);
