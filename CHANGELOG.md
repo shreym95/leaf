@@ -2,6 +2,92 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## M3 — the reader (core)
+
+### Added
+- **Reader engine** (`src/reader/engine.ts`): `createReader(bytes, settings)` →
+  a `ReaderController`. epub.js `renderTo` with the approved-prototype config
+  (`manager:"default"`, `flow:"paginated"`); two-page spread ≥1024px / single
+  below, `relayout()` debounced on resize; `book.locations.generate(1200)` runs
+  unawaited so `attach()` resolves fast and `percent` fills in when ready. epub.js
+  owns all column/clip math (SPEC §3.4). Takes an **ArrayBuffer**, not a URL
+  (a signed URL made epub.js hang — M2 finding).
+- **Reading-position sync** (`src/reader/position.ts`): `trackPosition` writes
+  the CFI + percent to `reading_state` (browser client + RLS, debounced 1.5 s);
+  `restore()` reads the last CFI and `goTo`s it on open. Cross-device: read on
+  open picks up the other device's last write. **CFI round-trip is tested.**
+- **Chapter normalizer, DOM port** (`src/normalizer/normalize.ts`):
+  `normalizeChapterDom(doc, meta)` ports `reference/normalizer.py` to an in-place
+  DOM rewrite — wrapper → `<article class="chapter">` with a clean
+  `<header class="chapter-head">` (tiered: ordinal `<p class="chapter-ordinal">`
+  + Fraunces `<h1 class="chapter-title">`, ordinal-only, or `§` fallback), first
+  body `<p>` flagged `para first` (drop cap + small-caps lede), publisher
+  attributes/`epub:type` reset (inline `em/i/strong/b`, and `<a href>`, kept).
+  Idempotent (won't double-wrap). Pure — DOM + strings only.
+- **Content pipeline** (`src/reader/content-hook.ts`):
+  `registerContentPipeline(rendition, getSettings)` registers one
+  `rendition.hooks.content` handler that runs the normalizer over each chapter
+  and injects a single `<style id="leaf-content-pipeline">` (fine-press rules
+  from `buildContentTheme` + live settings: font stack / size / line spacing /
+  measure). Also registers `leaf-day` / `leaf-night` with `rendition.themes`.
+  Returns a callable handle (`() === destroy()`) with `refresh()` + `destroy()`.
+- **`reader_settings` db helper** (`src/lib/db/reader-settings.ts`, in the
+  `@/lib/db` barrel): `getReaderSettings(uid)` / `upsertReaderSettings(uid,
+  patch)`. `src/lib/db/reading-state.ts` reworked to take an **explicit**
+  Supabase client (no server-client fallback) — it is imported into the
+  reader's client bundle via `position.ts`, so it must never reach
+  `@/lib/supabase/server` (`next/headers`).
+- **Reader route group** (`src/app/(reader)/`): the reader moved to
+  `(reader)/reader/[bookId]` with a minimal layout that renders **no app
+  NavBar** (SPEC §8 immersive). Every other page moved to a sibling
+  `(chrome)/` group whose layout owns the NavBar. The root `layout.tsx` now
+  holds only `<html>`/`<body>`/`ThemeProvider` — a single root layout, so
+  chrome↔reader navigation is a normal client transition (no full reload). URLs
+  unchanged (`/reader/[bookId]`, `/library`, …); the proxy's `PROTECTED_PREFIXES`
+  still match.
+- **Reader chrome** (`src/components/reader-ui/`, presentational, token-driven,
+  no literal style values): `ReaderShell` (client — owns the epub.js container +
+  `createReader`/`trackPosition` lifecycle, fetches EPUB bytes from the signed
+  URL, resize→`relayout`, keyboard ←/→/`F`/`Esc`, the page-turn crossfade),
+  `ReaderTopBar` (Library · book meta · centred LEAF · theme · Aa),
+  `ReaderBottomBar` (prev · `--leaf-accent` progress fill · next · `NN%`),
+  `SpreadFrame` (open-book frame + `--leaf-shadow-book` + desktop-only gutter
+  shadow + folio slots + tap zones), `ReaderSettingsSheet` (text size, body
+  font, line spacing, margins, theme — each change → store setter). Recreates
+  the approved v0.1 look from Leaf tokens.
+- **Reader settings store** (`src/store/reader-settings.ts`): `hydrate(row, uid)`
+  from the server-loaded `reader_settings` row; every setter also persists
+  (debounced) to `reader_settings` via the browser Supabase client + RLS, so
+  choices survive reload and follow the user across devices (SPEC §8).
+- **Reader layout tokens** (`src/design/tokens.css`): `--leaf-reader-frame-*`,
+  `--leaf-reader-viewer-pad-*`, `--leaf-reader-gutter-w`/`-bg`,
+  `--leaf-reader-progress-*`, `--leaf-reader-turn-opacity` (→ `1` under
+  `prefers-reduced-motion`, collapsing the crossfade to a no-op).
+
+### Removed
+- `src/reader/bootstrap.ts` + `src/components/reader-ui/ReaderBootstrap.tsx`
+  (the M2 smoke reader) — superseded by `engine.ts` + the chrome above.
+
+### Presentation ↔ logic coupling (for the next redesign)
+- **Reader theme is a dual write.** The reader's Day/Night control writes both
+  the reader-settings store (persisted to `reader_settings`) *and*
+  `ThemeProvider.setTheme` (`<html data-theme>` + localStorage). `ReaderShell`
+  owns `setReaderTheme` and a mount effect that aligns `<html data-theme>` with
+  the persisted setting. A redesign that reworks theming touches
+  `ReaderShell` + `ReaderTopBar` + `ReaderSettingsSheet`, not the engine.
+- **The page-turn duration is read from the token at runtime.** `ReaderShell`
+  reads the computed `--leaf-dur-turn` off the frame element to time the
+  crossfade class removal (rather than hard-coding 320ms) — the token stays the
+  single source of truth, including its `0s` reduced-motion value.
+- `src/reader/content-hook.ts` is the **one sanctioned import** from `src/reader`
+  into `src/design`: it pulls `buildContentTheme` from
+  `src/design/content-theme.ts` (a plain selector→declaration map — data, not
+  presentation code). `eslint.config.mjs` carries a matching per-file exception
+  to the `src/reader → src/design` seam ban (components stay banned).
+- `src/design/content-theme.ts`: added a `.chapter-head` rule (left align, bottom
+  margin) — the only change needed once the stylesheet was wired to a live
+  iframe.
+
 ## M2 — Import + upload
 
 ### Added

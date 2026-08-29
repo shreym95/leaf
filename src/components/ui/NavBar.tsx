@@ -8,9 +8,9 @@ import { getUser } from "@/lib/auth";
  * Presentational + token-driven; reads the signed-in user server-side (async
  * Server Component) and hands the name to <UserMenu>.
  *
- * NOTE: the reader route (/reader/[bookId]) opts OUT of this chrome in M3 — it
- * renders its own immersive top/bottom bars per SPEC §8. When that lands, this
- * shell moves into a route group layout so the reader can skip it.
+ * NOTE: rendered by `src/app/(chrome)/layout.tsx`, NOT the root layout — the
+ * reader route group (`src/app/(reader)`) has its own minimal layout with no
+ * NavBar so it can go fully immersive (SPEC §8).
  */
 
 const linkClass =

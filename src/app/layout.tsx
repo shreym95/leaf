@@ -8,7 +8,6 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
-import { NavBar } from "@/components/ui/NavBar";
 
 /* Fonts — the `variable` names are a contract with src/design/tokens.css. */
 
@@ -84,10 +83,10 @@ export default function RootLayout({
       {/* suppressHydrationWarning: browser extensions (Grammarly etc.) inject
           attributes onto <body> before React hydrates. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <ThemeProvider>
-          <NavBar />
-          <div className="flex flex-1 flex-col">{children}</div>
-        </ThemeProvider>
+        {/* Chrome lives in the route-group layouts, not here: the reader
+            (src/app/(reader)) renders full-bleed with its own immersive bars
+            and no app NavBar (SPEC §8). */}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

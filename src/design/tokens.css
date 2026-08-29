@@ -91,6 +91,27 @@
   --leaf-reader-leading: 1.62;
   --leaf-reader-margin: clamp(1.6rem, 4vw, 3rem);
   --leaf-reader-measure: 34rem;
+
+  /* --- Reader chrome / spread frame (M3) ---------------------------------
+     Geometry for the open-book frame, the folio slots, the footer progress
+     bar, and the page-turn crossfade opacity. Recreated from the approved
+     v0.1 prototype's `.book` / `.prog` / `.book.turning` rules. */
+  --leaf-reader-frame-w: min(1180px, 94vw);
+  --leaf-reader-frame-max-h: 820px;
+  --leaf-reader-viewer-pad-y: clamp(1.6rem, 4vh, 3rem);
+  --leaf-reader-viewer-pad-x: clamp(1.6rem, 3.4vw, 3rem);
+  --leaf-reader-gutter-w: 70px;
+  --leaf-reader-gutter-bg: linear-gradient(
+    90deg,
+    transparent,
+    var(--leaf-gutter) 44%,
+    var(--leaf-gutter) 56%,
+    transparent
+  );
+  --leaf-reader-frame-pad-x: clamp(1rem, 5vw, 5rem);
+  --leaf-reader-progress-w: min(420px, 40vw);
+  --leaf-reader-progress-h: 3px;
+  --leaf-reader-turn-opacity: 0.55;
 }
 
 /* ---------------------------------------------------------------------------
@@ -159,5 +180,7 @@
     --leaf-dur-ui: 0s;
     --leaf-ease: linear;
     --leaf-ease-inout: linear;
+    /* page-turn crossfade collapses to a no-op dip */
+    --leaf-reader-turn-opacity: 1;
   }
 }
