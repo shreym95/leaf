@@ -33,7 +33,17 @@ export interface BookController {
 export async function openBook(fileUrl: string): Promise<BookController> {
   const { default: ePub } = await import("epubjs");
 
-  const book: Book = ePub(fileUrl);
+  // Fetch the bytes ourselves rather than handing epub.js the URL: a Supabase
+  // signed URL ends in `.epub?token=…`, which epub.js misreads as an *unpacked*
+  // EPUB directory and then hangs. An ArrayBuffer is unambiguously an archive,
+  // and a bad URL surfaces here as a real error instead of a silent hang.
+  const res = await fetch(fileUrl);
+  if (!res.ok) {
+    throw new Error(`Couldn't download the book (HTTP ${res.status}).`);
+  }
+  const bytes = await res.arrayBuffer();
+
+  const book: Book = ePub(bytes);
   await book.ready;
 
   let sectionCount = 0;
