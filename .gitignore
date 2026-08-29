@@ -41,3 +41,6 @@ next-env.d.ts
 
 # raw handoff drop — curated copies are tracked under /reference and /src/normalizer/fixtures
 /Documents/
+
+# next --experimental-https output
+/certificates
