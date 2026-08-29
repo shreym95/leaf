@@ -235,12 +235,20 @@ export async function createReader(
     },
 
     applySettings(s: ReaderContentSettings): void {
+      const prev = currentSettings;
       currentSettings = { ...s };
       // The content pipeline owns all content CSS — re-inject its stylesheet
-      // (font / size / spacing / measure / Day-Night) into every live chapter…
+      // (font / size / spacing / measure / Day-Night) into every live chapter.
       contentPipeline?.refresh();
-      // …then re-flow so the change shows now, not after a page turn.
-      scheduleReflow();
+      // A layout-affecting change (font, size, spacing, margins) needs epub.js
+      // to re-flow the columns; a pure Day/Night swap does not (and re-flowing
+      // it just adds a flash).
+      const layoutChanged =
+        prev.fontFamily !== s.fontFamily ||
+        prev.fontSize !== s.fontSize ||
+        prev.lineSpacing !== s.lineSpacing ||
+        prev.margins !== s.margins;
+      if (layoutChanged) scheduleReflow();
     },
 
     onRelocated(cb: (loc: ReaderLocation) => void): () => void {

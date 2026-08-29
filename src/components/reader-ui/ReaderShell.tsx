@@ -86,18 +86,16 @@ export function ReaderShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Theme: keep the app chrome (`<html data-theme>`) in step with the
-  //    persisted reading setting; the reader's toggle writes both. ─────────
+  // ── Theme is single-source: the reader-settings store. The toggle writes
+  //    only the store; this effect propagates it to the app chrome
+  //    (`<html data-theme>`) and, via the [settings] effect below, to the book. ─
   useEffect(() => {
     if (isThemeId(settings.theme)) applyChromeTheme(settings.theme);
   }, [settings.theme, applyChromeTheme]);
 
   const setReaderTheme = useCallback(
-    (theme: ReaderTheme) => {
-      setStoreTheme(theme); // persists to reader_settings
-      applyChromeTheme(theme); // updates <html data-theme> immediately
-    },
-    [setStoreTheme, applyChromeTheme],
+    (theme: ReaderTheme) => setStoreTheme(theme),
+    [setStoreTheme],
   );
 
   // ── Engine + position-tracker lifecycle ───────────────────────────────

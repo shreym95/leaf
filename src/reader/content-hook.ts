@@ -11,11 +11,14 @@
 //      (ordinal eyebrow, Fraunces title, first-paragraph drop-cap/lede target),
 //      resetting publisher attributes. Tiered + never fatal.
 //   2. Injects a single `<style id="leaf-content-pipeline">` into the chapter
-//      document carrying the fine-press rules (from `buildContentTheme`) plus the
-//      live reading settings (font family / size / line spacing / measure).
-// The per-theme `buildContentTheme` objects are ALSO registered with epub.js's
-// own theme system (`themes.register` + `themes.select`) so the native channel
-// is wired; the injected `<style>` is appended last and is authoritative.
+//      document carrying the fine-press rules (from `buildContentTheme`), the
+//      live reading settings (font / size / spacing / measure), and a hard
+//      `!important` palette override so Day/Night always wins the cascade.
+// This injected `<style>` is the ONE source of truth for content styling — it is
+// re-appended (moved last) on every refresh, so epub.js's own injected styles
+// can never out-order it. We deliberately do NOT use `rendition.themes.select`
+// for Day/Night: epub.js keeps every registered theme's rules present per
+// content and doesn't cleanly toggle, which left the theme "stuck" after one flip.
 
 import type { Rendition } from "epubjs";
 
@@ -65,10 +68,6 @@ function themeId(s: ReaderContentSettings): "day" | "night" {
   return s.theme === "night" ? "night" : "day";
 }
 
-function themeName(theme: ReaderContentSettings["theme"]): string {
-  return theme === "night" ? "leaf-night" : "leaf-day";
-}
-
 /** Serialize a `buildContentTheme` style map to a CSS string. */
 function serialize(styles: ContentThemeStyles): string {
   return Object.entries(styles)
@@ -91,8 +90,25 @@ function settingsCss(s: ReaderContentSettings): string {
   ].join("\n");
 }
 
+/** Hard palette override — last, `!important`, so nothing epub.js injects can
+ *  win the cascade for the reading surface + text colour. */
+function hardPalette(styles: ContentThemeStyles): string {
+  const bg = styles.body?.background ?? "";
+  const ink = styles.body?.color ?? "";
+  const sel = styles["::selection"]?.background ?? "";
+  return [
+    bg && `html,body{background:${bg} !important}`,
+    // reading text only — leave `.chapter-ordinal` / drop cap on their accent
+    ink && `body,.chapter p:not(.chapter-ordinal){color:${ink} !important}`,
+    sel && `::selection{background:${sel} !important}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function stylesheetFor(s: ReaderContentSettings): string {
-  return `${serialize(buildContentTheme(themeId(s)))}\n${settingsCss(s)}`;
+  const styles = buildContentTheme(themeId(s));
+  return [serialize(styles), settingsCss(s), hardPalette(styles)].join("\n");
 }
 
 /** Where a `<style>` can be parked in a (possibly XML) chapter document. */
@@ -114,9 +130,12 @@ function injectStylesheet(doc: Document, css: string): void {
   if (!style) {
     style = doc.createElementNS(XHTML_NS, "style");
     style.setAttribute("id", STYLE_ID);
-    host.appendChild(style);
   }
   style.textContent = css;
+  // Re-append so our stylesheet is always the LAST in <head> — it out-orders
+  // anything epub.js injects on (re)render, which is what makes Day/Night
+  // reliably flip in place.
+  host.appendChild(style);
 }
 
 /** epub.js `getContents()` returns an array at runtime (its types say singular). */
@@ -154,23 +173,6 @@ function bookMeta(rendition: Rendition): {
   };
 }
 
-function registerThemes(rendition: Rendition): void {
-  try {
-    rendition.themes.register("leaf-day", buildContentTheme("day"));
-    rendition.themes.register("leaf-night", buildContentTheme("night"));
-  } catch {
-    /* older epub.js `register` signature — the injected <style> still covers us */
-  }
-}
-
-function selectTheme(rendition: Rendition, theme: ReaderContentSettings["theme"]): void {
-  try {
-    rendition.themes.select(themeName(theme));
-  } catch {
-    /* non-fatal */
-  }
-}
-
 /**
  * Wire the normalizer + fine-press stylesheet into a rendition.
  *
@@ -184,9 +186,6 @@ export function registerContentPipeline(
   rendition: Rendition,
   getSettings: () => ReaderContentSettings,
 ): ContentPipelineHandle {
-  registerThemes(rendition);
-  selectTheme(rendition, getSettings().theme);
-
   const meta = bookMeta(rendition);
 
   const onContent = (a: unknown, _b?: unknown): void => {
@@ -222,9 +221,7 @@ export function registerContentPipeline(
   rendition.hooks.content.register(onContent);
 
   const refresh = (): void => {
-    const settings = getSettings();
-    selectTheme(rendition, settings.theme);
-    const css = stylesheetFor(settings);
+    const css = stylesheetFor(getSettings());
     for (const doc of contentDocuments(rendition)) {
       try {
         injectStylesheet(doc, css);

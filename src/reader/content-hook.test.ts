@@ -74,15 +74,10 @@ function makeRendition() {
 }
 
 describe("registerContentPipeline", () => {
-  it("registers a content hook and wires the per-theme stylesheet", () => {
-    const { rendition, themes, handlers } = makeRendition();
-
+  it("registers exactly one content hook", () => {
+    const { rendition, handlers } = makeRendition();
     registerContentPipeline(rendition, () => DAY);
-
     expect(handlers).toHaveLength(1);
-    expect(themes.register).toHaveBeenCalledWith("leaf-day", expect.any(Object));
-    expect(themes.register).toHaveBeenCalledWith("leaf-night", expect.any(Object));
-    expect(themes.select).toHaveBeenCalledWith("leaf-day");
   });
 
   it("normalizes each rendered chapter and injects the fine-press stylesheet", () => {
@@ -118,23 +113,31 @@ describe("registerContentPipeline", () => {
     expect(doc.querySelectorAll("article.chapter")).toHaveLength(1);
   });
 
-  it("refresh() re-selects the theme and re-injects for the new settings", () => {
-    const { rendition, themes, handlers, contents, doc } = makeRendition();
+  it("refresh() re-injects the stylesheet for the new settings", () => {
+    const { rendition, handlers, contents, doc } = makeRendition();
     let settings = DAY;
     const pipeline = registerContentPipeline(rendition, () => settings);
 
     handlers[0](contents, rendition);
-    expect(doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent).toContain(
-      "font-size:1.06rem",
-    );
+    const before =
+      doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+    expect(before).toContain("font-size:1.06rem");
+    expect(before).toContain("#f1ebdc"); // day paper
 
     settings = { ...DAY, theme: "night", fontSize: 1.25, margins: "wide" };
     pipeline.refresh();
 
-    expect(themes.select).toHaveBeenLastCalledWith("leaf-night");
-    const css = doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+    const style = doc.querySelector('style[id="leaf-content-pipeline"]');
+    const css = style?.textContent ?? "";
     expect(css).toContain("font-size:1.25rem");
     expect(css).toContain("max-width:40rem");
+    expect(css).toContain("#1a1611"); // night page — theme actually flipped
+    expect(css).not.toContain("#f1ebdc");
+    expect(css).toContain("!important"); // hard palette override present
+    // still exactly one <style>, and it is the last child of its host
+    const all = doc.querySelectorAll('style[id="leaf-content-pipeline"]');
+    expect(all).toHaveLength(1);
+    expect(style?.parentElement?.lastElementChild).toBe(style);
   });
 
   it("degrades safely on a chapter with no structure (no throw, § fallback)", () => {
