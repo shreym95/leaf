@@ -81,7 +81,9 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="min-h-full flex flex-col">
+      {/* suppressHydrationWarning: browser extensions (Grammarly etc.) inject
+          attributes onto <body> before React hydrates. */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <ThemeProvider>
           <NavBar />
           <div className="flex flex-1 flex-col">{children}</div>
