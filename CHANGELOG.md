@@ -29,8 +29,11 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   `rendition.hooks.content` handler that runs the normalizer over each chapter
   and injects a single `<style id="leaf-content-pipeline">` (fine-press rules
   from `buildContentTheme` + live settings: font stack / size / line spacing /
-  measure). Also registers `leaf-day` / `leaf-night` with `rendition.themes`.
-  Returns a callable handle (`() === destroy()`) with `refresh()` + `destroy()`.
+  measure) plus an `!important` palette override, re-appended last so it always
+  wins the cascade. Returns a callable handle with `refresh()` + `destroy()`.
+  Deliberately does NOT use `rendition.themes.select` for Day/Night — epub.js
+  keeps every registered theme's rules present and won't cleanly toggle, which
+  left the theme stuck after one flip.
 - **`reader_settings` db helper** (`src/lib/db/reader-settings.ts`, in the
   `@/lib/db` barrel): `getReaderSettings(uid)` / `upsertReaderSettings(uid,
   patch)`. `src/lib/db/reading-state.ts` reworked to take an **explicit**
@@ -63,9 +66,12 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   `--leaf-reader-viewer-pad-*`, `--leaf-reader-gutter-w`/`-bg`,
   `--leaf-reader-progress-*`.
 
+### Changed
 - Text size steps through a discrete ~10% scale. The original continuous
   0.04rem step moved the text by under a pixel per click, which read as a
   dead button on both desktop and phone.
+- Reader theme is **single-source**: the toggle writes only the reader-settings
+  store; the chrome (`<html data-theme>`) and the book both follow from it.
 
 ### Removed
 - Page turns are **instant** — the opacity-dip crossfade read as text flicker
@@ -74,12 +80,12 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   (the M2 smoke reader) — superseded by `engine.ts` + the chrome above.
 
 ### Presentation ↔ logic coupling (for the next redesign)
-- **Reader theme is a dual write.** The reader's Day/Night control writes both
-  the reader-settings store (persisted to `reader_settings`) *and*
-  `ThemeProvider.setTheme` (`<html data-theme>` + localStorage). `ReaderShell`
-  owns `setReaderTheme` and a mount effect that aligns `<html data-theme>` with
-  the persisted setting. A redesign that reworks theming touches
-  `ReaderShell` + `ReaderTopBar` + `ReaderSettingsSheet`, not the engine.
+- **Reader theme flows one way**: `useReaderSettings.theme` (persisted to
+  `reader_settings`) → an effect in `ReaderShell` mirrors it to
+  `ThemeProvider.setTheme` (`<html data-theme>` + localStorage) → the
+  `[settings]` effect pushes it to the book via `controller.applySettings`.
+  A redesign that reworks theming touches `ReaderShell` + `ReaderTopBar` +
+  `ReaderSettingsSheet`, not the engine.
 - `src/reader/content-hook.ts` is the **one sanctioned import** from `src/reader`
   into `src/design`: it pulls `buildContentTheme` from
   `src/design/content-theme.ts` (a plain selector→declaration map — data, not
