@@ -56,12 +56,21 @@ const FONT_STACKS: Record<ReaderContentSettings["fontFamily"], string> = {
   legible: '"Atkinson Hyperlegible", "Source Sans 3", system-ui, sans-serif',
 };
 
-/** `margins` -> a comfortable measure (max line length), centred. epub.js owns
- *  the column geometry, so we constrain the text block, not the body padding. */
-const MEASURE: Record<ReaderContentSettings["margins"], string> = {
-  narrow: "31rem",
-  normal: "34rem",
-  wide: "40rem",
+/**
+ * `margins` -> the text block's side padding plus a max measure.
+ *
+ * The padding is what actually does the work: `max-width` alone is a no-op on a
+ * phone, where the column is far narrower than any sane measure. Values are in
+ * `rem` (not `%`) because a percentage inside epub.js's multi-column layout
+ * resolves against the full scroll width, not the visible column.
+ */
+const MARGIN_STYLE: Record<
+  ReaderContentSettings["margins"],
+  { pad: string; measure: string }
+> = {
+  narrow: { pad: "0rem", measure: "40rem" },
+  normal: { pad: "1.25rem", measure: "34rem" },
+  wide: { pad: "2.75rem", measure: "30rem" },
 };
 
 function themeId(s: ReaderContentSettings): "day" | "night" {
@@ -92,9 +101,13 @@ function serialize(styles: ContentThemeStyles): string {
 function settingsCss(s: ReaderContentSettings): string {
   const font = FONT_STACKS[s.fontFamily];
 
-  // Containers a publisher rule can inflate (a `2em` on any of these used to
-  // cascade into every paragraph, doubling the text). Reset to 1em so the
-  // reading size is decided by `body` / `.chapter`, never by the file.
+  const { pad, measure } = MARGIN_STYLE[s.margins];
+
+  // Containers a publisher rule can style (a `2em` or a `bold` on any of these
+  // cascades into every paragraph — one retail EPUB rendered its whole body at
+  // 2x and bold this way). Neutralised so size/weight/style are decided by
+  // `body` / `.chapter`, never by the file. Inline `<strong>` / `<em>` are
+  // untouched, so real emphasis survives.
   const CONTAINERS = ["div", "section", "article", "main", "body > *"].join(",");
 
   // Text elements. Headings are deliberately excluded: they stay relative to
@@ -104,12 +117,34 @@ function settingsCss(s: ReaderContentSettings): string {
     .join(",");
 
   return [
-    `body{font-family:${font} !important;font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important}`,
+    `body{font-family:${font} !important;font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important;font-weight:400 !important}`,
     // Our wrapper is pinned absolutely — it is the size anchor for the chapter,
-    // and its class specificity beats the element reset below.
-    `.chapter{font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important;max-width:${MEASURE[s.margins]};margin-left:auto;margin-right:auto}`,
-    `${CONTAINERS}{font-size:1em !important}`,
-    `${TEXT}{font-family:${font} !important;font-size:1em !important;line-height:${s.lineSpacing} !important}`,
+    // and its class specificity beats the element reset below. The side padding
+    // is the margins control; the max-width caps the measure on wide screens.
+    `.chapter{font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important;` +
+      `font-weight:400 !important;max-width:${measure};` +
+      // `!important` on the insets: the container reset below is itself
+      // `!important`, which would otherwise beat this rule's higher specificity.
+      `margin-left:auto !important;margin-right:auto !important;` +
+      `padding-left:${pad} !important;padding-right:${pad} !important;box-sizing:border-box}`,
+    // Zero the containers' own horizontal insets too: Gutenberg wraps content in
+    // divs carrying `margin-left/right: 10%`, which stacked on top of our
+    // padding and squeezed the column to ~10 characters on a phone. `.chapter`
+    // (class specificity) keeps the padding this rule strips from bare
+    // `article`/`div`, so the margins control stays the only inset that applies.
+    `${CONTAINERS}{font-size:1em !important;font-weight:400 !important;font-style:normal !important;` +
+      `margin-left:0 !important;margin-right:0 !important;padding-left:0 !important;padding-right:0 !important}`,
+    `${TEXT}{font-family:${font} !important;font-size:1em !important;line-height:${s.lineSpacing} !important;` +
+      // Publisher hanging indents (Gutenberg's boilerplate uses a -68px
+      // text-indent with a matching left margin) would otherwise survive and
+      // shred the measure on a phone.
+      `font-weight:400 !important;margin-left:0 !important;margin-right:0 !important}`,
+    // Paragraph indentation is ours, not the file's.
+    `.chapter .para{text-indent:1.35em !important}`,
+    `.chapter .para.first{text-indent:0 !important}`,
+    // Real emphasis is markup, not a publisher class — keep it.
+    `strong,b{font-weight:700 !important}`,
+    `em,i{font-style:italic !important}`,
   ].join("\n");
 }
 

@@ -130,7 +130,9 @@ describe("registerContentPipeline", () => {
     const style = doc.querySelector('style[id="leaf-content-pipeline"]');
     const css = style?.textContent ?? "";
     expect(css).toContain("font-size:1.25rem");
-    expect(css).toContain("max-width:40rem");
+    // "wide" margins = more side padding and a tighter measure
+    expect(css).toContain("padding-left:2.75rem");
+    expect(css).toContain("max-width:30rem");
     expect(css).toContain("#1a1611"); // night page — theme actually flipped
     expect(css).not.toContain("#f1ebdc");
     expect(css).toContain("!important"); // hard palette override present
@@ -161,6 +163,47 @@ describe("registerContentPipeline", () => {
     expect(css).toContain("font-size:1em !important");
     // …but our own eyebrow and title keep their own sizing
     expect(css).toContain("p:not(.chapter-ordinal):not(.chapter-title)");
+  });
+
+
+  it("normalises publisher weight, style and insets so files render alike", () => {
+    // Same real-world class of failure as the size: an uploaded retail EPUB set
+    // `font-weight:bold` on a container (every paragraph rendered bold), and
+    // Gutenberg wraps content in divs with `margin:10%` plus hanging indents,
+    // which stacked on top of the margins setting.
+    const { rendition, handlers, contents, doc } = makeRendition();
+    registerContentPipeline(rendition, () => ({ ...DAY, margins: "wide" }));
+    handlers[0](contents, rendition);
+    const css = doc.querySelector('style[id="leaf-content-pipeline"]')
+      ?.textContent as string;
+
+    expect(css).toContain("font-weight:400 !important");
+    expect(css).toContain("font-style:normal !important");
+    expect(css).toContain("margin-left:0 !important");
+    expect(css).toContain("padding-left:0 !important");
+    // real emphasis is markup and must survive the reset
+    expect(css).toContain("strong,b{font-weight:700 !important}");
+    expect(css).toContain("em,i{font-style:italic !important}");
+    // paragraph indentation is ours, not the file's
+    expect(css).toContain(".chapter .para{text-indent:1.35em !important}");
+  });
+
+  it("margins change the text column, not just a max-width", () => {
+    // `max-width` alone is a no-op on a phone, where the column is far narrower
+    // than any sane measure — the padding is what actually moves the text.
+    const pad = (m: ReaderContentSettings["margins"]) => {
+      const { rendition, handlers, contents, doc } = makeRendition();
+      registerContentPipeline(rendition, () => ({ ...DAY, margins: m }));
+      handlers[0](contents, rendition);
+      const css = doc.querySelector('style[id="leaf-content-pipeline"]')
+        ?.textContent as string;
+      return /\.chapter\{[^}]*padding-left:([^ ;!]+)/.exec(css)?.[1];
+    };
+
+    const [narrow, normal, wide] = [pad("narrow"), pad("normal"), pad("wide")];
+    expect(new Set([narrow, normal, wide]).size).toBe(3);
+    expect(parseFloat(narrow!)).toBeLessThan(parseFloat(normal!));
+    expect(parseFloat(normal!)).toBeLessThan(parseFloat(wide!));
   });
 
   it("degrades safely on a chapter with no structure (no throw, § fallback)", () => {

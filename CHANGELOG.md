@@ -69,6 +69,16 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 ### Changed
 - Text size is **S / M / L**, not a stepper. The original continuous 0.04rem
   step moved the text by under a pixel per tap and read as a dead button.
+- **Margins actually move the text.** They were a `max-width` only, which is a
+  no-op on a phone (the column is far narrower than any sane measure) — the
+  setting now drives side padding on the text block, with the measure kept as a
+  cap for wide screens.
+- **Publisher weight / style / insets are normalised too.** A retail upload set
+  `font-weight:bold` on a container so every paragraph rendered bold; Gutenberg
+  wraps content in divs with `margin:10%` and hanging indents that stacked on
+  top of the margins setting. Containers are reset and paragraph indentation is
+  ours. Real markup emphasis (`<strong>`, `<em>`) is explicitly preserved.
+  All three sources now render at identical column widths at phone and desktop.
 - **The reading size no longer depends on the file.** The injected stylesheet
   now pins `.chapter` (our wrapper) to the chosen size in absolute units,
   resets every container a publisher can inflate (`div/section/article/main`)
