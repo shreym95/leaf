@@ -49,34 +49,9 @@ export interface ReaderController {
 // renders through it; refreshed on every settings change.
 import { registerContentPipeline } from "./content-hook";
 
-// --- Settings → CSS mapping ------------------------------------------------
-
-// Family NAMES (not `--leaf-font-*` vars — the content iframe can't see the top
-// document's custom properties). Matches the prototype's curated set.
-const FONT_STACK: Record<ReaderContentSettings["fontFamily"], string> = {
-  serif: "EB Garamond",
-  sans: "Inter",
-  legible: "Atkinson Hyperlegible",
-};
-
-// Concrete horizontal page margins, applied as body padding so epub.js measures
-// the reduced content box and paginates against it.
-const MARGIN_VALUES: Record<ReaderContentSettings["margins"], string> = {
-  narrow: "4%",
-  normal: "8%",
-  wide: "13%",
-};
-
-// Content-theme palette — same values as the prototype's `[data-theme]` blocks.
-// Exposed as concrete `color`/`background` plus the `--ink` / `--bg` / `--accent`
-// custom properties Agent B's stylesheet reads for drop cap + lede accents.
-const CONTENT_THEME: Record<
-  ReaderContentSettings["theme"],
-  { ink: string; bg: string; accent: string }
-> = {
-  day: { ink: "#26200f", bg: "#f1ebdc", accent: "#8a2b1e" },
-  night: { ink: "#e0d5bd", bg: "#1a1611", accent: "#e0a03c" },
-};
+// All book-content styling (fonts, size, spacing, margins, Day/Night) is owned
+// by the content pipeline (`./content-hook`) — it injects one authoritative
+// `<style>` per chapter. The engine just tells it to refresh and re-flows.
 
 const SPREAD_MIN_WIDTH = 1024; // ≥ this → two-page spread, else single page
 
@@ -123,6 +98,8 @@ export async function createReader(
   let locationsReady = false;
   let currentSpread: "always" | "none" = "none";
   let relayoutTimer: ReturnType<typeof setTimeout> | undefined;
+  let redisplayTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastKnownCfi: string | undefined;
 
   const subscribers = new Set<(loc: ReaderLocation) => void>();
 
@@ -144,6 +121,7 @@ export async function createReader(
     };
     const cfi = loc?.start?.cfi ?? loc?.cfi;
     if (!cfi) return;
+    lastKnownCfi = cfi;
 
     let percent = 0;
     if (locationsReady) {
@@ -159,23 +137,29 @@ export async function createReader(
     });
   }
 
-  function applySettingsToRendition(s: ReaderContentSettings): void {
+  function currentCfi(): string | undefined {
+    try {
+      const here = rendition?.currentLocation() as
+        | { start?: { cfi?: string } }
+        | undefined;
+      return here?.start?.cfi ?? lastKnownCfi;
+    } catch {
+      return lastKnownCfi;
+    }
+  }
+
+  // epub.js applies theme/CSS changes to the iframe but does NOT re-flow the
+  // paginated columns — the current page goes blank until the next turn forces
+  // a re-layout. Re-`display()` the current CFI to re-flow in place. Coalesced
+  // so dragging a slider doesn't thrash.
+  function scheduleReflow(): void {
     if (!rendition) return;
-    const t = rendition.themes;
-    t.font(FONT_STACK[s.fontFamily]);
-    t.fontSize(`${s.fontSize}rem`);
-    t.override("line-height", String(s.lineSpacing), true);
-
-    const margin = MARGIN_VALUES[s.margins];
-    t.override("padding-left", margin, true);
-    t.override("padding-right", margin, true);
-
-    const c = CONTENT_THEME[s.theme];
-    t.override("color", c.ink, true);
-    t.override("background", c.bg, true);
-    t.override("--ink", c.ink, true);
-    t.override("--bg", c.bg, true);
-    t.override("--accent", c.accent, true);
+    if (redisplayTimer) clearTimeout(redisplayTimer);
+    redisplayTimer = setTimeout(() => {
+      redisplayTimer = undefined;
+      const cfi = currentCfi();
+      if (rendition && cfi) void Promise.resolve(rendition.display(cfi)).catch(() => {});
+    }, 90);
   }
 
   const controller: ReaderController = {
@@ -200,9 +184,8 @@ export async function createReader(
 
       rendition.on("relocated", handleRelocated);
 
-      // Theme the very first render.
-      applySettingsToRendition(currentSettings);
-
+      // The content pipeline (registered above) styles chapter one on its first
+      // render — no pre-display theming needed here.
       await rendition.display();
 
       // Resolve `attach` now; let locations finish in the background and start
@@ -253,10 +236,11 @@ export async function createReader(
 
     applySettings(s: ReaderContentSettings): void {
       currentSettings = { ...s };
-      applySettingsToRendition(currentSettings);
-      // Re-inject the pipeline's own stylesheet (font stack / size / spacing /
-      // measure / Day-Night) into every live chapter.
+      // The content pipeline owns all content CSS — re-inject its stylesheet
+      // (font / size / spacing / measure / Day-Night) into every live chapter…
       contentPipeline?.refresh();
+      // …then re-flow so the change shows now, not after a page turn.
+      scheduleReflow();
     },
 
     onRelocated(cb: (loc: ReaderLocation) => void): () => void {
@@ -274,6 +258,10 @@ export async function createReader(
       if (relayoutTimer) {
         clearTimeout(relayoutTimer);
         relayoutTimer = undefined;
+      }
+      if (redisplayTimer) {
+        clearTimeout(redisplayTimer);
+        redisplayTimer = undefined;
       }
       subscribers.clear();
       try {

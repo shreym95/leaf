@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReaderContentSettings } from "./engine";
 
-const { book, rendition, themes, ePubFn } = vi.hoisted(() => {
+const { book, rendition, ePubFn } = vi.hoisted(() => {
   const themes = {
     font: vi.fn(),
     fontSize: vi.fn(),
@@ -114,40 +114,27 @@ describe("spread logic", () => {
   });
 });
 
-describe("applySettings → rendition.themes mapping", () => {
-  it("maps the curated font family to its real family name", async () => {
+describe("applySettings", () => {
+  it("refreshes the content pipeline (which owns all content CSS)", async () => {
     const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
     await reader.attach(document.createElement("div"));
-    themes.font.mockClear();
+    pipelineRefresh.mockClear();
 
     reader.applySettings({ ...BASE_SETTINGS, fontFamily: "legible" });
-    expect(themes.font).toHaveBeenCalledWith("Atkinson Hyperlegible");
-
-    reader.applySettings({ ...BASE_SETTINGS, fontFamily: "sans" });
-    expect(themes.font).toHaveBeenCalledWith("Inter");
+    expect(pipelineRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("maps size (rem), line spacing, margins and theme to overrides", async () => {
+  it("re-flows the current CFI so the change shows without a page turn", async () => {
+    vi.useFakeTimers();
     const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
     await reader.attach(document.createElement("div"));
-    themes.fontSize.mockClear();
-    themes.override.mockClear();
+    rendition.display.mockClear();
 
-    reader.applySettings({
-      fontFamily: "serif",
-      fontSize: 1.2,
-      lineSpacing: 1.5,
-      margins: "wide",
-      theme: "night",
-    });
+    reader.applySettings({ ...BASE_SETTINGS, fontSize: 1.3 });
+    await vi.advanceTimersByTimeAsync(120);
 
-    expect(themes.fontSize).toHaveBeenCalledWith("1.2rem");
-    expect(themes.override).toHaveBeenCalledWith("line-height", "1.5", true);
-    expect(themes.override).toHaveBeenCalledWith("padding-left", "13%", true);
-    expect(themes.override).toHaveBeenCalledWith("padding-right", "13%", true);
-    // night ink
-    expect(themes.override).toHaveBeenCalledWith("color", "#e0d5bd", true);
-    expect(themes.override).toHaveBeenCalledWith("--accent", "#e0a03c", true);
+    expect(rendition.display).toHaveBeenCalledWith("epubcfi(/6/2!/4)");
+    vi.useRealTimers();
   });
 });
 
