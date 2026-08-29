@@ -26,35 +26,22 @@ export interface ReaderSettingsSheetProps {
   onSetTheme: (theme: ReaderTheme) => void;
 }
 
-/** 100% reference size (matches the store default / `--leaf-reader-font-size`). */
-const READER_BASE_SIZE = 1.06;
-
 /**
- * Discrete text sizes, in rem. Each step is ~10% — a continuous 0.04rem step
- * moved the text by well under a pixel, which read as "the button does nothing".
- * Keep the base size in the list so 100% is always reachable.
+ * Text size is three named choices, not a fine-grained stepper — the sizes are
+ * far enough apart that picking one is unambiguous, and there is no state where
+ * a tap appears to do nothing.
  */
-const FONT_SIZE_STEPS = [0.82, 0.9, 0.98, 1.06, 1.16, 1.28, 1.4, 1.54, 1.7];
-const FONT_SIZE_MIN = FONT_SIZE_STEPS[0];
-const FONT_SIZE_MAX = FONT_SIZE_STEPS[FONT_SIZE_STEPS.length - 1];
+const TEXT_SIZES = [
+  { value: 0.94, label: "S" },
+  { value: 1.14, label: "M" },
+  { value: 1.38, label: "L" },
+] as const;
 
-/** Index of the step nearest `size` (settings may hold any persisted value). */
-function sizeStepIndex(size: number): number {
-  let best = 0;
-  for (let i = 1; i < FONT_SIZE_STEPS.length; i++) {
-    if (
-      Math.abs(FONT_SIZE_STEPS[i] - size) <
-      Math.abs(FONT_SIZE_STEPS[best] - size)
-    ) {
-      best = i;
-    }
-  }
-  return best;
-}
-
-function stepSize(size: number, direction: 1 | -1): number {
-  const next = sizeStepIndex(size) + direction;
-  return FONT_SIZE_STEPS[Math.min(FONT_SIZE_STEPS.length - 1, Math.max(0, next))];
+/** Snap any persisted value to the nearest named size. */
+function nearestTextSize(size: number): number {
+  return TEXT_SIZES.reduce((best, opt) =>
+    Math.abs(opt.value - size) < Math.abs(best.value - size) ? opt : best,
+  ).value;
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
@@ -140,30 +127,6 @@ function Segmented<T extends string | number>({
   );
 }
 
-function StepButton({
-  label,
-  glyph,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  glyph: string;
-  onClick: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      className="h-9 w-9 rounded-sm border border-rule font-mono text-ink transition-colors hover:bg-edge disabled:pointer-events-none disabled:opacity-40 [font-size:var(--leaf-text-lg)] [transition-duration:var(--leaf-dur-ui)] focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
-    >
-      {glyph}
-    </button>
-  );
-}
-
 export function ReaderSettingsSheet({
   open,
   onOpenChange,
@@ -193,30 +156,17 @@ export function ReaderSettingsSheet({
     })),
   );
 
-  const sizePct = Math.round((fontSize / READER_BASE_SIZE) * 100);
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent title="Reading settings">
         <div className="flex flex-col gap-6">
           <Field label="Text size">
-            <div className="flex items-center gap-3">
-              <StepButton
-                label="Smaller text"
-                glyph="−"
-                disabled={fontSize <= FONT_SIZE_MIN}
-                onClick={() => setFontSize(stepSize(fontSize, -1))}
-              />
-              <span className="min-w-[5ch] text-center font-mono text-ink-mid [font-size:var(--leaf-text-sm)]">
-                {sizePct}%
-              </span>
-              <StepButton
-                label="Larger text"
-                glyph="+"
-                disabled={fontSize >= FONT_SIZE_MAX}
-                onClick={() => setFontSize(stepSize(fontSize, 1))}
-              />
-            </div>
+            <Segmented
+              ariaLabel="Text size"
+              options={TEXT_SIZES.map((o) => ({ ...o }))}
+              value={nearestTextSize(fontSize)}
+              onChange={setFontSize}
+            />
           </Field>
 
           <Field label="Body font">

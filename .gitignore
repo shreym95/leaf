@@ -44,3 +44,6 @@ next-env.d.ts
 
 # next --experimental-https output
 /certificates
+
+# local browser harness (not shipped)
+/.harness

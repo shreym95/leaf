@@ -124,14 +124,14 @@ describe("ReaderShell — settings reach the engine", () => {
     }
   });
 
-  it("drives the engine from the settings sheet's + button", async () => {
+  it("drives the engine from the settings sheet's size control", async () => {
     const user = userEvent.setup();
     renderShell();
     await ready();
 
     await user.click(screen.getByRole("button", { name: /reading settings|Aa/i }));
     h.applySettings.mockClear();
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
+    await user.click(screen.getByRole("radio", { name: "L" }));
 
     await waitFor(() => {
       expect(h.applySettings).toHaveBeenCalled();

@@ -67,9 +67,13 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   `--leaf-reader-progress-*`.
 
 ### Changed
-- Text size steps through a discrete ~10% scale. The original continuous
-  0.04rem step moved the text by under a pixel per click, which read as a
-  dead button on both desktop and phone.
+- Text size is **S / M / L**, not a stepper. The original continuous 0.04rem
+  step moved the text by under a pixel per tap and read as a dead button.
+- The injected size / family / spacing rules are `!important` and target the
+  text elements directly, not just `body` — publisher stylesheets (Gutenberg
+  especially) set their own `font-size` on `p`/`div`, which out-specifies an
+  inherited `body` rule and silently pins the reader's text size.
+  Verified in a real browser against a Standard Ebooks and a Gutenberg book.
 - Reader theme is **single-source**: the toggle writes only the reader-settings
   store; the chrome (`<html data-theme>`) and the book both follow from it.
 

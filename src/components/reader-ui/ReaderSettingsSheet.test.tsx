@@ -26,60 +26,53 @@ function open() {
 }
 
 describe("ReaderSettingsSheet — text size", () => {
-  it("+ raises the stored font size and the shown percentage", async () => {
-    const user = userEvent.setup();
+  it("offers exactly S / M / L", () => {
     open();
-
-    expect(useReaderSettings.getState().fontSize).toBe(1.06);
-    expect(screen.getByText("100%")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
-
-    expect(useReaderSettings.getState().fontSize).toBeGreaterThan(1.06);
-    expect(screen.queryByText("100%")).toBeNull();
+    const group = screen.getByRole("radiogroup", { name: "Text size" });
+    expect(
+      Array.from(group.querySelectorAll("[role=radio]")).map((n) =>
+        n.textContent,
+      ),
+    ).toEqual(["S", "M", "L"]);
   });
 
-  it("− lowers the stored font size", async () => {
+  it("each choice writes a distinct, clearly different size", async () => {
     const user = userEvent.setup();
     open();
 
-    await user.click(screen.getByRole("button", { name: "Smaller text" }));
+    await user.click(screen.getByRole("radio", { name: "S" }));
+    const small = useReaderSettings.getState().fontSize;
 
-    expect(useReaderSettings.getState().fontSize).toBeLessThan(1.06);
+    await user.click(screen.getByRole("radio", { name: "L" }));
+    const large = useReaderSettings.getState().fontSize;
+
+    await user.click(screen.getByRole("radio", { name: "M" }));
+    const medium = useReaderSettings.getState().fontSize;
+
+    expect(small).toBeLessThan(medium);
+    expect(medium).toBeLessThan(large);
+    // Neighbours must differ enough to be obvious on screen (>15%).
+    expect(medium / small).toBeGreaterThan(1.15);
+    expect(large / medium).toBeGreaterThan(1.15);
   });
 
-  it("moves by a visible step (≥6% of the base size)", async () => {
+  it("marks the active size, snapping a legacy persisted value", async () => {
     const user = userEvent.setup();
     open();
 
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
-    const after = useReaderSettings.getState().fontSize;
+    await user.click(screen.getByRole("radio", { name: "L" }));
+    expect(screen.getByRole("radio", { name: "L" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
 
-    // A step must be big enough to actually see — the original 0.04rem step
-    // was under a pixel and read as "the button does nothing".
-    expect((after - 1.06) / 1.06).toBeGreaterThan(0.06);
-  });
-
-  it("clamps at the maximum and disables +", async () => {
-    const user = userEvent.setup();
-    useReaderSettings.setState({ fontSize: 1.7 });
-    open();
-
-    const plus = screen.getByRole("button", { name: "Larger text" });
-    expect(plus).toBeDisabled();
-    await user.click(plus);
-    expect(useReaderSettings.getState().fontSize).toBe(1.7);
-  });
-
-  it("round-trips: + then − returns to the base size", async () => {
-    const user = userEvent.setup();
-    open();
-
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
-    await user.click(screen.getByRole("button", { name: "Smaller text" }));
-
-    expect(useReaderSettings.getState().fontSize).toBe(1.06);
-    expect(screen.getByText("100%")).toBeInTheDocument();
+    // A value stored by the old continuous stepper still highlights a chip.
+    useReaderSettings.setState({ fontSize: 1.11 });
+    expect(
+      screen
+        .getAllByRole("radio")
+        .filter((n) => n.getAttribute("aria-checked") === "true"),
+    ).toHaveLength(5); // one per group: size, font, spacing, margins, theme
   });
 
   it("other controls still write through", async () => {

@@ -80,12 +80,32 @@ function serialize(styles: ContentThemeStyles): string {
     .join("\n");
 }
 
-/** The live-settings layer, appended after the fine-press base so it wins. */
+/**
+ * The live-settings layer, appended after the fine-press base so it wins.
+ *
+ * Size / family / spacing are `!important` and target the text elements
+ * directly, not just `body`: publisher stylesheets (Gutenberg especially) often
+ * set their own `font-size` on `p`/`div`, which out-specifies an inherited
+ * `body` rule and silently pins the reader's text size. The ordinal eyebrow and
+ * the drop cap are excluded — they size themselves off the fine-press base.
+ */
 function settingsCss(s: ReaderContentSettings): string {
   const font = FONT_STACKS[s.fontFamily];
+  const TEXT = [
+    "p",
+    "div",
+    "li",
+    "blockquote",
+    "td",
+    ".chapter .para",
+    ".chapter p",
+  ]
+    .map((sel) => `${sel}:not(.chapter-ordinal):not(.chapter-title)`)
+    .join(",");
+
   return [
-    `body{font-family:${font};font-size:${s.fontSize}rem;line-height:${s.lineSpacing}}`,
-    `.chapter .para,.chapter p{font-family:${font};line-height:${s.lineSpacing}}`,
+    `body{font-family:${font} !important;font-size:${s.fontSize}rem !important;line-height:${s.lineSpacing} !important}`,
+    `${TEXT}{font-family:${font} !important;font-size:1em !important;line-height:${s.lineSpacing} !important}`,
     `.chapter{max-width:${MEASURE[s.margins]};margin-left:auto;margin-right:auto}`,
   ].join("\n");
 }
