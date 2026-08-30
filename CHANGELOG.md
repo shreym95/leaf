@@ -77,6 +77,14 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   compile error *and* dropped at runtime. Error boundaries at
   `app/global-error.tsx` and `(chrome)/error.tsx`.
 
+### Fixed
+- **Sign out did nothing.** The POST form was nested inside a Radix `MenuItem`,
+  so selecting it closed and unmounted the menu — tearing the form out of the
+  DOM before the browser's native submit could run. The form now lives outside
+  the menu and is submitted from `onSelect`; it is still a POST, never a link.
+  Regression-tested (asserts a real form submission, and that the form is not
+  inside `[role=menu]`).
+
 ### Changed
 - **One search, both catalogues.** The Standard Ebooks / Project Gutenberg
   toggle is gone — choosing a library was a decision the reader had no basis to
