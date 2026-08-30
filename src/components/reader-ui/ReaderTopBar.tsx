@@ -20,6 +20,7 @@ export interface ReaderTopBarProps {
   onSetTheme: (theme: ReaderTheme) => void;
   onOpenSettings: () => void;
   onOpenNotes: () => void;
+  onEnterImmersive: () => void;
   highlightCount: number;
 }
 
@@ -31,6 +32,7 @@ export function ReaderTopBar({
   onSetTheme,
   onOpenSettings,
   onOpenNotes,
+  onEnterImmersive,
   highlightCount,
 }: ReaderTopBarProps) {
   const nextTheme: ReaderTheme =
@@ -41,7 +43,14 @@ export function ReaderTopBar({
 
   return (
     <header
-      className="z-30 flex flex-none items-center justify-between transition-opacity [transition-duration:var(--leaf-dur-ui)] [padding-block:var(--leaf-reader-bar-pad-y)] [padding-inline:var(--leaf-reader-bar-pad-x)]"
+      className={
+        "z-30 flex items-center justify-between transition-opacity " +
+        "[transition-duration:var(--leaf-dur-ui)] " +
+        "[padding-block:var(--leaf-reader-bar-pad-y)] " +
+        "[padding-inline:var(--leaf-reader-bar-pad-x)] " +
+        // Immersive: leave the flow so the page grows into this space.
+        (hidden ? "absolute inset-x-0 top-0" : "flex-none")
+      }
       aria-hidden={hidden}
       inert={hidden}
       style={hidden ? { opacity: 0 } : { opacity: 1 }}
@@ -93,6 +102,26 @@ export function ReaderTopBar({
           aria-label="Reading settings"
         >
           Aa
+        </Button>
+        {/* Touch devices have no `F` key — this is the way into immersive. */}
+        <Button
+          variant="quiet"
+          size="sm"
+          onClick={onEnterImmersive}
+          aria-label="Immersive reading"
+        >
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+          >
+            <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+          </svg>
         </Button>
       </div>
     </header>

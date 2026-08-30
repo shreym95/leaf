@@ -16,9 +16,15 @@ Measured at 390×844: text **236px → 304px** (61% → **78%** of the width), b
 **140px → 100px** (17% → 12% of the height). Desktop is unchanged — it keeps the
 framed spread, gutter and folios.
 
-Not pursued: immersive-by-default on small screens (hides the only route back to
-the library) and re-tuning the Margins scale (the reader's own control; "Narrow"
-already gives a zero inset).
+Followed up with **immersive reading on touch** (see CHANGELOG): a top-bar
+control enters it, a single back arrow leaves it, and it takes the browser's
+own chrome with it via the Fullscreen API — plus a PWA manifest so a home-screen
+launch is chrome-free on iOS, where fullscreen is unavailable. Immersive gives
+the page 820px of 844 on a phone.
+
+Not pursued: immersive-by-*default* (the reader should choose it, and a mode
+with no visible way out is a trap on first use) and re-tuning the Margins scale
+(the reader's own control; "Narrow" already gives a zero inset).
 
 ### Loading states
 

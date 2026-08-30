@@ -23,6 +23,8 @@ import { SpreadFrame } from "./SpreadFrame";
 import { ReaderSettingsSheet } from "./ReaderSettingsSheet";
 import { HighlightPopover } from "./HighlightPopover";
 import { NotesPanel } from "./NotesPanel";
+import { ImmersiveExit } from "./ImmersiveExit";
+import { useImmersive } from "./useImmersive";
 
 /**
  * ReaderShell — the client reader (SPEC §8). Owns the epub.js container + the
@@ -74,7 +76,10 @@ export function ReaderShell({
   // page turn (SPEC §3.6 screen-reader sanity: announce, don't chatter).
   const [announcedPct, setAnnouncedPct] = useState<number | null>(null);
   const [folio, setFolio] = useState<{ left?: number; right?: number }>({});
-  const [immersive, setImmersive] = useState(false);
+  // Immersive also drives the browser's own chrome away via the Fullscreen API
+  // (best-effort — see useImmersive).
+  const { immersive, exit: exitImmersive, toggle: toggleImmersive } =
+    useImmersive();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // ── Highlights ────────────────────────────────────────────────────────
@@ -249,6 +254,12 @@ export function ReaderShell({
     controllerRef.current?.applySettings(settings);
   }, [settings]);
 
+  // ── Immersive changes the page's height (the bars leave the flow), and
+  //    epub.js caches its container size — make it re-measure. ─────────────
+  useEffect(() => {
+    controllerRef.current?.relayout();
+  }, [immersive]);
+
   // ── Resize → let epub.js recompute the spread ─────────────────────────
   useEffect(() => {
     const onResize = () => controllerRef.current?.relayout();
@@ -307,7 +318,7 @@ export function ReaderShell({
 
       if (e.key === "Escape") {
         if (settingsOpen) return; // Radix closes the sheet itself
-        if (immersive) setImmersive(false);
+        if (immersive) exitImmersive();
         return;
       }
 
@@ -318,13 +329,13 @@ export function ReaderShell({
       } else if (e.key === "ArrowLeft") {
         turn("prev");
       } else if (key === "f") {
-        setImmersive((v) => !v);
+        toggleImmersive();
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [turn, immersive, settingsOpen]);
+  }, [turn, immersive, settingsOpen, exitImmersive, toggleImmersive]);
 
   return (
     <>
@@ -336,6 +347,7 @@ export function ReaderShell({
         onSetTheme={setReaderTheme}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenNotes={() => setNotesOpen(true)}
+        onEnterImmersive={toggleImmersive}
         highlightCount={highlights.length}
       />
 
@@ -364,6 +376,8 @@ export function ReaderShell({
         onPrev={() => turn("prev")}
         onNext={() => turn("next")}
       />
+
+      <ImmersiveExit visible={immersive} onExit={exitImmersive} />
 
       <ReaderSettingsSheet
         open={settingsOpen}

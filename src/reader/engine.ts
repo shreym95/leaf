@@ -271,6 +271,25 @@ export async function createReader(
         currentSpread = next;
         // Let epub.js recompute columns/clip for the new spread.
         rendition.spread(next);
+        // epub.js measures the container once and caches the pixel size, so a
+        // container that changed height without a window resize (entering or
+        // leaving immersive) keeps the old page height until it re-measures.
+        try {
+          const box = containerEl?.getBoundingClientRect();
+          if (box && box.width > 0 && box.height > 0) {
+            // epub.js accepts a CFI as a third argument to hold the reader's
+            // place across the re-measure; its own types stop at two.
+            (
+              rendition.resize as unknown as (
+                w: number,
+                h: number,
+                cfi?: string,
+              ) => void
+            )(box.width, box.height, currentCfi());
+          }
+        } catch {
+          // Mid-transition measurement — the next relayout will catch it.
+        }
       }, 150);
     },
 

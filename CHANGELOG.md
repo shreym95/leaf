@@ -50,6 +50,24 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
 ## Post-M4 — reader space on small screens
 
+### Added
+- **Immersive reading works on touch, and hides the browser too.** A control in
+  the top bar enters it (phones have no `F` key), and a single quiet back arrow
+  is the only thing left on screen to leave — `Esc` and the Android back gesture
+  also work. Alongside Leaf's own bars it requests **fullscreen**, so the URL bar
+  and toolbars go as well. `fullscreenchange` keeps our state honest when the
+  browser exits on its own, and unmounting never leaves the page stuck.
+- **The hidden bars now leave the layout**, rather than fading in place: they
+  become absolutely positioned so the page grows into their space. epub.js caches
+  its container size, so `relayout()` additionally re-measures (`rendition.resize`,
+  passing the current CFI to hold the reader's place). At 390×844 the page goes
+  **704px → 820px** tall in immersive; leaving immersive now also re-measures, so
+  the normal view gained height too (704 → 728).
+- **PWA manifest + icons.** iOS Safari has no Fullscreen API for arbitrary
+  elements, so a home-screen launch (`display: standalone`) is the only
+  chrome-free window there. Icons are generated from the brand copper on the
+  night paper; `theme_color` matches, so there is no white flash on launch.
+
 ### Changed
 - **The reader goes full-bleed on phones and tablets** (below the 1024px
   two-page-spread breakpoint): the frame padding, mat, shadow and rounded

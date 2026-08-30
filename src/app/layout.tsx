@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   EB_Garamond,
   Fraunces,
@@ -62,6 +62,24 @@ export const metadata: Metadata = {
   title: "Leaf",
   description:
     "A calm web e-reader for public-domain classics and your own DRM-free EPUBs.",
+  applicationName: "Leaf",
+  appleWebApp: {
+    // iOS has no Fullscreen API for arbitrary elements, so a home-screen launch
+    // is the only chrome-free reading window there.
+    capable: true,
+    title: "Leaf",
+    statusBarStyle: "black-translucent",
+  },
+  icons: { apple: "/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#100d09" },
+    { media: "(prefers-color-scheme: light)", color: "#e7dfcc" },
+  ],
+  // The reader paints to the edges; let it use the notch area too.
+  viewportFit: "cover",
 };
 
 /* Pre-paint: adopt the saved theme before first paint so there is no flash.
