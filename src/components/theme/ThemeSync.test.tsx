@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "./ThemeProvider";
 import { ThemeSync } from "./ThemeSync";
-import { ThemeToggle } from "./ThemeToggle";
+import { ThemePicker } from "./ThemePicker";
 import {
   useReaderSettings,
   READER_SETTINGS_DEFAULTS,
@@ -98,7 +98,7 @@ describe("theme is one setting, not two", () => {
     render(
       <ThemeProvider>
         <ThemeSync userId="u1" settings={NIGHT_SETTINGS} />
-        <ThemeToggle />
+        <ThemePicker />
       </ThemeProvider>,
     );
 
@@ -106,7 +106,7 @@ describe("theme is one setting, not two", () => {
       expect(document.documentElement.dataset.theme).toBe("night"),
     );
 
-    await user.click(screen.getByRole("button", { name: /switch to day/i }));
+    await user.click(screen.getByRole("radio", { name: /^day$/i }));
 
     // The store — which the reader reads on open — now says day.
     expect(useReaderSettings.getState().theme).toBe("day");
@@ -131,12 +131,12 @@ describe("theme is one setting, not two", () => {
           userId="u1"
           settings={{ ...NIGHT_SETTINGS, fontSize: 1.26, margins: "wide" }}
         />
-        <ThemeToggle />
+        <ThemePicker />
       </ThemeProvider>,
     );
 
     await waitFor(() => expect(useReaderSettings.getState().fontSize).toBe(1.26));
-    await user.click(screen.getByRole("button", { name: /switch to day/i }));
+    await user.click(screen.getByRole("radio", { name: /^day$/i }));
 
     await waitFor(() => expect(h.upsert).toHaveBeenCalled());
     expect(h.upsert.mock.calls[0][0]).toMatchObject({

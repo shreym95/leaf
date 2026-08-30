@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { THEMES } from "@/design/themes";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { ThemePicker } from "@/components/theme/ThemePicker";
 import {
   Button,
   Dialog,
@@ -90,7 +90,7 @@ export default function StyleguidePage() {
           The swappable UI layer
         </h1>
         <div className="flex items-center gap-4">
-          <ThemeToggle mono />
+          <ThemePicker mono />
           <span className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
             Current theme: <strong className="text-ink">{themeLabel(theme)}</strong>
           </span>

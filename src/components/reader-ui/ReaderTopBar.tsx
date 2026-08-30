@@ -1,23 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { THEMES, THEME_IDS } from "@/design/themes";
 import { Button } from "@/components/primitives";
-import type { ReaderTheme } from "@/store/reader-settings";
 
 /**
  * ReaderTopBar — the reader's own top chrome (SPEC §8), replacing the app
  * NavBar in the reader route group. Layout mirrors the approved v0.1 `.bar`:
- * Library link + book meta · centred "LEAF" wordmark · theme toggle · "Aa".
+ * Library link + book meta · centred "LEAF" wordmark · Notes · "Aa".
  * Presentational + token-driven. Hidden (not unmounted) in immersive mode.
+ *
+ * Theme lives in the "Aa" settings sheet, not here. It used to be a button
+ * labelled with the NEXT theme, which reads fine at two themes and becomes a
+ * guessing game at three — and the bar has four controls competing for a
+ * phone's width already. The sheet is one tap away and is where every other
+ * reading preference lives.
  */
 
 export interface ReaderTopBarProps {
   title: string;
   author: string;
-  theme: ReaderTheme;
   hidden: boolean;
-  onSetTheme: (theme: ReaderTheme) => void;
   onOpenSettings: () => void;
   onOpenNotes: () => void;
   onEnterImmersive: () => void;
@@ -27,20 +29,12 @@ export interface ReaderTopBarProps {
 export function ReaderTopBar({
   title,
   author,
-  theme,
   hidden,
-  onSetTheme,
   onOpenSettings,
   onOpenNotes,
   onEnterImmersive,
   highlightCount,
 }: ReaderTopBarProps) {
-  const nextTheme: ReaderTheme =
-    (THEME_IDS[(THEME_IDS.indexOf(theme) + 1) % THEME_IDS.length] as
-      | ReaderTheme
-      | undefined) ?? theme;
-  const nextLabel = THEMES[nextTheme]?.label ?? nextTheme;
-
   return (
     <header
       className={
@@ -81,15 +75,6 @@ export function ReaderTopBar({
       </span>
 
       <div className="flex flex-1 items-center justify-end gap-4">
-        <Button
-          variant="quiet"
-          size="sm"
-          mono
-          onClick={() => onSetTheme(nextTheme)}
-          aria-label={`Switch to ${nextLabel} theme`}
-        >
-          {nextLabel}
-        </Button>
         <Button
           variant="quiet"
           size="sm"

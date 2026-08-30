@@ -290,9 +290,7 @@ export function ReaderShell({
       <ReaderTopBar
         title={title}
         author={author}
-        theme={settings.theme}
         hidden={immersive}
-        onSetTheme={setReaderTheme}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenNotes={() => setNotesOpen(true)}
         onEnterImmersive={toggleImmersive}

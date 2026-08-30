@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Sheet, SheetContent } from "@/components/primitives";
+import { THEMES, THEME_IDS } from "@/design/themes";
 import {
   useReaderSettings,
   type FontFamily,
@@ -65,10 +66,12 @@ const MARGIN_OPTIONS: { value: Margins; label: string }[] = [
   { value: "wide", label: "Wide" },
 ];
 
-const THEME_OPTIONS: { value: ReaderTheme; label: string }[] = [
-  { value: "day", label: "Day" },
-  { value: "night", label: "Night" },
-];
+// Driven by the theme registry, not a hand-written list: a theme added there
+// must appear here, or it would be unreachable while reading — which is exactly
+// where a reader wants to change it.
+const THEME_OPTIONS: { value: ReaderTheme; label: string }[] = THEME_IDS.map(
+  (id) => ({ value: id, label: THEMES[id].label }),
+);
 
 const rowLabelClass =
   "font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-label)]";

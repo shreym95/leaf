@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { ThemePicker } from "@/components/theme/ThemePicker";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { getUser } from "@/lib/auth";
 
 /**
  * NavBar — the slim app chrome shell (SPEC §8).
  *
- * Three stable slots at every width: the LEAF wordmark, then the theme toggle
+ * Three stable slots at every width: the LEAF wordmark, then the theme picker
  * and one account menu. Secondary navigation (Library, Settings, Privacy, sign
  * out) lives inside the menu — the previous flat bar put five inline items in a
  * three-column flex, which on a phone collided with the wordmark and wrapped
@@ -55,7 +55,7 @@ export async function NavBar() {
       )}
 
       <div className="flex flex-1 items-center justify-end gap-2">
-        <ThemeToggle mono />
+        <ThemePicker mono />
         <AccountMenu name={displayName} />
       </div>
     </header>
