@@ -41,7 +41,7 @@ export function ReaderTopBar({
 
   return (
     <header
-      className="z-30 flex flex-none items-center justify-between px-6 py-4 transition-opacity [transition-duration:var(--leaf-dur-ui)]"
+      className="z-30 flex flex-none items-center justify-between transition-opacity [transition-duration:var(--leaf-dur-ui)] [padding-block:var(--leaf-reader-bar-pad-y)] [padding-inline:var(--leaf-reader-bar-pad-x)]"
       aria-hidden={hidden}
       inert={hidden}
       style={hidden ? { opacity: 0 } : { opacity: 1 }}

@@ -109,8 +109,35 @@
     transparent
   );
   --leaf-reader-frame-pad-x: clamp(1rem, 5vw, 5rem);
+  --leaf-reader-frame-radius: var(--leaf-radius-sm);
+  --leaf-reader-frame-shadow: var(--leaf-shadow-book);
+  --leaf-reader-bar-pad-x: var(--leaf-space-5);
+  --leaf-reader-bar-pad-y: var(--leaf-space-4);
   --leaf-reader-progress-w: min(420px, 40vw);
   --leaf-reader-progress-h: 3px;
+}
+
+/* ---------------------------------------------------------------------------
+   Reader on a small screen (below the two-page-spread breakpoint).
+
+   The open-book frame is a desktop metaphor: on a phone there is no second page
+   for the gutter to divide and no room to spend on a mat around the paper. At
+   390px the framed layout gave the text only 61% of the width — the rest was
+   frame padding, viewer padding and bar chrome. Here the page goes full-bleed
+   and the chrome gets tighter, so the text keeps the screen. The Margins
+   setting remains the reader's own control over the measure.
+   ------------------------------------------------------------------------- */
+@media (max-width: 1023px) {
+  :root {
+    --leaf-reader-frame-w: 100vw;
+    --leaf-reader-frame-pad-x: 0px;
+    --leaf-reader-viewer-pad-x: var(--leaf-space-2);
+    --leaf-reader-viewer-pad-y: var(--leaf-space-3);
+    --leaf-reader-frame-radius: 0px;
+    --leaf-reader-frame-shadow: none;
+    --leaf-reader-bar-pad-x: var(--leaf-space-4);
+    --leaf-reader-bar-pad-y: var(--leaf-space-2);
+  }
 }
 
 /* ---------------------------------------------------------------------------

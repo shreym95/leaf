@@ -46,8 +46,10 @@ export function SpreadFrame({
     >
       <div
         ref={frameRef}
-        className="relative h-full overflow-hidden rounded-sm bg-page [box-shadow:var(--leaf-shadow-book)]"
+        className="relative h-full overflow-hidden bg-page"
         style={{
+          borderRadius: "var(--leaf-reader-frame-radius)",
+          boxShadow: "var(--leaf-reader-frame-shadow)",
           width: "var(--leaf-reader-frame-w)",
           maxHeight: "var(--leaf-reader-frame-max-h)",
         }}

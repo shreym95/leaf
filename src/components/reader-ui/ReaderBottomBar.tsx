@@ -29,7 +29,7 @@ export function ReaderBottomBar({
 
   return (
     <footer
-      className="z-30 flex flex-none items-center justify-center gap-6 px-6 pb-6 pt-4 transition-opacity [transition-duration:var(--leaf-dur-ui)]"
+      className="z-30 flex flex-none items-center justify-center gap-6 transition-opacity [transition-duration:var(--leaf-dur-ui)] [padding-block:var(--leaf-reader-bar-pad-y)] [padding-inline:var(--leaf-reader-bar-pad-x)]"
       aria-hidden={hidden}
       inert={hidden}
       style={hidden ? { opacity: 0 } : { opacity: 1 }}

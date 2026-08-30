@@ -48,6 +48,23 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
   its call sites (grep `@/lib/analytics`).
 
+## Post-M4 — reader space on small screens
+
+### Changed
+- **The reader goes full-bleed on phones and tablets** (below the 1024px
+  two-page-spread breakpoint): the frame padding, mat, shadow and rounded
+  corners are dropped, the viewer inset shrinks, and the top/bottom bars get
+  tighter padding. The open-book frame is a desktop metaphor — on a phone there
+  is no second page for the gutter to divide, and the framing was costing ~39%
+  of the screen width.
+- Measured at 390×844: text **236px → 304px** (61% → **78%** of the width), bars
+  **140px → 100px** (17% → 12% of the height). Desktop is untouched: still the
+  framed two-page spread with gutter and folios.
+- Implemented purely in the swappable layer — a `@media (max-width: 1023px)`
+  block in `tokens.css` plus new `--leaf-reader-frame-radius/-shadow` and
+  `--leaf-reader-bar-pad-*` tokens that `SpreadFrame` and the bars consume. No
+  change to `src/reader`, the normalizer or the content pipeline (SPEC §10).
+
 ## M4 — Highlights, polish, ship
 
 ### Added
