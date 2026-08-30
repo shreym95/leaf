@@ -42,21 +42,35 @@ describe("BookCard", () => {
     expect(screen.getByText("Standard Ebooks")).toBeInTheDocument();
   });
 
-  it("shows progress, not a status label", () => {
+  it("shows progress as a meter, not a status label", () => {
     // "Reading" was true of almost every book and told the reader nothing.
     render(<BookCard book={makeBook({ percent: 0.42 })} />);
-    expect(screen.getByText("42%")).toBeInTheDocument();
+    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
+    expect(meter).toHaveAttribute("aria-valuenow", "42");
+    // Screen readers announce the same words the old text carried.
+    expect(meter).toHaveAttribute("aria-valuetext", "42%");
     expect(screen.queryByText(/^Reading$/)).toBeNull();
   });
 
-  it("says so when a book has never been opened", () => {
+  it("announces an unopened book as not started", () => {
     render(<BookCard book={makeBook({ percent: null })} />);
-    expect(screen.getByText("Not started")).toBeInTheDocument();
+    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
+    expect(meter).toHaveAttribute("aria-valuenow", "0");
+    expect(meter).toHaveAttribute("aria-valuetext", "Not started");
   });
 
   it("calls a finished book finished, and clamps out-of-range progress", () => {
-    render(<BookCard book={makeBook({ percent: 1 })} />);
-    expect(screen.getByText("Finished")).toBeInTheDocument();
+    render(<BookCard book={makeBook({ percent: 1.5 })} />);
+    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
+    expect(meter).toHaveAttribute("aria-valuenow", "100");
+    expect(meter).toHaveAttribute("aria-valuetext", "Finished");
+  });
+
+  it("gives the progress meter a bounded range for assistive tech", () => {
+    render(<BookCard book={makeBook({ percent: 0.42 })} />);
+    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
+    expect(meter).toHaveAttribute("aria-valuemin", "0");
+    expect(meter).toHaveAttribute("aria-valuemax", "100");
   });
 
   it("without a cover, renders the title initial and no image", () => {
