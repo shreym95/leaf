@@ -48,6 +48,20 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
   its call sites (grep `@/lib/analytics`).
 
+## Post-M4 — loading states
+
+### Added
+- **`loading.tsx` fallbacks** so a tap is acknowledged immediately instead of
+  leaving the old page on screen: a shelf-shaped skeleton for the library, a
+  generic one for the other chrome routes, and — for the reader — the same
+  "Opening the book…" line `ReaderShell` shows once mounted, so opening a book
+  is one continuous wait rather than two different screens.
+- `Skeleton` is shaped like the content it replaces rather than a spinner, and
+  drops its pulse under `prefers-reduced-motion` (the duration tokens collapse
+  to `0s`, which would freeze a keyframe rather than stop it).
+- Every route here is server-rendered on demand (the nav shows signed-in state),
+  so there was no fallback to show at all before this.
+
 ## Post-M4 — reader space on small screens
 
 ### Fixed

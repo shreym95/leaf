@@ -26,23 +26,20 @@ Not pursued: immersive-by-*default* (the reader should choose it, and a mode
 with no visible way out is a trap on first use) and re-tuning the Margins scale
 (the reader's own control; "Narrow" already gives a zero inset).
 
-### Loading states
+### ~~Loading states~~ — done
 
-**Observed (founder, M4):** navigation feels unresponsive — nothing happens on
-screen while a page is being fetched, so a slow load reads as a broken tap.
+Shipped after M4. `loading.tsx` for the library (a shelf-shaped skeleton), the
+rest of the chrome routes (generic), and the reader (the same "Opening the
+book…" line the reader itself shows, so opening a book reads as one continuous
+wait rather than two different screens). Skeletons are shaped like the content
+they stand in for, not spinners, and the pulse is dropped under
+`prefers-reduced-motion`.
 
-Every route is server-rendered on demand and there is no `loading.tsx` anywhere,
-so Next has no fallback to show during navigation. Cheap to fix:
-
-- `loading.tsx` for `(chrome)` (library / settings / privacy) and for the reader
-  route — a calm skeleton in the shape of the real page, not a spinner.
-- The reader already has an "Opening the book…" state once `ReaderShell` mounts;
-  the gap is *before* that, while the server component is fetching.
-- Consider `useLinkStatus` / a pending style on nav links so the tapped item
-  acknowledges the tap immediately.
-
-Small, self-contained, `*-ui` only. Worth doing early in the next pass — it
-changes perceived speed more than most real speed-ups.
+Note: with prefetching, navigation between chrome routes is usually instant and
+the fallback never appears — that is the intended outcome. It earns its keep on
+a cold start or a poor connection, which is exactly when the app used to look
+dead. `useLinkStatus` was considered and skipped: Next's own docs prefer
+route-level `loading.js`, which is what we now have everywhere.
 
 ### Highlight creation — currently DISABLED, needs a touch-first design
 
