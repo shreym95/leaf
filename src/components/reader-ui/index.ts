@@ -18,5 +18,4 @@ export type { SpreadFrameProps } from "./SpreadFrame";
 
 export { ReaderSettingsSheet } from "./ReaderSettingsSheet";
 export type { ReaderSettingsSheetProps } from "./ReaderSettingsSheet";
-export { HighlightPopover } from "./HighlightPopover";
 export { NotesPanel } from "./NotesPanel";

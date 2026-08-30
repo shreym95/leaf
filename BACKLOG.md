@@ -44,18 +44,33 @@ so Next has no fallback to show during navigation. Cheap to fix:
 Small, self-contained, `*-ui` only. Worth doing early in the next pass — it
 changes perceived speed more than most real speed-ups.
 
-### Highlighting on a phone
+### Highlight creation — currently DISABLED, needs a touch-first design
 
-**Observed (founder, M4):** the highlight flow is not intuitive on a phone.
+**Observed (founder, M4):** intrusive, didn't work properly, and would not go
+away on its own. Removed rather than left in — see CHANGELOG.
 
-Desktop assumes a mouse selection followed by a popover. On touch, the native
-selection handles and the OS text-selection menu compete with our popover, and
-the popover is anchored to the top of the frame rather than to the selection.
+The popover opened on *any* text selection, sat over the page, and had no
+dismissal path except picking a colour or pressing `Esc` (which a phone does not
+have). On touch, where selection is easy to trigger by accident, that made the
+reader feel broken.
 
-Lower priority than the loading states. Directions: anchor the popover to the
-selection rectangle, suppress the native callout inside the book iframe
-(`-webkit-touch-callout`), consider long-press-to-highlight, and make the tap
-target for an existing highlight bigger than the text itself.
+**Still working, untouched:** existing highlights render in the book, and the
+notes panel reads, annotates, jumps to and deletes them. Only *creating* one from
+a selection is gone. The whole data path (`src/reader/highlights.ts`,
+`highlights` table, RLS, CFI round-trip) is intact and tested — this is a UI
+problem, not a data one.
+
+**Before re-enabling, decide the interaction:**
+- what opens it (long-press? a dedicated highlight mode? the OS share sheet?)
+  rather than every selection;
+- how it dismisses — outside tap, scroll, page turn, and a visible close, not
+  just `Esc`;
+- where it sits — anchored to the selection rectangle, never covering it;
+- whether to suppress the native iOS/Android selection callout that competes
+  with it (`-webkit-touch-callout`).
+
+Re-enable point is marked in `ReaderShell` where `controller.onSelected(...)`
+was wired.
 
 ## Infrastructure — after M4
 

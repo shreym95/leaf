@@ -50,6 +50,16 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
 ## Post-M4 — reader space on small screens
 
+### Removed
+- **Highlight creation from a text selection is disabled.** The popover opened
+  on any selection, covered the page, and had no way to dismiss itself — on a
+  phone that made the reader feel broken. Both triggers (selection, and tapping
+  an existing highlight) are gone along with the component.
+  Existing highlights still render, and the notes panel still reads, annotates,
+  jumps to and deletes them; the data path is untouched and still tested. This
+  is a UI redesign, not a data change — see BACKLOG for the decisions to make
+  before re-enabling, and the marked spot in `ReaderShell` to restore it.
+
 ### Added
 - **Immersive reading works on touch, and hides the browser too.** A control in
   the top bar enters it (phones have no `F` key), and a single quiet back arrow

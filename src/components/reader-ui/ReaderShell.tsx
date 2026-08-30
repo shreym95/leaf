@@ -10,7 +10,7 @@ import {
   type ReaderTheme,
 } from "@/store/reader-settings";
 import { isThemeId } from "@/design/themes";
-import { trackScreen, trackHighlightCreated } from "@/lib/analytics";
+import { trackScreen } from "@/lib/analytics";
 import {
   manageHighlights,
   type HighlightManager,
@@ -21,7 +21,6 @@ import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderBottomBar } from "./ReaderBottomBar";
 import { SpreadFrame } from "./SpreadFrame";
 import { ReaderSettingsSheet } from "./ReaderSettingsSheet";
-import { HighlightPopover } from "./HighlightPopover";
 import { NotesPanel } from "./NotesPanel";
 import { ImmersiveExit } from "./ImmersiveExit";
 import { useImmersive } from "./useImmersive";
@@ -86,12 +85,6 @@ export function ReaderShell({
   const highlightsRef = useRef<HighlightManager | null>(null);
   const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
   const [notesOpen, setNotesOpen] = useState(false);
-  // Pending selection (popover anchor + the range it will highlight), or the
-  // existing highlight the reader tapped.
-  const [pending, setPending] = useState<
-    | { at: { x: number; y: number }; cfiRange: string; text: string; existing?: HighlightRecord }
-    | null
-  >(null);
 
   const { setTheme: applyChromeTheme } = useTheme();
 
@@ -187,35 +180,18 @@ export function ReaderShell({
         // live theme rather than the value captured at mount.
         const highlights = manageHighlights(controller, bookId, {
           stylesFor: (color) => highlightStyles(color, themeRef.current),
-          onHighlightClick: (h) => {
-            const box = frameRef.current?.getBoundingClientRect();
-            setPending({
-              at: {
-                x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
-                y: (box?.top ?? 0) + 48,
-              },
-              cfiRange: h.cfiRange,
-              text: h.text,
-              existing: h,
-            });
-          },
         });
         highlightsRef.current = highlights;
         unsubHighlights = highlights.subscribe(setHighlights);
         await highlights.restore();
 
-        unsubSelected = controller.onSelected(({ cfiRange, text }) => {
-          if (cancelled) return;
-          const box = frameRef.current?.getBoundingClientRect();
-          setPending({
-            at: {
-              x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
-              y: (box?.top ?? 0) + 48,
-            },
-            cfiRange,
-            text,
-          });
-        });
+        // NOTE: the selection-triggered highlight popover is DISABLED.
+        // It opened on any text selection, sat over the page, and had no way to
+        // dismiss itself — on a phone, where selection is easy to trigger by
+        // accident, it was unusable. Existing highlights still render, and the
+        // notes panel still reads, annotates and deletes them. Creating a
+        // highlight needs a touch-first design first — see BACKLOG.md.
+        // Re-enable by restoring `controller.onSelected(...)` here.
 
         if (!cancelled) setLoad({ state: "ready" });
       } catch (err) {
@@ -273,42 +249,6 @@ export function ReaderShell({
     if (!controller) return;
     void (dir === "next" ? controller.next() : controller.prev());
   }, []);
-
-  // ── Highlight actions ─────────────────────────────────────────────────
-  const dismissHighlight = useCallback(() => {
-    setPending(null);
-    controllerRef.current?.clearSelection();
-  }, []);
-
-  const pickColor = useCallback(
-    (color: string) => {
-      const p = pending;
-      if (!p) return;
-      const mgr = highlightsRef.current;
-      if (p.existing) {
-        // Re-colouring: drop the old paint, re-create at the same range.
-        void mgr?.remove(p.existing.id).then(() =>
-          mgr?.create({ cfiRange: p.cfiRange, text: p.text, color }),
-        );
-      } else {
-        void mgr?.create({ cfiRange: p.cfiRange, text: p.text, color });
-        trackHighlightCreated();
-      }
-      dismissHighlight();
-    },
-    [pending, dismissHighlight],
-  );
-
-  const removeHighlight = useCallback(() => {
-    const id = pending?.existing?.id;
-    if (id) void highlightsRef.current?.remove(id);
-    dismissHighlight();
-  }, [pending, dismissHighlight]);
-
-  const openNotesFromPopover = useCallback(() => {
-    dismissHighlight();
-    setNotesOpen(true);
-  }, [dismissHighlight]);
 
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
   useEffect(() => {
@@ -385,14 +325,6 @@ export function ReaderShell({
         onSetTheme={setReaderTheme}
       />
 
-      <HighlightPopover
-        at={pending?.at ?? null}
-        existingColor={pending?.existing?.color ?? null}
-        onPick={pickColor}
-        onRemove={pending?.existing ? removeHighlight : undefined}
-        onAddNote={pending?.existing ? openNotesFromPopover : undefined}
-        onDismiss={dismissHighlight}
-      />
 
       <NotesPanel
         open={notesOpen}
