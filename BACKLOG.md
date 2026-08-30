@@ -36,3 +36,28 @@ bottom bars take vertical space on top of that.
 **Constraint:** all of it is token + `*-ui` work. The engine, normalizer and
 content pipeline must not need to change — this is exactly the swappable-layer
 seam MVP 1 was built to protect (SPEC §10).
+
+## Infrastructure — after M4
+
+### Custom domain
+
+Deferred from M4 (SPEC §9 lists it under "deploy to Vercel with a custom
+domain"). Shipping on `leaf-black.vercel.app` for now.
+
+**Why it matters beyond vanity:** Google's consent screen shows the host of the
+OAuth redirect URI, so sign-in currently reads *"Sign in to
+`<project-ref>.supabase.co`"*. The consent screen's app name and logo are
+already set; the domain line is the part only a custom domain fixes.
+
+**What it takes:**
+1. Register the domain.
+2. Vercel → project → Settings → Domains → add it; point DNS as instructed.
+3. Supabase custom domain add-on (paid, ~$10/mo) so auth is served from
+   e.g. `auth.<domain>` instead of the project-ref host.
+4. Update Supabase Site URL + Redirect URLs, and the Google OAuth client's
+   authorized origins / redirect URI, to the new domain.
+5. Re-test sign-in on desktop and phone (the redirect allowlist is the usual
+   breakage — see the M1 notes in CHANGELOG).
+
+Steps 1–2 alone give a branded app URL; step 3 is what changes the Google
+screen.
