@@ -51,6 +51,22 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 ## Post-M4 — reader space on small screens
 
 ### Fixed
+- **Text no longer runs under a notch or camera cutout.** Going edge-to-edge
+  means opting into the whole screen (`viewport-fit=cover`), which is exactly
+  what lets content sit under a cutout — the same trade native apps make. The
+  fix is the same one they use: the system reports what is obstructed, and the
+  layout insets by it. `env(safe-area-inset-*)` is exposed as `--leaf-safe-*`
+  tokens and applied to the page, both bars and the immersive exit control.
+  - The insets go on the page *wrapper*, never on the viewer — the viewer is
+    epub.js's container, and padding it desynchronises the column width from the
+    visible box (the bug that made the margins unequal). The full-bleed frame is
+    now `100%` rather than `100vw` so it sizes to that inset parent.
+  - `--leaf-reader-surface` puts the *page* colour behind the safe areas when
+    full-bleed, so the cutout strip is part of the book instead of a band of mat
+    across the top.
+  - Verified by simulating a 47px notch and a 34px home indicator: the page
+    insets to 47/34, text clears both, side margins stay 36/36, and the exit
+    control moves below the cutout.
 - **The full-bleed page was not actually seamless.** Three separate causes,
   all visible at once on a phone:
   - *Bands above and below the text* — `--leaf-reader-frame-max-h: 820px` on an

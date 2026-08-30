@@ -17,7 +17,10 @@ export default function ReaderLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-paper text-ink">
+    <div
+      className="relative flex h-[100dvh] flex-col overflow-hidden text-ink"
+      style={{ background: "var(--leaf-reader-surface)" }}
+    >
       {children}
     </div>
   );

@@ -51,9 +51,14 @@ export function ReaderTopBar({
         // Immersive: leave the flow so the page grows into this space.
         (hidden ? "absolute inset-x-0 top-0" : "flex-none")
       }
+      style={{
+        paddingTop: `calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-top))`,
+        paddingLeft: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-left))`,
+        paddingRight: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-right))`,
+        opacity: hidden ? 0 : 1,
+      }}
       aria-hidden={hidden}
       inert={hidden}
-      style={hidden ? { opacity: 0 } : { opacity: 1 }}
     >
       <div className="flex flex-1 items-center gap-5">
         <Link

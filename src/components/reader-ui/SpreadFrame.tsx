@@ -43,8 +43,14 @@ export function SpreadFrame({
       aria-label="Reader"
       className="flex min-h-0 flex-1 items-center justify-center"
       style={{
-        paddingInline: "var(--leaf-reader-frame-pad-x)",
-        paddingBottom: "var(--leaf-reader-frame-pad-b)",
+        // The safe-area insets go on THIS element, not on the viewer: the viewer
+        // is epub.js's container and padding it desynchronises the column width
+        // from the visible box. Here the whole page is inset instead, so epub.js
+        // still measures an unpadded box — just a smaller one.
+        paddingLeft: `calc(var(--leaf-reader-frame-pad-x) + var(--leaf-safe-left))`,
+        paddingRight: `calc(var(--leaf-reader-frame-pad-x) + var(--leaf-safe-right))`,
+        paddingTop: "var(--leaf-safe-top)",
+        paddingBottom: `calc(var(--leaf-reader-frame-pad-b) + var(--leaf-safe-bottom))`,
       }}
     >
       <div

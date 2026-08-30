@@ -23,14 +23,16 @@ describe("reader layout tokens", () => {
   it("goes full-bleed below the two-page-spread breakpoint", () => {
     // A phone has no second page for the gutter to divide and no room for a mat
     // around the paper — the framed look cost ~39% of the width at 390px.
-    expect(decl(smallScreen, "reader-frame-w")).toBe("100vw");
+    // `100%`, not `100vw`: the page sizes to its safe-area-padded parent, so a
+    // notch or camera cutout can never sit over the text.
+    expect(decl(smallScreen, "reader-frame-w")).toBe("100%");
     expect(decl(smallScreen, "reader-frame-pad-x")).toBe("0px");
     expect(decl(smallScreen, "reader-frame-shadow")).toBe("none");
     expect(decl(smallScreen, "reader-frame-radius")).toBe("0px");
   });
 
   it("keeps the framed book on wide screens", () => {
-    const root = css.slice(0, css.indexOf("@media (max-width: 1023px)"));
+    const root = css.slice(0, css.indexOf("\n@media (max-width: 1023px)"));
     expect(decl(root, "reader-frame-w")).toContain("min(");
     expect(decl(root, "reader-frame-pad-x")).toContain("clamp(");
     expect(decl(root, "reader-frame-shadow")).toBe("var(--leaf-shadow-book)");
@@ -49,6 +51,24 @@ describe("reader layout tokens", () => {
     // `--leaf-page` surface — visible as bands in a full-bleed reader.
     expect(decl(smallScreen, "reader-frame-max-h")).toBe("none");
     expect(decl(smallScreen, "reader-frame-pad-b")).toBe("0px");
+  });
+
+  it("exposes the system safe-area insets as tokens", () => {
+    // `viewport-fit=cover` lets Leaf paint under a notch; these are what keep
+    // text out from under it — the web's safe-area layout guide.
+    // Slice at the RULE, not the mention of it in the file header comment.
+    const root = css.slice(0, css.indexOf('\n[data-theme="day"] {'));
+    for (const side of ["top", "right", "bottom", "left"]) {
+      expect(decl(root, `safe-${side}`), side).toBe(
+        `env(safe-area-inset-${side}, 0px)`,
+      );
+    }
+  });
+
+  it("puts the page surface behind the safe areas when full-bleed", () => {
+    // Otherwise the notch strip paints in `--leaf-paper` over a `--leaf-page`
+    // book — a band across the top, which is the seam this all started with.
+    expect(decl(smallScreen, "reader-surface")).toBe("var(--leaf-page)");
   });
 
   it("tightens the reader chrome on small screens rather than dropping it", () => {

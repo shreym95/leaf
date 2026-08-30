@@ -108,6 +108,21 @@
     var(--leaf-gutter) 56%,
     transparent
   );
+  /* --- Safe areas ----------------------------------------------------------
+     `viewport-fit=cover` (set in layout.tsx) lets the app paint the whole
+     screen — including under a notch, a camera cutout or the home indicator.
+     These are the system's report of what is obstructed, the web equivalent of
+     iOS's safe-area layout guide and Android's WindowInsets. They resolve to 0
+     on hardware without cutouts, so they are safe to apply everywhere. */
+  --leaf-safe-top: env(safe-area-inset-top, 0px);
+  --leaf-safe-right: env(safe-area-inset-right, 0px);
+  --leaf-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --leaf-safe-left: env(safe-area-inset-left, 0px);
+
+  /* What sits behind the page — including the safe-area strips under a notch.
+     Framed (desktop) it is the mat; full-bleed it must BE the page, or the
+     cutout area reads as a band across the top of the book. */
+  --leaf-reader-surface: var(--leaf-paper);
   --leaf-reader-frame-pad-x: clamp(1rem, 5vw, 5rem);
   --leaf-reader-frame-pad-b: var(--leaf-space-4);
   --leaf-reader-frame-radius: var(--leaf-radius-sm);
@@ -130,7 +145,8 @@
    ------------------------------------------------------------------------- */
 @media (max-width: 1023px) {
   :root {
-    --leaf-reader-frame-w: 100vw;
+    --leaf-reader-surface: var(--leaf-page);
+    --leaf-reader-frame-w: 100%;
     --leaf-reader-frame-pad-x: 0px;
     --leaf-reader-frame-pad-b: 0px;
     /* The viewer element IS epub.js's container: it measures that box and sizes

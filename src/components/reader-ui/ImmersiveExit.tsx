@@ -73,8 +73,12 @@ export function ImmersiveExit({ visible, onExit }: ImmersiveExitProps) {
         aria-label="Exit immersive reading"
         aria-hidden={!on}
         inert={!on}
+        style={{
+          top: `calc(var(--leaf-space-3) + var(--leaf-safe-top))`,
+          left: `calc(var(--leaf-space-3) + var(--leaf-safe-left))`,
+        }}
         className={
-          "fixed left-3 top-3 z-40 flex h-10 w-10 items-center justify-center rounded-pill " +
+          "fixed z-40 flex h-10 w-10 items-center justify-center rounded-pill " +
           "border border-rule bg-page text-ink transition-opacity " +
           "[transition-duration:var(--leaf-dur-ui)] " +
           "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)] " +
