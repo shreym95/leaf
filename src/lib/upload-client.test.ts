@@ -23,6 +23,7 @@ const BOOK: Book = {
   storage_path: "user-1/11111111-1111-4111-8111-111111111111.epub",
   cover_path: null,
   cover_url: null,
+  archived_at: null,
   status: "reading",
   added_at: "2026-08-29T00:00:00Z",
 };

@@ -5,7 +5,13 @@
 // barrel, so the server-only helpers above aren't pulled into a client bundle.
 
 export { getProfile, ensureProfile } from "./profiles";
-export { listBooks, getBook } from "./books";
+export {
+  listBooks,
+  getBook,
+  setBookArchived,
+  countArchivedBooks,
+  type LibraryBook,
+} from "./books";
 export {
   getReaderSettings,
   upsertReaderSettings,

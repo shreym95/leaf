@@ -3,6 +3,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import type { BookSource } from "@/lib/types";
 import type { LibraryBook } from "@/lib/db/books";
+import { BookActions } from "./BookActions";
 
 /**
  * BookCard — one book on the shelf. Presentational only: props in, markup out.
@@ -34,7 +35,7 @@ export function BookCard({ book }: BookCardProps) {
     pct == null ? "Not started" : pct >= 100 ? "Finished" : `${pct}%`;
 
   return (
-    <article>
+    <article className="relative">
       <Link
         href={`/reader/${book.id}`}
         className={clsx(
@@ -79,6 +80,16 @@ export function BookCard({ book }: BookCardProps) {
           </p>
         </div>
       </Link>
+
+      {/* Outside the <Link>: the card is one focusable link, and a button
+          nested in an anchor is invalid and unreachable by keyboard. */}
+      <div className="absolute right-4 top-4 z-10">
+        <BookActions
+          bookId={book.id}
+          title={book.title}
+          archived={book.archived_at != null}
+        />
+      </div>
     </article>
   );
 }

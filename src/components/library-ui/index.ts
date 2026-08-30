@@ -10,3 +10,4 @@ export { AddBooksBar } from "./AddBooksBar";
 
 export { ImportSheet } from "./ImportSheet";
 export type { ImportSheetProps } from "./ImportSheet";
+export { BookActions } from "./BookActions";

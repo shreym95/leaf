@@ -33,6 +33,8 @@ export interface Book {
   /** Storage key for the cover extracted from the EPUB (0002); signed to render. */
   cover_path: string | null;
   cover_url: string | null;
+  /** When the reader hid this from the shelf (0003). Null = visible. */
+  archived_at: string | null;
   status: BookStatus;
   added_at: string;
 }

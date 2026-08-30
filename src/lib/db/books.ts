@@ -51,13 +51,22 @@ function toLibraryBook(row: BookRow): LibraryBook {
  * null-handling rule that reads far more clearly in code. Personal libraries are
  * small enough that this costs nothing.
  */
-export async function listBooks(userId: string): Promise<LibraryBook[]> {
+export async function listBooks(
+  userId: string,
+  { archived = false }: { archived?: boolean } = {},
+): Promise<LibraryBook[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const query = supabase
     .from("books")
     .select("*, reading_state(percent, updated_at)")
     .eq("user_id", userId)
     .order("added_at", { ascending: false });
+
+  // Hidden books are a separate view, not mixed in — the point of hiding is a
+  // shelf you can take in at a glance.
+  const { data, error } = await (archived
+    ? query.not("archived_at", "is", null)
+    : query.is("archived_at", null));
   if (error) throw error;
 
   const books = ((data as BookRow[] | null) ?? []).map(toLibraryBook);
@@ -94,4 +103,31 @@ export async function getBook(
     .maybeSingle();
   if (error) throw error;
   return (data as Book | null) ?? null;
+}
+
+/** Hide a book from the shelf, or put it back. Reversible; nothing is deleted. */
+export async function setBookArchived(
+  userId: string,
+  bookId: string,
+  archived: boolean,
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("books")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", bookId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+/** How many books the reader has hidden — so the shelf can offer to show them. */
+export async function countArchivedBooks(userId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("books")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .not("archived_at", "is", null);
+  if (error) throw error;
+  return count ?? 0;
 }

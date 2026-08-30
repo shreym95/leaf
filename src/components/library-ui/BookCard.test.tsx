@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The card carries a BookActions menu, which navigates on success.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 import { render, screen } from "@testing-library/react";
 import { BookCard } from "./BookCard";
 import type { LibraryBook } from "@/lib/db/books";
@@ -14,6 +17,7 @@ function makeBook(overrides: Partial<LibraryBook> = {}): LibraryBook {
     storage_path: "u1/frankenstein.epub",
     cover_path: null,
     cover_url: null,
+    archived_at: null,
     added_at: "2026-01-01T00:00:00Z",
     status: "reading",
     percent: null,

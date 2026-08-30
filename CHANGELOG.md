@@ -48,6 +48,36 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
   its call sites (grep `@/lib/analytics`).
 
+## M7 — hide and delete books
+
+### Added
+- **Hide a book from the shelf, or delete it for good** — a menu on each card.
+  Two different verbs on purpose: hiding is reversible and keeps the file, the
+  highlights and the reading position; deleting takes all of it. Offering only
+  "delete" would make people either keep books they don't want to see or lose
+  ones they only wanted out of the way.
+  - Deleting asks first and names exactly what goes. Hiding does not ask — a
+    confirmation on a reversible action is only friction.
+  - **Files are removed before the row.** An orphaned row is visible and
+    fixable; an orphaned file is invisible and bills the reader's storage
+    forever. If storage cleanup fails, nothing is deleted at all rather than
+    half of it.
+  - `highlights` and `reading_state` cascade from `books` (0001), so a delete
+    takes them with it.
+- **Hidden books live behind a quiet link** under the shelf (`3 hidden books`),
+  not mixed in — the point of hiding is a shelf you can take in at a glance.
+- `books.archived_at` (migration `0003_archive_books.sql`) — a timestamp rather
+  than a boolean: it records *when* for free, sorts, and cannot reach the
+  ambiguous `false`/`null` state a nullable boolean can.
+- Ownership always comes from the session: rows are matched on `id` AND
+  `user_id`, so someone else's id matches nothing (and RLS would refuse anyway).
+
+### Fixed
+- **Facing-page folios on the desktop spread.** The right-hand folio was showing
+  the section's page *count*, so a spread read "3 … 10" — a page number beside a
+  total. It now reads 3 and 4. Only ever visible on desktop, where the right
+  folio is shown.
+
 ## M6 — real cover art
 
 ### Added

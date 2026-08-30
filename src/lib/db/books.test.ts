@@ -1,17 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ rows: [] as unknown[], select: vi.fn() }));
+const h = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  select: vi.fn(),
+  filter: vi.fn(),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     from: () => ({
       select: (cols: string) => {
         h.select(cols);
-        return {
-          eq: () => ({
-            order: async () => ({ data: h.rows, error: null }),
-          }),
+        // The real builder is thenable and keeps chaining, so the mock has to
+        // be too: listBooks adds `.is(...)` / `.not(...)` after `.order(...)`.
+        const result = { data: h.rows, error: null };
+        const builder = {
+          eq: () => builder,
+          order: () => builder,
+          is: (col: string, val: unknown) => {
+            h.filter("is", col, val);
+            return Promise.resolve(result);
+          },
+          not: (col: string, op: string, val: unknown) => {
+            h.filter("not", col, op, val);
+            return Promise.resolve(result);
+          },
+          then: (fn: (r: typeof result) => unknown) => Promise.resolve(fn(result)),
         };
+        return builder;
       },
     }),
   })),
@@ -33,6 +49,7 @@ function book(
     source_ref: null,
     storage_path: `u1/${id}.epub`,
     cover_url: null,
+    archived_at: null,
     status: "reading",
     added_at: addedAt,
     reading_state: state ? [state] : [],
@@ -42,6 +59,7 @@ function book(
 beforeEach(() => {
   h.rows = [];
   h.select.mockClear();
+  h.filter.mockClear();
 });
 
 describe("listBooks", () => {
@@ -50,6 +68,15 @@ describe("listBooks", () => {
     expect(h.select).toHaveBeenCalledWith(
       expect.stringContaining("reading_state(percent, updated_at)"),
     );
+  });
+
+  it("shows only visible books by default, and only hidden ones on request", async () => {
+    await listBooks("u1");
+    expect(h.filter).toHaveBeenCalledWith("is", "archived_at", null);
+
+    h.filter.mockClear();
+    await listBooks("u1", { archived: true });
+    expect(h.filter).toHaveBeenCalledWith("not", "archived_at", "is", null);
   });
 
   it("puts the most recently read book first", async () => {
