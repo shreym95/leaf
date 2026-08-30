@@ -77,6 +77,22 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   compile error *and* dropped at runtime. Error boundaries at
   `app/global-error.tsx` and `(chrome)/error.tsx`.
 
+### Performance
+- **Functions now run in Mumbai (`bom1`), next to Supabase.** They were
+  defaulting to Washington DC, so every request went India → Vercel edge Mumbai
+  → function in `iad1` → Supabase back in Asia → back. `vercel.json` pins the
+  region. Warm TTFB roughly halved (`/styleguide` 344ms → ~145ms).
+- **Auth is fetched once per request, not three times.** A page load called
+  `supabase.auth.getUser()` in the proxy, again in the page, and again in the
+  NavBar — three separate network round trips to the auth server, because
+  `getUser()` deliberately revalidates the JWT rather than trusting the cookie.
+  `getUser` is now wrapped in React `cache()`, so everything inside one render
+  shares a single call. Not a cross-request cache — each request still
+  revalidates.
+- **No auth round trip at all when there is no session cookie.** A signed-out
+  visitor has nothing to validate or refresh, so the proxy short-circuits to
+  route protection alone.
+
 ### Fixed
 - **Sign out did nothing.** The POST form was nested inside a Radix `MenuItem`,
   so selecting it closed and unmounted the menu — tearing the form out of the
