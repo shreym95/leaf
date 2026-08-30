@@ -6,8 +6,8 @@ import Link from "next/link";
  * prerender. Plain language, no legalese, no invented company. Keep this in
  * sync with what the app actually does.
  *
- * PLACEHOLDER: the contact line uses `[your contact email]` — the founder must
- * replace it before launch.
+ * PLACEHOLDER: the contact address is the `CONTACT_EMAIL` constant below, still
+ * set to `[your contact email]` — the founder must replace it before launch.
  */
 
 export const metadata: Metadata = {
@@ -16,6 +16,13 @@ export const metadata: Metadata = {
 };
 
 const LAST_UPDATED = "30 August 2026";
+
+/**
+ * Contact address shown in the "Contact" section below. MUST be set to a real
+ * address before launch — publishing a personal email here is the founder's
+ * call. This is the single source of truth: change it here only.
+ */
+const CONTACT_EMAIL = "[your contact email]";
 
 const linkClass =
   "font-ui text-accent underline underline-offset-2 hover:opacity-80 " +
@@ -168,7 +175,7 @@ export default function PrivacyPage() {
       <Section heading="Contact">
         <p className={proseClass}>
           Questions about privacy, or a request about your data, can go to{" "}
-          <span className="text-ink">[your contact email]</span>.
+          <span className="text-ink">{CONTACT_EMAIL}</span>.
         </p>
       </Section>
     </main>

@@ -3,6 +3,11 @@
 Things deliberately deferred. Not bugs — decisions to revisit, with the evidence
 that prompted them. See `SPEC.md` §9 for the milestone plan.
 
+`REVISED_PLAN.md` §7 reconciles this list with the next design phase: the **shelf
+redesign** and **highlight creation** are scheduled there (Phases 1 and 2);
+**ratings**, **custom domain**, **hairline contrast**, **privacy email** and the
+**hand-applied migrations** are not, and stay open here.
+
 ## Design — after M4
 
 ### ~~Reclaim reader space, especially on phone~~ — done
@@ -78,19 +83,33 @@ a selection is gone. The whole data path (`src/reader/highlights.ts`,
 `highlights` table, RLS, CFI round-trip) is intact and tested — this is a UI
 problem, not a data one.
 
-**Before re-enabling, decide the interaction:**
-- what opens it (long-press? a dedicated highlight mode? the OS share sheet?)
-  rather than every selection;
-- how it dismisses — outside tap, scroll, page turn, and a visible close, not
-  just `Esc`;
-- where it sits — anchored to the selection rectangle, never covering it;
-- whether to suppress the native iOS/Android selection callout that competes
-  with it (`-webkit-touch-callout`).
+**Interaction decided (founder, 2026-08-31)** — see `REVISED_PLAN.md` §4C:
+highlighting is an **explicit mode**, off by default, entered from a reader top-bar
+control. Off, nothing listens to selection at all, so copying a word or looking up
+its meaning behaves natively — that was the actual complaint, not the popover's
+looks. On, a selection highlights in the active colour and a bottom ribbon offers
+the four colours and a note. Long-press was rejected: on touch it *is* the native
+selection gesture. `-webkit-touch-callout` is suppressed only while the mode is on.
 
 Re-enable point is marked in `ReaderShell` where `controller.onSelected(...)`
 was wired.
 
+### `--leaf-rule` hairline contrast
+
+The hairline rule sits at roughly 1.5:1 against its background — deliberate (it is
+a hairline, not a border), but arguably short of WCAG 1.4.11 for a non-text
+boundary. Worth fixing during the next pass over `tokens.css` rather than opening
+that file twice.
+
 ## Infrastructure — after M4
+
+### Migrations are applied by hand
+
+`0001`–`0003` were run in the Supabase SQL editor; the CLI is not wired. They must
+run **in order** if the project is ever rebuilt. This stops being housekeeping the
+moment another migration is needed — the sepia theme in `REVISED_PLAN.md` needs
+`0004` (the theme columns carry `check (… in ('day','night'))`), and the ribbon
+bookmark needs storage of its own.
 
 ### Custom domain
 
