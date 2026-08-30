@@ -51,6 +51,13 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 ## Post-M7
 
 ### Fixed
+- **A theme chosen in the reader was undone by returning to the library.**
+  Introduced by the fix below: the chrome layout re-renders on the server when
+  you navigate to it, and the settings write is debounced, so that render can
+  carry a value *older* than what was just chosen — and re-seeding from it threw
+  the choice away. Seeding is now once per user per page load rather than once
+  per mount; after the first seed the store is the authority. A different user
+  still re-seeds, and `reset()` clears the seed for sign-out.
 - **The theme changed by itself when opening a book.** There were two sources of
   truth for one setting: the chrome's toggle wrote `<html data-theme>` and
   localStorage, while the reader read `reader_settings.theme` from the database.

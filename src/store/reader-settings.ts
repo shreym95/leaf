@@ -98,6 +98,17 @@ function toRow(userId: string, v: ReaderSettingsValues) {
 export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
   let userId: string | null = null;
   let hydrated = false;
+  /**
+   * Which user this store has already been seeded for, this page load.
+   *
+   * Seeding is once-per-user, not once-per-mount: the chrome layout and the
+   * reader both hydrate from their own server render, and a write is debounced,
+   * so a later render can carry a value older than what the reader has just
+   * chosen. Re-seeding from it would silently undo them — toggling the theme in
+   * a book and returning to the library flipped it straight back. After the
+   * first seed the store is the authority until the page reloads.
+   */
+  let seededFor: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   async function writeNow(): Promise<void> {
@@ -148,9 +159,27 @@ export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
     setLineSpacing: (lineSpacing) => apply({ lineSpacing }),
     setMargins: (margins) => apply({ margins }),
     setTheme: (theme) => apply({ theme }),
-    reset: () => apply({ ...READER_SETTINGS_DEFAULTS }),
+    /**
+     * Back to defaults and un-seeded — for a sign-out, or a test starting
+     * clean. Deliberately does not persist: this is "forget", not "choose".
+     */
+    reset: () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      hydrated = false;
+      seededFor = null;
+      userId = null;
+      set({ ...READER_SETTINGS_DEFAULTS });
+    },
 
     hydrate: (initial, uid) => {
+      if (seededFor !== null && seededFor === uid) {
+        // Already seeded for this user — keep any newer local choices.
+        userId = uid;
+        return;
+      }
       const seed: Partial<ReaderSettingsValues> = {};
       for (const key of VALUE_KEYS) {
         if (initial[key] !== undefined) {
@@ -160,6 +189,7 @@ export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
       }
       set(seed);
       userId = uid;
+      seededFor = uid;
       hydrated = true;
     },
 

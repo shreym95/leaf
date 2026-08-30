@@ -25,12 +25,60 @@ const NIGHT_SETTINGS = { ...READER_SETTINGS_DEFAULTS, theme: "night" as const };
 beforeEach(() => {
   vi.clearAllMocks();
   h.upsert.mockResolvedValue({ error: null });
-  useReaderSettings.setState({ ...READER_SETTINGS_DEFAULTS });
+  useReaderSettings.getState().reset();
   localStorage.clear();
   delete document.documentElement.dataset.theme;
 });
 
 describe("theme is one setting, not two", () => {
+  it("a choice made in the reader survives going back to the library", async () => {
+    // The chrome layout re-renders on the server when you navigate to it, and
+    // the write is debounced — so that render can carry a value older than what
+    // was just chosen. Re-seeding from it used to undo the choice: toggling to
+    // Night in a book and returning to the library flipped it back to Day.
+    const { unmount } = render(
+      <ThemeProvider>
+        <ThemeSync userId="u1" settings={DAY_SETTINGS} />
+      </ThemeProvider>,
+    );
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("day"),
+    );
+
+    // …the reader switches to Night.
+    useReaderSettings.getState().setTheme("night");
+    unmount();
+
+    // …and the library remounts with a server render that still says Day.
+    render(
+      <ThemeProvider>
+        <ThemeSync userId="u1" settings={DAY_SETTINGS} />
+      </ThemeProvider>,
+    );
+
+    expect(useReaderSettings.getState().theme).toBe("night");
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("night"),
+    );
+  });
+
+  it("does re-seed for a different user", async () => {
+    render(
+      <ThemeProvider>
+        <ThemeSync userId="u1" settings={DAY_SETTINGS} />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(useReaderSettings.getState().theme).toBe("day"));
+
+    useReaderSettings.getState().reset();
+    render(
+      <ThemeProvider>
+        <ThemeSync userId="u2" settings={NIGHT_SETTINGS} />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(useReaderSettings.getState().theme).toBe("night"));
+  });
+
   it("adopts the persisted theme, so the chrome matches the reader", async () => {
     render(
       <ThemeProvider>
