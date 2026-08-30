@@ -1,0 +1,24 @@
+# Leaf — Supabase CLI project config.
+#
+# Deliberately minimal: only the keys the remote-migration workflow needs. The
+# CLI fills in defaults for everything else — full reference at
+# https://supabase.com/docs/guides/local-development/cli/config
+#
+# NO SECRETS LIVE HERE. The access token comes from `supabase login` or the
+# SUPABASE_ACCESS_TOKEN env var; the database password from the `db:link`
+# prompt or the SUPABASE_DB_PASSWORD env var. Never commit either.
+#
+# The project ref (emvasvbeypkrfnlzjxaz) is not a secret — it is already public
+# in NEXT_PUBLIC_SUPABASE_URL — and is passed on the command line by the npm
+# scripts rather than pinned here.
+
+project_id = "leaf"
+
+[db]
+# Must equal the remote Postgres major version (run `SHOW server_version;` in
+# the SQL editor to confirm). Only consulted for the local/shadow database used
+# by `supabase start` / `supabase db diff` without `--linked`.
+major_version = 17
+
+[db.migrations]
+enabled = true

@@ -24,6 +24,21 @@ apply to git-triggered deploys automatically.
 `npx vercel --prod` still works for a manual deploy from the working tree
 (useful for testing uncommitted changes).
 
+## Database migrations
+
+Schema changes are **not** part of the Vercel deploy. They are SQL files under
+`supabase/migrations/` applied against the Supabase project separately.
+
+The Supabase CLI is now wired up (`npm run db:link` / `db:push` / `db:diff` /
+`db:types`). One catch: `0001`–`0003` were applied by hand in the SQL editor and
+are not tracked in the remote migration history, so a plain `db:push` would try
+to re-apply them. **Before the first `db:push`, run the one-time baseline in
+[`supabase/README.md`](./supabase/README.md#one-time-baseline--00010003-were-applied-by-hand)**
+(`supabase migration repair --status applied 0001 0002 0003 --linked`). After
+that, `npm run db:push` applies only new migrations.
+
+Order matters if the project is ever rebuilt: `0001` → `0002` → `0003` → `0004`.
+
 ## Environment variables
 
 Three Supabase vars, set on the Vercel project for all three environments
