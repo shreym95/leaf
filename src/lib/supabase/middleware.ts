@@ -34,6 +34,26 @@ export async function updateSession(
     return NextResponse.next({ request });
   }
 
+  // A signed-out visitor carries no Supabase auth cookie, so there is nothing to
+  // validate or refresh — skip the round trip to the auth server entirely and
+  // just apply route protection. Every page is server-rendered, so this saves a
+  // full network hop on each public page view.
+  const hasAuthCookie = request.cookies
+    .getAll()
+    .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+
+  if (!hasAuthCookie) {
+    const { pathname, search } = request.nextUrl;
+    if (isProtected(pathname)) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.search = "";
+      loginUrl.searchParams.set("next", `${pathname}${search}`);
+      return NextResponse.redirect(loginUrl);
+    }
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {

@@ -37,6 +37,37 @@ bottom bars take vertical space on top of that.
 content pipeline must not need to change — this is exactly the swappable-layer
 seam MVP 1 was built to protect (SPEC §10).
 
+### Loading states
+
+**Observed (founder, M4):** navigation feels unresponsive — nothing happens on
+screen while a page is being fetched, so a slow load reads as a broken tap.
+
+Every route is server-rendered on demand and there is no `loading.tsx` anywhere,
+so Next has no fallback to show during navigation. Cheap to fix:
+
+- `loading.tsx` for `(chrome)` (library / settings / privacy) and for the reader
+  route — a calm skeleton in the shape of the real page, not a spinner.
+- The reader already has an "Opening the book…" state once `ReaderShell` mounts;
+  the gap is *before* that, while the server component is fetching.
+- Consider `useLinkStatus` / a pending style on nav links so the tapped item
+  acknowledges the tap immediately.
+
+Small, self-contained, `*-ui` only. Worth doing early in the next pass — it
+changes perceived speed more than most real speed-ups.
+
+### Highlighting on a phone
+
+**Observed (founder, M4):** the highlight flow is not intuitive on a phone.
+
+Desktop assumes a mouse selection followed by a popover. On touch, the native
+selection handles and the OS text-selection menu compete with our popover, and
+the popover is anchored to the top of the frame rather than to the selection.
+
+Lower priority than the loading states. Directions: anchor the popover to the
+selection rectangle, suppress the native callout inside the book iframe
+(`-webkit-touch-callout`), consider long-press-to-highlight, and make the tap
+target for an existing highlight bigger than the text itself.
+
 ## Infrastructure — after M4
 
 ### Custom domain
