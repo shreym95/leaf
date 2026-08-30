@@ -6,7 +6,7 @@
  * declaration object, which is what epub.js expects.
  *
  * Self-contained by design: it must NOT import from `src/reader` or anywhere
- * outside `src/design`. The two palettes are duplicated here (rather than read
+ * outside `src/design`. The palettes are duplicated here (rather than read
  * from tokens.css) because the book renders in a separate document that does
  * not inherit the host page's custom properties. Values are kept in lockstep
  * with tokens.css / the approved v0.1 prototype.
@@ -36,8 +36,17 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
     inkMid: "#5c5237",
     faint: "#6a5f45",
     accent: "#8a2b1e",
-    rule: "#cabf9f",
+    rule: "#8f8358",
     selection: "rgba(138, 43, 30, 0.2)",
+  },
+  sepia: {
+    page: "#ede2cb",
+    ink: "#2b2218",
+    inkMid: "#5e503f",
+    faint: "#6a5c48",
+    accent: "#9e472a",
+    rule: "#8f7d55",
+    selection: "rgba(158, 71, 42, 0.22)",
   },
   night: {
     page: "#1a1611",
@@ -45,7 +54,7 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
     inkMid: "#a89a78",
     faint: "#8f815f",
     accent: "#c58a52",
-    rule: "#3a3020",
+    rule: "#706449",
     selection: "rgba(197, 138, 82, 0.24)",
   },
 };
@@ -60,7 +69,7 @@ export type ContentThemeStyles = Record<string, Record<string, string>>;
 /**
  * Build the epub.js-registerable style object for a theme.
  *
- * @param themeId - a registered Leaf theme id (`"day"` | `"night"`).
+ * @param themeId - a registered Leaf theme id (`"day"` | `"sepia"` | `"night"`).
  */
 export function buildContentTheme(themeId: ThemeId): ContentThemeStyles {
   const p = PALETTES[themeId];

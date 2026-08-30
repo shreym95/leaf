@@ -23,6 +23,7 @@
 import type { Rendition } from "epubjs";
 
 import { buildContentTheme, type ContentThemeStyles } from "@/design/content-theme";
+import { DEFAULT_THEME, isThemeId, type ThemeId } from "@/design/themes";
 import { normalizeChapterDom } from "@/normalizer";
 
 // The engine owns this type; re-exported here so existing importers of
@@ -73,8 +74,17 @@ const MARGIN_STYLE: Record<
   wide: { pad: "2.75rem", measure: "30rem" },
 };
 
-function themeId(s: ReaderContentSettings): "day" | "night" {
-  return s.theme === "night" ? "night" : "day";
+/**
+ * Narrow the persisted theme to a registered id.
+ *
+ * This used to be `s.theme === "night" ? "night" : "day"`, which silently
+ * rendered any unrecognised theme as Day — so adding Sepia would have painted
+ * the chrome sepia and left the book's page white. Fall back to the registry's
+ * own default instead of guessing, and let an unknown id be visible as "the
+ * default", never as "day".
+ */
+function themeId(s: ReaderContentSettings): ThemeId {
+  return isThemeId(s.theme) ? s.theme : DEFAULT_THEME;
 }
 
 /** Serialize a `buildContentTheme` style map to a CSS string. */

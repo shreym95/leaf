@@ -9,10 +9,12 @@
 
 import { create } from "zustand";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import type { ThemeName } from "@/lib/types";
 
 export type FontFamily = "serif" | "sans" | "legible";
 export type Margins = "narrow" | "normal" | "wide";
-export type ReaderTheme = "day" | "night";
+/** Alias of the persisted DB union — one source of truth, not a second copy. */
+export type ReaderTheme = ThemeName;
 
 export interface ReaderSettingsState {
   /** Curated body font: serif / humanist sans / Atkinson Hyperlegible. */

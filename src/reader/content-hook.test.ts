@@ -10,6 +10,7 @@ import {
   registerContentPipeline,
   type ReaderContentSettings,
 } from "./content-hook";
+import { DEFAULT_THEME, THEME_IDS } from "@/design/themes";
 
 const OZ = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
@@ -220,6 +221,50 @@ describe("registerContentPipeline", () => {
     ).not.toThrow();
     expect(messy.querySelector(".chapter-ordinal")?.textContent).toBe("§");
     expect(messy.querySelector('style[id="leaf-content-pipeline"]')).not.toBeNull();
+  });
+
+  it("paints every registered theme distinctly, not just day and night", () => {
+    // Regression: `themeId` was `s.theme === "night" ? "night" : "day"`, so any
+    // theme the reader did not know about was painted as Day. Adding Sepia
+    // would have turned the app chrome sepia and left the page white — the same
+    // "the theme changed on its own" class of bug reported twice before.
+    const css = (theme: ReaderContentSettings["theme"]) => {
+      const { rendition, handlers, doc } = makeRendition();
+      registerContentPipeline(rendition, () => ({ ...DAY, theme }));
+      handlers[0]({ document: doc, sectionIndex: 0 });
+      return doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+    };
+
+    const seen = new Map<string, string>();
+    for (const id of THEME_IDS) seen.set(id, css(id));
+
+    // Every theme must produce its own palette — no two identical stylesheets.
+    expect(new Set(seen.values()).size).toBe(THEME_IDS.length);
+    for (const [id, sheet] of seen) {
+      expect(sheet, `${id} produced no CSS`).not.toBe("");
+    }
+  });
+
+  it("falls back to the default theme, never silently to day", () => {
+    // An unrecognised persisted value (an old row, a hand-edited setting) should
+    // land on the registry default so it is visibly "the default", not a theme
+    // the user never chose.
+    const { rendition, handlers, doc } = makeRendition();
+    registerContentPipeline(rendition, () => ({
+      ...DAY,
+      theme: "chartreuse" as ReaderContentSettings["theme"],
+    }));
+    handlers[0]({ document: doc, sectionIndex: 0 });
+    const unknown =
+      doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+
+    const fresh = makeRendition();
+    registerContentPipeline(fresh.rendition, () => ({ ...DAY, theme: DEFAULT_THEME }));
+    fresh.handlers[0]({ document: fresh.doc, sectionIndex: 0 });
+    const fallback =
+      fresh.doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+
+    expect(unknown).toBe(fallback);
   });
 
   it("destroy() deregisters the hook; the handle is also callable as teardown", () => {

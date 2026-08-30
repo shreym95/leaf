@@ -28,7 +28,7 @@ function tokenValue(themeId: string, name: string): string {
 }
 
 describe("highlight palette", () => {
-  it("matches tokens.css for every colour in both themes", () => {
+  it("matches tokens.css for every colour in every theme", () => {
     for (const theme of THEME_IDS) {
       for (const color of HIGHLIGHT_COLORS) {
         expect(

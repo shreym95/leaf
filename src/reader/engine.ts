@@ -13,6 +13,7 @@
 // never hand-roll it (the prototype proved hand-rolling breaks across widths).
 
 import type { Book, Rendition } from "epubjs";
+import type { ThemeName } from "@/lib/types";
 
 // --- Shared interface (Agents B & C code against these EXACT shapes) --------
 
@@ -21,7 +22,8 @@ export interface ReaderContentSettings {
   fontSize: number; // rem (default 1.06)
   lineSpacing: number; // default 1.62
   margins: "narrow" | "normal" | "wide";
-  theme: "day" | "night";
+  /** The persisted theme union — widening it must not need an edit here. */
+  theme: ThemeName;
 }
 
 export interface ReaderLocation {

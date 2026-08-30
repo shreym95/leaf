@@ -35,6 +35,14 @@ const WASH: Record<ThemeId, Record<HighlightColorName, string>> = {
     sky: "rgba(86, 132, 178, 0.28)",
     rose: "rgba(186, 92, 116, 0.28)",
   },
+  sepia: {
+    // A touch stronger than day — the warmer paper swallows a pale wash, but
+    // still translucent enough to read `--leaf-ink` through.
+    copper: "rgba(190, 120, 60, 0.32)",
+    sage: "rgba(104, 140, 92, 0.30)",
+    sky: "rgba(86, 132, 178, 0.30)",
+    rose: "rgba(186, 92, 116, 0.30)",
+  },
   night: {
     copper: "rgba(197, 138, 82, 0.34)",
     sage: "rgba(126, 168, 112, 0.30)",

@@ -11,14 +11,17 @@
    Structure:
      :root                 -> theme-independent scales (type, space, radii, motion)
      [data-theme="day"]    -> one palette
+     [data-theme="sepia"]  -> one palette   (warm paper, light -> dark: between the two)
      [data-theme="night"]  -> one palette   (registry default; set elsewhere)
      :root (elevation)     -> shadows that compose the palette vars above
+     :root[data-theme="night"] -> elevation overrides (black shadows vanish on soot)
      @media reduced-motion -> motion tokens neutralised
 
    Theme switching is driven by the `data-theme` attribute on <html>, never by
    the OS colour scheme. Palette started from the approved v0.1 prototype;
    deviations so far (founder-approved, see CHANGELOG): `--leaf-faint` raised to
-   WCAG AA in both themes, night `--leaf-accent` moved from gold to copper.
+   WCAG AA in every theme, night `--leaf-accent` moved from gold to copper,
+   `--leaf-rule` raised to WCAG 1.4.11 (3:1) in every theme.
    ========================================================================== */
 
 :root {
@@ -186,7 +189,9 @@
   /* faint darkened from the prototype's #8a7d5e (~3.1:1, failed AA) to ~4.8:1 */
   --leaf-faint: #6a5f45;
   --leaf-accent: #8a2b1e;
-  --leaf-rule: #cabf9f;
+  /* rule darkened from #cabf9f (~1.5:1, short of WCAG 1.4.11's 3:1 for a
+     non-text boundary) to ~3.2:1 on --leaf-page; still a single hairline. */
+  --leaf-rule: #8f8358;
   --leaf-gutter: rgba(0, 0, 0, 0.05);
   --leaf-focus: #8a2b1e;
   --leaf-selection: rgba(138, 43, 30, 0.2);
@@ -196,6 +201,34 @@
   --leaf-hl-sage: rgba(104, 140, 92, 0.28);
   --leaf-hl-sky: rgba(86, 132, 178, 0.28);
   --leaf-hl-rose: rgba(186, 92, 116, 0.28);
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------------------
+   Palette — SEPIA (warm natural paper, sits between day and night)
+   ------------------------------------------------------------------------- */
+[data-theme="sepia"] {
+  --leaf-paper: #e4d8be;
+  --leaf-page: #ede2cb;
+  --leaf-edge: #d1c3a5;
+  --leaf-ink: #2b2218;
+  --leaf-ink-mid: #5e503f;
+  /* faint darkened from the plan's #7a6b57 (~4.0:1, failed AA on --leaf-page)
+     to ~5.0:1, matching the treatment day/night already got. */
+  --leaf-faint: #6a5c48;
+  --leaf-accent: #9e472a;
+  /* rule darkened from the plan's #c7b897 (~1.5:1) to ~3.1:1 on --leaf-page,
+     same WCAG 1.4.11 fix applied to day and night; still a hairline. */
+  --leaf-rule: #8f7d55;
+  --leaf-gutter: rgba(43, 34, 24, 0.06);
+  --leaf-focus: #9e472a;
+  --leaf-selection: rgba(158, 71, 42, 0.22);
+  /* Highlight wash — painted into the book iframe behind the text, so these are
+     translucent and must stay light enough to read `--leaf-ink` through. */
+  --leaf-hl-copper: rgba(190, 120, 60, 0.32);
+  --leaf-hl-sage: rgba(104, 140, 92, 0.30);
+  --leaf-hl-sky: rgba(86, 132, 178, 0.30);
+  --leaf-hl-rose: rgba(186, 92, 116, 0.30);
   color-scheme: light;
 }
 
@@ -213,7 +246,9 @@
   /* metallic copper/bronze — calmer + more mature than the prototype's
      #e0a03c gold; ~6:1 on --leaf-paper, comfortable for small text */
   --leaf-accent: #c58a52;
-  --leaf-rule: #3a3020;
+  /* rule lightened from #3a3020 (~1.4:1, short of WCAG 1.4.11's 3:1) to ~3.1:1
+     on --leaf-page; still a single hairline, not a heavy border. */
+  --leaf-rule: #706449;
   --leaf-gutter: rgba(0, 0, 0, 0.25);
   --leaf-focus: #c58a52;
   --leaf-selection: rgba(197, 138, 82, 0.24);
@@ -239,6 +274,44 @@
   --leaf-shadow-focus:
     0 0 0 2px var(--leaf-paper),
     0 0 0 4px var(--leaf-focus);
+
+  /* Book-card elevation. The two inset edges fake a page block: a lit left edge
+     and a shaded right one. Tuned for the light palettes (day / sepia). */
+  --leaf-shadow-card:
+    0 2px 4px -1px rgba(0, 0, 0, 0.06),
+    0 4px 12px -2px rgba(0, 0, 0, 0.08),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.15),
+    inset -1px 0 0 0 rgba(0, 0, 0, 0.08);
+  --leaf-shadow-card-hover:
+    0 8px 24px -4px rgba(0, 0, 0, 0.14),
+    0 2px 6px -1px rgba(0, 0, 0, 0.08);
+  /* Inset along the left edge — the binding crease where the cover meets the
+     spine. */
+  --leaf-shadow-spine:
+    inset 4px 0 8px -2px rgba(0, 0, 0, 0.22),
+    inset -1px 0 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ---------------------------------------------------------------------------
+   Night: a black drop shadow is invisible on the near-black mat
+   (--leaf-paper: #100d09). Rebuild the same three elevations from deeper
+   blacks for the ambient shadow plus a faint top-left catchlight, so a card
+   still reads as a raised object and the spine crease still shows.
+   Higher-specificity selector so it wins over the :root block above regardless
+   of source order.
+   ------------------------------------------------------------------------- */
+:root[data-theme="night"] {
+  --leaf-shadow-card:
+    0 2px 6px -1px rgba(0, 0, 0, 0.6),
+    0 10px 24px -6px rgba(0, 0, 0, 0.55),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.06),
+    inset -1px 0 0 0 rgba(0, 0, 0, 0.7);
+  --leaf-shadow-card-hover:
+    0 14px 32px -6px rgba(0, 0, 0, 0.7),
+    0 3px 10px -2px rgba(0, 0, 0, 0.6);
+  --leaf-shadow-spine:
+    inset 5px 0 10px -2px rgba(0, 0, 0, 0.75),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.05);
 }
 
 /* ---------------------------------------------------------------------------

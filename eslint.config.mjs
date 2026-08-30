@@ -52,8 +52,12 @@ const eslintConfig = defineConfig([
   // logic layer to the design layer: it needs `buildContentTheme` (a plain
   // selector -> declaration map — data, not presentation code) to feed epub.js
   // `rendition.themes`. The components ban still applies.
+  //
+  // Its test carries the same allowance for the same reason: proving the bridge
+  // paints *every registered theme* means reading the registry. Narrowed to this
+  // one test file, not to tests generally.
   {
-    files: ["src/reader/content-hook.ts"],
+    files: ["src/reader/content-hook.ts", "src/reader/content-hook.test.ts"],
     rules: {
       "no-restricted-imports": [
         "error",

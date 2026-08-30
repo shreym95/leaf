@@ -10,6 +10,8 @@
  * tokens.css and a palette entry in content-theme.ts.
  */
 
+import type { ThemeName } from "@/lib/types";
+
 export interface ThemeMeta {
   /** Stable id — matches the `data-theme` attribute value and the tokens.css block. */
   id: string;
@@ -18,11 +20,23 @@ export interface ThemeMeta {
 }
 
 export const THEMES = {
-  night: { id: "night", label: "Night" },
+  // Registry order is display order: light -> dark. The theme picker renders
+  // them in this sequence.
   day: { id: "day", label: "Day" },
-} as const satisfies Record<string, ThemeMeta>;
+  sepia: { id: "sepia", label: "Sepia" },
+  night: { id: "night", label: "Night" },
+} as const satisfies Record<ThemeName, ThemeMeta>;
 
-export type ThemeId = keyof typeof THEMES;
+/**
+ * A theme id is persisted data, so the union is owned by the logic layer
+ * (`ThemeName`) and this layer supplies each id's palette and label. Keying the
+ * registry off it makes the compiler reject a theme the database would refuse,
+ * and makes adding one fail loudly here until its palette exists.
+ *
+ * The seam still points the right way: design imports a type from lib, never
+ * the reverse (SPEC §3.1).
+ */
+export type ThemeId = ThemeName;
 
 /** All registered theme ids, in registry (display) order. */
 export const THEME_IDS = Object.keys(THEMES) as ThemeId[];

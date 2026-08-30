@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { THEME_IDS } from "./themes";
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "tokens.css"),
@@ -79,6 +80,66 @@ describe("reader layout tokens", () => {
     // smaller insets so they cost less of a short screen.
     for (const t of ["reader-viewer-pad-y", "reader-bar-pad-x", "reader-bar-pad-y"]) {
       expect(decl(smallScreen, t), t).toBeDefined();
+    }
+  });
+});
+
+/** Body text of a `[data-theme="<id>"]` palette block. */
+function themeBlock(id: string): string {
+  const m = css.match(new RegExp(`\\[data-theme="${id}"\\]\\s*\\{([^}]*)\\}`));
+  if (!m) throw new Error(`no [data-theme="${id}"] block in tokens.css`);
+  return m[1];
+}
+
+/** Every `--leaf-*` custom property name declared in a block. */
+function tokenNames(block: string): string[] {
+  return [...block.matchAll(/(--leaf-[\w-]+):/g)].map((m) => m[1]).sort();
+}
+
+/** WCAG relative luminance of a `#rrggbb` colour. */
+function luminance(hex: string): number {
+  const h = hex.replace("#", "");
+  const ch = [0, 2, 4].map((i) => {
+    const s = parseInt(h.slice(i, i + 2), 16) / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
+/** WCAG contrast ratio between two `#rrggbb` colours. */
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe("theme palettes", () => {
+  it("has a [data-theme] block in tokens.css for every registered theme id", () => {
+    // Guards every future theme, not just the ones shipped today: a theme in
+    // the registry with no palette block renders unstyled.
+    for (const id of THEME_IDS) {
+      expect(css, id).toContain(`[data-theme="${id}"]`);
+    }
+  });
+
+  it("defines the exact same token set in every theme block", () => {
+    // A theme silently missing a token falls back to whatever cascaded in —
+    // usually the wrong colour, sometimes nothing.
+    const reference = tokenNames(themeBlock(THEME_IDS[0]));
+    for (const id of THEME_IDS.slice(1)) {
+      expect(tokenNames(themeBlock(id)), id).toEqual(reference);
+    }
+  });
+
+  it("meets WCAG 1.4.11 (3:1) for --leaf-rule against --leaf-page in every theme", () => {
+    // The hairline rule is a non-text UI boundary; below 3:1 it is invisible.
+    // This was ~1.5:1 in day and sepia and ~1.4:1 in night before the fix.
+    for (const id of THEME_IDS) {
+      const block = themeBlock(id);
+      const rule = decl(block, "rule");
+      const page = decl(block, "page");
+      expect(rule, `${id} --leaf-rule`).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(page, `${id} --leaf-page`).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(contrast(rule!, page!), `${id} rule/page`).toBeGreaterThanOrEqual(3);
     }
   });
 });

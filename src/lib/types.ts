@@ -5,7 +5,15 @@
 // (planned for M1 tail / M2, once the Supabase CLI is set up — see supabase/README.md).
 // Until then this file is hand-maintained; edit it in lockstep with the migration.
 
-export type ThemeName = "day" | "night";
+// The canonical set of theme ids. A theme id is persisted data — it is written
+// to `profiles.default_theme` and `reader_settings.theme`, both guarded by a
+// CHECK constraint — so it is declared here, in the logic layer, and NOT in the
+// design layer. `src/design/themes.ts` keys its registry off this type, so a new
+// id here is a compile error until every palette exists.
+//
+// Widening this union means widening the CHECK constraints too: see
+// `supabase/migrations/0004_sepia_theme.sql` for the pattern.
+export type ThemeName = "day" | "sepia" | "night";
 export type BookSource = "standardebooks" | "gutenberg" | "upload";
 export type BookStatus = "reading" | "finished";
 export type FontFamily = "serif" | "sans" | "legible";
