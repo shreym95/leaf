@@ -78,6 +78,14 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   `app/global-error.tsx` and `(chrome)/error.tsx`.
 
 ### Changed
+- **One search, both catalogues.** The Standard Ebooks / Project Gutenberg
+  toggle is gone — choosing a library was a decision the reader had no basis to
+  make. `/api/import/search` already queried both when no source was given; it
+  now also de-duplicates a work that appears in both (Standard Ebooks wins, its
+  markup is uniform — SPEC §6), interleaves so neither catalogue buries the
+  other, and reports which sources were unreachable. Each result shows its
+  source as subtext, and a catalogue being down is stated instead of silently
+  halving the results.
 - **App bar rebuilt for narrow screens.** Five inline items in a three-column
   flex collided with the wordmark and wrapped "Sign out" onto two lines on a
   phone. The bar is now three stable slots — wordmark, theme toggle, one account

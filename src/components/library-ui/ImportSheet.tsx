@@ -7,13 +7,13 @@ import type { CatalogSource, SearchResult } from "@/lib/import/types";
 import { trackImport } from "@/lib/analytics";
 
 /**
- * ImportSheet — search Standard Ebooks / Project Gutenberg and add a title to
+ * ImportSheet — one search across both catalogues, adding a title to
  * the library. Client component; presentational + token-driven (no literal
  * style values — SPEC §3.2 / §10). All third-party bytes are fetched by the
  * server (`/api/import*`), never here (SPEC §6).
  *
  * Contract with Agent A:
- *   GET  /api/import/search?q=&source=  -> { results: SearchResult[] }
+ *   GET  /api/import/search?q=  -> { results: SearchResult[]; unavailable: CatalogSource[] }
  *   POST /api/import { source, ref }    -> { book } | 4xx { error }
  */
 
@@ -30,10 +30,11 @@ type RowStatus =
   | { state: "added" }
   | { state: "error"; message: string };
 
-const SOURCES: { value: CatalogSource; label: string }[] = [
-  { value: "standardebooks", label: "Standard Ebooks" },
-  { value: "gutenberg", label: "Project Gutenberg" },
-];
+/** Where a result came from — shown as subtext, not as a choice to make. */
+const SOURCE_LABEL: Record<CatalogSource, string> = {
+  standardebooks: "Standard Ebooks",
+  gutenberg: "Project Gutenberg",
+};
 
 function rowKey(r: SearchResult): string {
   return `${r.source}:${r.ref}`;
@@ -45,7 +46,6 @@ export function ImportSheet({
   onImported,
 }: ImportSheetProps) {
   const searchInputId = useId();
-  const [source, setSource] = useState<CatalogSource>("standardebooks");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searchState, setSearchState] = useState<
@@ -53,6 +53,7 @@ export function ImportSheet({
   >("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<string, RowStatus>>({});
+  const [unavailable, setUnavailable] = useState<CatalogSource[]>([]);
 
   const runSearch = useCallback(
     async (e: React.FormEvent) => {
@@ -63,18 +64,21 @@ export function ImportSheet({
       setSearchError(null);
       setResults([]);
       setRows({});
+      setUnavailable([]);
       try {
-        const res = await fetch(
-          `/api/import/search?q=${encodeURIComponent(q)}&source=${source}`,
-        );
+        const res = await fetch(`/api/import/search?q=${encodeURIComponent(q)}`);
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as {
             error?: string;
           };
           throw new Error(body.error ?? "Search failed. Please try again.");
         }
-        const body = (await res.json()) as { results: SearchResult[] };
+        const body = (await res.json()) as {
+          results: SearchResult[];
+          unavailable?: CatalogSource[];
+        };
         setResults(body.results ?? []);
+        setUnavailable(body.unavailable ?? []);
         setSearchState("done");
       } catch (err) {
         setSearchError(
@@ -83,7 +87,7 @@ export function ImportSheet({
         setSearchState("error");
       }
     },
-    [query, source],
+    [query],
   );
 
   const addBook = useCallback(
@@ -123,38 +127,8 @@ export function ImportSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent title="Add a book" className="max-w-xl">
-        {/* Source toggle */}
-        <div
-          role="group"
-          aria-label="Catalogue"
-          className="flex gap-2"
-        >
-          {SOURCES.map((s) => {
-            const selected = s.value === source;
-            return (
-              <button
-                key={s.value}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => setSource(s.value)}
-                className={clsx(
-                  "font-mono font-medium uppercase rounded-sm border px-3 py-2",
-                  "transition-colors [transition-duration:var(--leaf-dur-ui)]",
-                  "[letter-spacing:var(--leaf-tracking-wide)] [font-size:var(--leaf-text-2xs)]",
-                  "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]",
-                  selected
-                    ? "border-accent text-accent"
-                    : "border-rule text-ink-mid hover:text-ink",
-                )}
-              >
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-
         {/* Search */}
-        <form onSubmit={runSearch} className="mt-4 flex flex-col gap-2">
+        <form onSubmit={runSearch} className="flex flex-col gap-2">
           <label
             htmlFor={searchInputId}
             className="font-mono uppercase text-faint [letter-spacing:var(--leaf-tracking-label)] [font-size:var(--leaf-text-2xs)]"
@@ -192,6 +166,16 @@ export function ImportSheet({
 
         {/* Results */}
         <div className="mt-4 max-h-96 overflow-y-auto">
+          {searchState === "done" && unavailable.length > 0 && (
+            <p
+              role="status"
+              className="mb-3 font-ui text-ink-mid [font-size:var(--leaf-text-xs)]"
+            >
+              {unavailable.map((u) => SOURCE_LABEL[u]).join(" and ")}{" "}
+              {unavailable.length > 1 ? "are" : "is"} unavailable right now —
+              showing what we could reach.
+            </p>
+          )}
           {searchState === "done" && results.length === 0 && (
             <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
               Nothing found. Try another title.
@@ -219,6 +203,9 @@ export function ImportSheet({
                     </p>
                     <p className="font-ui text-ink-mid [font-size:var(--leaf-text-xs)]">
                       {r.author}
+                    </p>
+                    <p className="font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-label)]">
+                      {SOURCE_LABEL[r.source]}
                     </p>
                     {status.state === "error" && (
                       <p

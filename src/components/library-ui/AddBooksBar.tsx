@@ -64,7 +64,7 @@ export function AddBooksBar() {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => setSheetOpen(true)}>
-          Search Standard Ebooks &amp; Gutenberg
+          Find a book
         </Button>
 
         <Button

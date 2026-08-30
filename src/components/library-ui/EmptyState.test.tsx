@@ -34,7 +34,7 @@ describe("EmptyState", () => {
       screen.getByRole("button", { name: /add starter books/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /search standard ebooks/i }),
+      screen.getByRole("button", { name: /find a book/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /upload epub/i }),
