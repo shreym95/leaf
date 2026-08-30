@@ -48,6 +48,25 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
   its call sites (grep `@/lib/analytics`).
 
+## Post-M7
+
+### Fixed
+- **The theme changed by itself when opening a book.** There were two sources of
+  truth for one setting: the chrome's toggle wrote `<html data-theme>` and
+  localStorage, while the reader read `reader_settings.theme` from the database.
+  Switch the library to Day, open a book, and the stored Night value won — the
+  app appeared to flip on its own.
+  - The persisted setting is now the single source of truth. `ThemeSync` seeds
+    the shared store in the chrome layout and reflects it to the document;
+    `ThemeToggle` writes through the store rather than only the DOM. localStorage
+    stays as the pre-paint cache that prevents a flash.
+  - A toggle now follows the reader across devices, which it never did before.
+  - The chrome seeds the **whole** settings row, not just the theme: the store
+    persists all five values together, so a partial hydrate would have written
+    typography defaults over the reader's real choices on the next toggle.
+  - `settingsFromRow` is now shared by the reader page and the chrome layout —
+    the mapping existed in one place and was about to exist in two.
+
 ## M7 — hide and delete books
 
 ### Added

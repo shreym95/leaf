@@ -36,10 +36,34 @@ export interface ReaderSettingsState {
   flush: () => void;
 }
 
-type ReaderSettingsValues = Pick<
+export type ReaderSettingsValues = Pick<
   ReaderSettingsState,
   "fontFamily" | "fontSize" | "lineSpacing" | "margins" | "theme"
 >;
+
+/**
+ * Map a `reader_settings` row to the store's shape, falling back to the
+ * defaults when the row is missing. Shared so the reader and the app chrome
+ * seed from exactly the same values — they used to disagree about the theme.
+ */
+export function settingsFromRow(
+  row: {
+    font_family: FontFamily;
+    font_size: number;
+    line_spacing: number;
+    margins: Margins;
+    theme: ReaderTheme;
+  } | null,
+): ReaderSettingsValues {
+  if (!row) return { ...READER_SETTINGS_DEFAULTS };
+  return {
+    fontFamily: row.font_family,
+    fontSize: row.font_size,
+    lineSpacing: row.line_spacing,
+    margins: row.margins,
+    theme: row.theme,
+  };
+}
 
 export const READER_SETTINGS_DEFAULTS: ReaderSettingsValues = {
   fontFamily: "serif",

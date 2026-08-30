@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getBook, getReaderSettings } from "@/lib/db";
 import { signBookUrl } from "@/lib/storage";
 import { ReaderShell } from "@/components/reader-ui";
-import { READER_SETTINGS_DEFAULTS } from "@/store/reader-settings";
+import { settingsFromRow } from "@/store/reader-settings";
 
 /* Auth-gated + per-user data + a short-lived signed URL: never prerender. */
 export const dynamic = "force-dynamic";
@@ -29,15 +29,7 @@ export default async function ReaderPage({
   // light; epub.js needs an ArrayBuffer, not a URL — see engine.ts).
   const fileUrl = await signBookUrl(user.id, book.storage_path);
 
-  const initialSettings = settingsRow
-    ? {
-        fontFamily: settingsRow.font_family,
-        fontSize: settingsRow.font_size,
-        lineSpacing: settingsRow.line_spacing,
-        margins: settingsRow.margins,
-        theme: settingsRow.theme,
-      }
-    : { ...READER_SETTINGS_DEFAULTS };
+  const initialSettings = settingsFromRow(settingsRow);
 
   return (
     <ReaderShell
