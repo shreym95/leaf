@@ -4,7 +4,8 @@ A calm web e-reader for public-domain classics and your own DRM-free EPUBs.
 Real epub.js pagination, fine-press typography, Day/Night themes, synced library.
 
 MVP 1 — see [`SPEC.md`](./SPEC.md) for scope, architecture, and milestones,
-and [`CLAUDE.md`](./CLAUDE.md) for the build rules.
+[`CLAUDE.md`](./CLAUDE.md) for the build rules, [`BACKLOG.md`](./BACKLOG.md)
+for deferred work, and [`DEPLOY.md`](./DEPLOY.md) for deploys.
 
 ## Develop
 
