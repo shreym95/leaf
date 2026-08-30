@@ -1,4 +1,4 @@
-import type { Book } from "@/lib/types";
+import type { LibraryBook } from "@/lib/db/books";
 import { BookCard } from "./BookCard";
 
 /**
@@ -8,7 +8,7 @@ import { BookCard } from "./BookCard";
  */
 
 export interface ShelfProps {
-  books: Book[];
+  books: LibraryBook[];
 }
 
 export function Shelf({ books }: ShelfProps) {

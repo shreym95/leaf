@@ -41,6 +41,30 @@ a cold start or a poor connection, which is exactly when the app used to look
 dead. `useLinkStatus` was considered and skipped: Next's own docs prefer
 route-level `loading.js`, which is what we now have everywhere.
 
+### Library shelf redesign
+
+Part of the UI overhaul, not a standalone fix (founder's call). The shelf's
+*data* problems are handled separately in M5/M6 — progress, sort order and real
+cover art — so the redesign inherits a shelf with something worth showing.
+
+### Metadata enrichment — M6, covers only
+
+**Cheapest win first:** import already fetches a cover URL for every catalogue
+result (`SearchResult.coverUrl`) and then throws it away — `ingest.ts` hard-codes
+`cover_url: null`. Storing it is nearly free. Uploads need the cover extracted
+from the EPUB itself (the OPF declares a cover image) and put in Storage.
+
+**Ratings are deferred, and Goodreads is not an option** — its API was shut down
+in 2020 (no new keys, existing ones retired). Open Library is the realistic
+source if ratings are ever wanted: free, no key, decent coverage of
+public-domain classics. Founder's call for now: covers only — ratings on
+public-domain classics are thin and closer to noise than signal.
+
+### Privacy policy contact address
+
+`/privacy` still says `[your contact email]`. Low priority (founder's call) but
+it is the last thing that would embarrass a real launch.
+
 ### Highlight creation — currently DISABLED, needs a touch-first design
 
 **Observed (founder, M4):** intrusive, didn't work properly, and would not go

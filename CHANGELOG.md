@@ -48,6 +48,24 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
   its call sites (grep `@/lib/analytics`).
 
+## M5 — the shelf tells you where you are
+
+### Changed
+- **Progress replaces the reading status on each book.** "Reading" was true of
+  nearly every book and said nothing; the card now shows how far in you are
+  (`42%`), `Not started` for a book never opened, and `Finished` at 100%.
+  Never-opened is deliberately distinct from 0%.
+- **The shelf is ordered by what you read last**, then by newest addition among
+  books never opened — so a book you are in the middle of is always near the
+  top. Sorted in `listBooks` rather than the query: ordering by an embedded
+  relation is fragile in PostgREST, and the two-key rule with its null handling
+  reads far more clearly in code.
+- **The source line is much quieter** — smallest type, faint colour, no letter
+  tracking, on its own line. It is provenance, not something to scan for.
+- `listBooks` now embeds `reading_state` and returns `LibraryBook`
+  (`percent`, `lastReadAt`). No schema change was needed — the columns existed
+  since M1, the query just never asked for them.
+
 ## Post-M4 — loading states
 
 ### Added

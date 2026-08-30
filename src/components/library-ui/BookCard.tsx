@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import clsx from "clsx";
-import type { Book, BookSource } from "@/lib/types";
+import type { BookSource } from "@/lib/types";
+import type { LibraryBook } from "@/lib/db/books";
 
 /**
  * BookCard — one book on the shelf. Presentational only: props in, markup out.
@@ -11,7 +12,7 @@ import type { Book, BookSource } from "@/lib/types";
  */
 
 export interface BookCardProps {
-  book: Book;
+  book: LibraryBook;
 }
 
 const SOURCE_LABEL: Record<BookSource, string> = {
@@ -22,7 +23,15 @@ const SOURCE_LABEL: Record<BookSource, string> = {
 
 export function BookCard({ book }: BookCardProps) {
   const initial = book.title.trim().charAt(0).toUpperCase() || "?";
-  const statusLabel = book.status === "finished" ? "Finished" : "Reading";
+
+  // Progress, not a status label: "Reading" was true of nearly every book and
+  // said nothing. A percentage says where you actually are.
+  const pct =
+    book.percent == null
+      ? null
+      : Math.min(100, Math.max(0, Math.round(book.percent * 100)));
+  const progressLabel =
+    pct == null ? "Not started" : pct >= 100 ? "Finished" : `${pct}%`;
 
   return (
     <article>
@@ -60,8 +69,13 @@ export function BookCard({ book }: BookCardProps) {
           <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
             {book.author}
           </p>
-          <p className="font-mono uppercase text-faint [letter-spacing:var(--leaf-tracking-label)] [font-size:var(--leaf-text-2xs)]">
-            {SOURCE_LABEL[book.source]} &middot; {statusLabel}
+          <p className="font-mono uppercase text-ink-mid [letter-spacing:var(--leaf-tracking-label)] [font-size:var(--leaf-text-2xs)]">
+            {progressLabel}
+          </p>
+          {/* Where a book came from is provenance, not something to scan for —
+              smallest type, quietest colour, no tracking. */}
+          <p className="font-ui text-faint [font-size:var(--leaf-text-3xs)]">
+            {SOURCE_LABEL[book.source]}
           </p>
         </div>
       </Link>
