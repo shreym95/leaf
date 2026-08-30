@@ -2,6 +2,98 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## M4 — highlights, polish, ship
+
+### Added — analytics + crash reporting (SPEC §9 M4)
+- **Vercel Analytics + Speed Insights**: `@vercel/analytics`, `@vercel/speed-insights`
+  installed; `<Analytics />` + `<SpeedInsights />` mounted in the root
+  `layout.tsx` (`/next` entrypoints).
+- **`src/lib/analytics.ts`** — the only place `track()` is called. Surface is
+  four functions: `trackScreen(name)`, `trackImport({ source })`, `trackUpload()`,
+  `trackHighlightCreated()`. Payloads are built here from frozen enums
+  (`SCREENS`, `IMPORT_SOURCES`) — caller input is never spread or forwarded
+  key-for-key and is re-validated against the allow-list, so no title / author /
+  file name / CFI / highlight text / email / id can physically reach the vendor.
+  Property value types are closed literal unions (no `string`, no
+  `Record<string, unknown>`). Tests in `src/lib/analytics.test.ts`.
+- **`src/components/analytics/ScreenView.tsx`** — renders nothing, fires
+  `trackScreen` in an effect. Wired on `/library` (`library`) and in
+  `ReaderShell` (`reader`). Settings screen is owned by another agent — see
+  report (flagged).
+- Import success in `ImportSheet` → `trackImport({ source })`; upload success in
+  `AddBooksBar` → `trackUpload()`. UI layer only — the reader engine / content
+  pipeline are untouched.
+- **`src/app/global-error.tsx`** + **`src/app/(chrome)/error.tsx`** — calm,
+  token-driven crash fallbacks; `console.error(error)` (what Vercel captures);
+  `retry` prop (Next 16.3 stable). `global-error` imports `globals.css` and runs
+  the pre-paint theme script itself (it replaces the root layout, so it inherits
+  no tokens / `data-theme` / ThemeProvider).
+
+### Added — a11y + reduced-motion pass (SPEC §3.6)
+- Reader now has a `main` landmark: `SpreadFrame`'s outer element is `<main
+  aria-label="Reader">` (previously a bare `<div>` — the reader route had no
+  `main`).
+- `ReaderSettingsSheet` `Segmented` is now a valid WAI-ARIA radio group: roving
+  `tabIndex` (group is one Tab stop), Arrow / Home / End move + select, checked
+  option is the tab target.
+- `ReaderShell` announces reading progress on a **polite, throttled** live
+  region (`role="status"`, whole-5% steps only) — previously nothing announced
+  progress at all.
+- `EmptyState` heading promoted `<h2>` → `<h1>` (it is the only page heading
+  when the shelf is empty).
+
+### Coupling note (for the next-version redesign)
+- `src/components/**` and `src/app/**` now import `@/lib/analytics` (a
+  logic-layer module, allowed direction). Swapping the design layer does not
+  touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
+  its call sites (grep `@/lib/analytics`).
+
+## M4 — Highlights, polish, ship
+
+### Added
+- **Highlights + notes, anchored by CFI** (SPEC §8). `src/reader/highlights.ts`
+  manages them (style-agnostic — it only ever handles a colour *name*); the
+  engine gained `onSelected` / `addHighlight` / `removeHighlight` /
+  `clearSelection` over `rendition.annotations`. Persisted to `highlights` via
+  the browser client + RLS, restored and re-painted on reopen.
+- **Highlight UI**: a colour popover on selection (and on tapping an existing
+  highlight — recolour / remove / add note) plus a per-book notes panel in the
+  top bar, with jump-to-passage, inline note editing and delete.
+- **Highlight palette** (`src/design/highlight-theme.ts` + `--leaf-hl-*` tokens):
+  four washes per theme. The book iframe cannot read host CSS vars, so concrete
+  values live in the design layer and reach the logic layer as a `stylesFor`
+  callback — a lockstep test keeps them equal to `tokens.css`.
+- **Account deletion** (`/api/account/delete`): Storage objects → owned rows →
+  auth user, in that order, behind a typed `DELETE` confirmation. Storage must
+  fully succeed first, so a failure can never leave a half-deleted account. The
+  service-role client (`src/lib/supabase/admin.ts`) is `import "server-only"`
+  plus a runtime window guard, and is imported by that one route.
+- **Settings screen** with identity + a danger zone, and a **privacy policy**
+  (`/privacy`) stating plainly that reading content is never collected.
+- **Analytics** (Vercel Analytics + Speed Insights) behind `src/lib/analytics.ts`:
+  four events (`screen_view`, `book_import`, `book_upload`, `highlight_created`).
+  Payloads are rebuilt inside the module from allow-listed literals and
+  re-validated, so a title, CFI, note, email or user id cannot be sent — it is a
+  compile error *and* dropped at runtime. Error boundaries at
+  `app/global-error.tsx` and `(chrome)/error.tsx`.
+
+### Accessibility (SPEC §3.6)
+- Reader gained a `main` landmark; the settings `radiogroup` is now APG-conformant
+  (one tab stop, arrow/Home/End); reading progress is announced politely and only
+  on whole-5% steps; tap zones are no longer focusable-yet-`aria-hidden`; the
+  empty-library heading is an `h1`.
+- Contrast audited in both themes — every text pair passes AA (tightest:
+  `faint` 4.69:1). No token changed.
+- Flagged, not changed: `--leaf-rule` hairlines sit ~1.5:1, arguably short of
+  SC 1.4.11 for the search input's resting border. Raising it thickens every
+  hairline app-wide — a visual-design call, see BACKLOG.
+
+### Verification
+- Highlight loop driven in a real browser: select → popover → pick colour →
+  epub.js paints the wash (`fill: rgba(126,168,112,0.30)`, the sage token) →
+  persisted → listed in the notes panel.
+- 157 tests green.
+
 ## M3 — the reader (core)
 
 ### Added

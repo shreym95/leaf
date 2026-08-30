@@ -4,6 +4,7 @@ import { useCallback, useId, useState } from "react";
 import clsx from "clsx";
 import { Button, Sheet, SheetContent } from "@/components/primitives";
 import type { CatalogSource, SearchResult } from "@/lib/import/types";
+import { trackImport } from "@/lib/analytics";
 
 /**
  * ImportSheet — search Standard Ebooks / Project Gutenberg and add a title to
@@ -102,6 +103,8 @@ export function ImportSheet({
           throw new Error(body.error ?? "Could not add that book.");
         }
         setRows((prev) => ({ ...prev, [key]: { state: "added" } }));
+        // Count the import by source only (SPEC §9 M4) — never the title/ref.
+        trackImport({ source: result.source });
         onImported?.();
       } catch (err) {
         setRows((prev) => ({

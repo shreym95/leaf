@@ -39,7 +39,8 @@ export function SpreadFrame({
   children,
 }: SpreadFrameProps) {
   return (
-    <div
+    <main
+      aria-label="Reader"
       className="flex min-h-0 flex-1 items-center justify-center pb-4"
       style={{ paddingInline: "var(--leaf-reader-frame-pad-x)" }}
     >
@@ -71,17 +72,20 @@ export function SpreadFrame({
           }}
         />
 
-        {/* Tap zones for turning (supplementary to the bottom-bar buttons). */}
+        {/* Tap zones for turning — supplementary to the labelled bottom-bar
+            buttons and the ←/→ keys. Kept out of the tab sequence (tabIndex
+            -1) but given real names rather than aria-hidden, so they are not
+            focusable-yet-hidden (an axe violation). */}
         <button
           type="button"
-          aria-hidden
+          aria-label="Previous page"
           tabIndex={-1}
           onClick={onPrev}
           className="absolute inset-y-0 left-0 z-[7] w-[14%] cursor-pointer"
         />
         <button
           type="button"
-          aria-hidden
+          aria-label="Next page"
           tabIndex={-1}
           onClick={onNext}
           className="absolute inset-y-0 right-0 z-[7] w-[14%] cursor-pointer"
@@ -104,6 +108,6 @@ export function SpreadFrame({
 
         {children}
       </div>
-    </div>
+    </main>
   );
 }

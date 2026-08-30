@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/primitives";
 import { uploadEpub } from "@/lib/upload-client";
+import { trackUpload } from "@/lib/analytics";
 import { ImportSheet } from "./ImportSheet";
 
 /**
@@ -40,6 +41,8 @@ export function AddBooksBar() {
         await uploadEpub(file, {
           onProgress: (pct) => setUpload({ state: "uploading", pct }),
         });
+        // Bare count — no file name or metadata (SPEC §9 M4).
+        trackUpload();
         setUpload({ state: "idle" });
         refresh();
       } catch (err) {

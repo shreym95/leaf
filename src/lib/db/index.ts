@@ -12,3 +12,10 @@ export {
   type ReaderSettingsPatch,
 } from "./reader-settings";
 export { getReadingState, upsertReadingState } from "./reading-state";
+export {
+  listHighlights,
+  createHighlight,
+  updateHighlightNote,
+  deleteHighlight,
+  type CreateHighlightInput,
+} from "./highlights";

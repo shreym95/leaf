@@ -6,6 +6,8 @@ import {
   Atkinson_Hyperlegible,
   Source_Sans_3,
 } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 
@@ -87,6 +89,10 @@ export default function RootLayout({
             (src/app/(reader)) renders full-bleed with its own immersive bars
             and no app NavBar (SPEC §8). */}
         <ThemeProvider>{children}</ThemeProvider>
+        {/* Zero-config telemetry (SPEC §9 M4). Screen views / import events are
+            sent explicitly via src/lib/analytics.ts — never reading content. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

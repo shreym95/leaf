@@ -40,6 +40,9 @@ export async function NavBar() {
             </Link>
           </>
         )}
+        <Link href="/privacy" className={linkClass}>
+          Privacy
+        </Link>
       </nav>
 
       <Link

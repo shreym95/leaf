@@ -19,6 +19,8 @@ const { book, rendition, ePubFn } = vi.hoisted(() => {
     spread: vi.fn((_spread: string) => {}),
     next: vi.fn(async () => {}),
     prev: vi.fn(async () => {}),
+    annotations: { add: vi.fn(), remove: vi.fn() },
+    getContents: vi.fn(() => [] as unknown[]),
     destroy: vi.fn(),
     currentLocation: vi.fn(() => ({
       start: { cfi: "epubcfi(/6/2!/4)", displayed: { page: 1, total: 2 } },
@@ -148,6 +150,54 @@ describe("wiring", () => {
     await reader.attach(document.createElement("div"));
     expect(rendition.on).toHaveBeenCalledWith("relocated", expect.any(Function));
     expect(book.locations.generate).toHaveBeenCalledWith(1200);
+  });
+
+  it("subscribes to the rendition's `selected` event and forwards real selections", async () => {
+    const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+    const seen: { cfiRange: string; text: string }[] = [];
+    reader.onSelected((s) => seen.push(s));
+    await reader.attach(document.createElement("div"));
+
+    const selectedCb = rendition.on.mock.calls.find(
+      (c) => c[0] === "selected",
+    )![1] as (cfi: unknown, contents: unknown) => void;
+
+    const contents = {
+      window: { getSelection: () => ({ toString: () => "  a passage  " }) },
+    };
+    selectedCb("epubcfi(/6/4!/2,/1:0,/1:9)", contents);
+    selectedCb("epubcfi(/6/4!/2,/1:0,/1:9)", contents); // repeat — ignored
+    selectedCb("epubcfi(/6/4!/2,/1:0,/1:0)", {
+      window: { getSelection: () => ({ toString: () => "" }) },
+    }); // empty — ignored
+
+    expect(seen).toEqual([
+      { cfiRange: "epubcfi(/6/4!/2,/1:0,/1:9)", text: "a passage" },
+    ]);
+  });
+
+  it("addHighlight / removeHighlight drive rendition.annotations with the CFI range", async () => {
+    const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+    await reader.attach(document.createElement("div"));
+
+    reader.addHighlight("epubcfi(/6/8!/4,/1:2,/1:40)", {
+      id: "h1",
+      styles: { fill: "var(--x)" },
+    });
+    expect(rendition.annotations.add).toHaveBeenCalledWith(
+      "highlight",
+      "epubcfi(/6/8!/4,/1:2,/1:40)",
+      { id: "h1" },
+      undefined,
+      expect.stringContaining("leaf-hl-h1"),
+      { fill: "var(--x)" },
+    );
+
+    reader.removeHighlight("epubcfi(/6/8!/4,/1:2,/1:40)");
+    expect(rendition.annotations.remove).toHaveBeenCalledWith(
+      "epubcfi(/6/8!/4,/1:2,/1:40)",
+      "highlight",
+    );
   });
 
   it("percent stays 0 until locations.generate resolves, then reflects book.locations", async () => {

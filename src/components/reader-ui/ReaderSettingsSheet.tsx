@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Sheet, SheetContent } from "@/components/primitives";
 import {
@@ -87,6 +88,11 @@ function Field({
   );
 }
 
+/**
+ * Segmented — a WAI-ARIA radio group (APG "radio group" pattern): the group is
+ * one Tab stop, arrow / Home / End keys move between options and select as they
+ * go, and the checked option carries `tabIndex=0` (roving tabindex).
+ */
 function Segmented<T extends string | number>({
   options,
   value,
@@ -98,20 +104,63 @@ function Segmented<T extends string | number>({
   onChange: (value: T) => void;
   ariaLabel: string;
 }) {
+  const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const foundIndex = options.findIndex((o) => o.value === value);
+  const activeIndex = foundIndex === -1 ? 0 : foundIndex;
+
+  function selectAt(i: number) {
+    const n = options.length;
+    const idx = ((i % n) + n) % n;
+    const opt = options[idx];
+    if (!opt) return;
+    onChange(opt.value);
+    btnRefs.current[idx]?.focus();
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        e.preventDefault();
+        selectAt(activeIndex + 1);
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        e.preventDefault();
+        selectAt(activeIndex - 1);
+        break;
+      case "Home":
+        e.preventDefault();
+        selectAt(0);
+        break;
+      case "End":
+        e.preventDefault();
+        selectAt(options.length - 1);
+        break;
+      default:
+        break;
+    }
+  }
+
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
+      onKeyDown={onKeyDown}
       className="flex gap-2 rounded-sm border border-rule p-1"
     >
-      {options.map((opt) => {
+      {options.map((opt, i) => {
         const active = opt.value === value;
         return (
           <button
             key={String(opt.value)}
+            ref={(el) => {
+              btnRefs.current[i] = el;
+            }}
             type="button"
             role="radio"
             aria-checked={active}
+            tabIndex={i === activeIndex ? 0 : -1}
             onClick={() => onChange(opt.value)}
             className={
               "flex-1 rounded-xs px-3 py-2 font-ui transition-colors [font-size:var(--leaf-text-xs)] [transition-duration:var(--leaf-dur-ui)] " +

@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { listBooks } from "@/lib/db";
 import { AddBooksBar, EmptyState, Shelf } from "@/components/library-ui";
+import { ScreenView } from "@/components/analytics/ScreenView";
 
 /* Auth-gated + per-user data: never prerender this route at build time
    (`requireUser` reads cookies, which already forces dynamic). */
@@ -12,6 +13,7 @@ export default async function LibraryPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-10">
+      <ScreenView name="library" />
       <header className="flex flex-col gap-2">
         <p className="font-mono font-medium uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-2xs)]">
           Your library

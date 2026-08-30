@@ -129,6 +129,12 @@
   --leaf-gutter: rgba(0, 0, 0, 0.05);
   --leaf-focus: #8a2b1e;
   --leaf-selection: rgba(138, 43, 30, 0.2);
+  /* Highlight wash — painted into the book iframe behind the text, so these are
+     translucent and must stay light enough to read `--leaf-ink` through. */
+  --leaf-hl-copper: rgba(190, 120, 60, 0.30);
+  --leaf-hl-sage: rgba(104, 140, 92, 0.28);
+  --leaf-hl-sky: rgba(86, 132, 178, 0.28);
+  --leaf-hl-rose: rgba(186, 92, 116, 0.28);
   color-scheme: light;
 }
 
@@ -150,6 +156,12 @@
   --leaf-gutter: rgba(0, 0, 0, 0.25);
   --leaf-focus: #c58a52;
   --leaf-selection: rgba(197, 138, 82, 0.24);
+  /* Night washes run a little stronger — a translucent wash over near-black
+     needs more presence to register at all. */
+  --leaf-hl-copper: rgba(197, 138, 82, 0.34);
+  --leaf-hl-sage: rgba(126, 168, 112, 0.30);
+  --leaf-hl-sky: rgba(116, 162, 208, 0.30);
+  --leaf-hl-rose: rgba(210, 118, 142, 0.30);
   color-scheme: dark;
 }
 

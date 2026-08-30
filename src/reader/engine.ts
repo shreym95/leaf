@@ -39,6 +39,16 @@ export interface ReaderController {
   relayout(): void; // recompute spread (call on resize; debounced inside)
   applySettings(s: ReaderContentSettings): void; // -> rendition.themes / font / override
   onRelocated(cb: (loc: ReaderLocation) => void): () => void; // returns an unsubscribe fn
+  /** Fires when the user finishes selecting text in the book. */
+  onSelected(cb: (sel: { cfiRange: string; text: string }) => void): () => void;
+  /** Paint a highlight. `styles` is supplied by the caller (design layer decides colour). */
+  addHighlight(
+    cfiRange: string,
+    opts: { id: string; styles: Record<string, string>; onClick?: () => void },
+  ): void;
+  removeHighlight(cfiRange: string): void;
+  /** Clear the current text selection in the book iframe. */
+  clearSelection(): void;
   readonly sectionCount: number;
   destroy(): void;
 }
@@ -102,6 +112,10 @@ export async function createReader(
   let lastKnownCfi: string | undefined;
 
   const subscribers = new Set<(loc: ReaderLocation) => void>();
+  const selectionSubscribers = new Set<
+    (sel: { cfiRange: string; text: string }) => void
+  >();
+  let lastSelectionCfi: string | undefined;
 
   function emit(loc: ReaderLocation): void {
     for (const cb of subscribers) {
@@ -109,6 +123,31 @@ export async function createReader(
         cb(loc);
       } catch {
         // a bad subscriber must not break relocation handling for the others
+      }
+    }
+  }
+
+  // epub.js emits `selected(cfiRange, contents)` when a selection settles in a
+  // chapter iframe. `contents.window` is the iframe window — read the selected
+  // string from it. Empty / collapsed selections and repeats of the last range
+  // are ignored so the caller only sees real, new selections.
+  function handleSelected(rawCfi: unknown, rawContents: unknown): void {
+    if (typeof rawCfi !== "string" || !rawCfi) return;
+    let text = "";
+    try {
+      const win = (rawContents as { window?: Window } | undefined)?.window;
+      text = win?.getSelection?.()?.toString().trim() ?? "";
+    } catch {
+      text = "";
+    }
+    if (!text) return;
+    if (rawCfi === lastSelectionCfi) return;
+    lastSelectionCfi = rawCfi;
+    for (const cb of selectionSubscribers) {
+      try {
+        cb({ cfiRange: rawCfi, text });
+      } catch {
+        // a bad subscriber must not break selection handling for the others
       }
     }
   }
@@ -183,6 +222,7 @@ export async function createReader(
       );
 
       rendition.on("relocated", handleRelocated);
+      rendition.on("selected", handleSelected);
 
       // The content pipeline (registered above) styles chapter one on its first
       // render — no pre-display theming needed here.
@@ -258,6 +298,70 @@ export async function createReader(
       };
     },
 
+    onSelected(cb: (sel: { cfiRange: string; text: string }) => void): () => void {
+      selectionSubscribers.add(cb);
+      return () => {
+        selectionSubscribers.delete(cb);
+      };
+    },
+
+    addHighlight(
+      cfiRange: string,
+      opts: { id: string; styles: Record<string, string>; onClick?: () => void },
+    ): void {
+      // A failed annotation must never break reading (SPEC §8).
+      try {
+        const cb = opts.onClick
+          ? () => {
+              try {
+                opts.onClick?.();
+              } catch {
+                // swallow — a click handler must not bubble into epub.js
+              }
+            }
+          : undefined;
+        rendition?.annotations.add(
+          "highlight",
+          cfiRange,
+          { id: opts.id },
+          cb,
+          `leaf-hl leaf-hl-${opts.id}`,
+          opts.styles,
+        );
+      } catch {
+        // ignore — highlight painting is best-effort
+      }
+    },
+
+    removeHighlight(cfiRange: string): void {
+      try {
+        rendition?.annotations.remove(cfiRange, "highlight");
+      } catch {
+        // ignore — the annotation may already be gone
+      }
+    },
+
+    clearSelection(): void {
+      lastSelectionCfi = undefined;
+      try {
+        const contents = rendition?.getContents() as unknown;
+        const list = Array.isArray(contents)
+          ? contents
+          : contents
+            ? [contents]
+            : [];
+        for (const c of list) {
+          try {
+            (c as { window?: Window }).window?.getSelection?.()?.removeAllRanges();
+          } catch {
+            // ignore a single uncooperative iframe
+          }
+        }
+      } catch {
+        // ignore — nothing rendered yet
+      }
+    },
+
     get sectionCount(): number {
       return sectionCount;
     },
@@ -272,6 +376,7 @@ export async function createReader(
         redisplayTimer = undefined;
       }
       subscribers.clear();
+      selectionSubscribers.clear();
       try {
         contentPipeline?.destroy();
       } catch {

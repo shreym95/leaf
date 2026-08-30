@@ -10,10 +10,19 @@ import {
   type ReaderTheme,
 } from "@/store/reader-settings";
 import { isThemeId } from "@/design/themes";
+import { trackScreen, trackHighlightCreated } from "@/lib/analytics";
+import {
+  manageHighlights,
+  type HighlightManager,
+  type HighlightRecord,
+} from "@/reader/highlights";
+import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderBottomBar } from "./ReaderBottomBar";
 import { SpreadFrame } from "./SpreadFrame";
 import { ReaderSettingsSheet } from "./ReaderSettingsSheet";
+import { HighlightPopover } from "./HighlightPopover";
+import { NotesPanel } from "./NotesPanel";
 
 /**
  * ReaderShell — the client reader (SPEC §8). Owns the epub.js container + the
@@ -60,9 +69,24 @@ export function ReaderShell({
 
   const [load, setLoad] = useState<LoadState>({ state: "loading" });
   const [percent, setPercent] = useState(0);
+  // Coarse progress for the polite live region — only whole 5% steps, so a
+  // screen reader hears "N% read" roughly once per several pages, not on every
+  // page turn (SPEC §3.6 screen-reader sanity: announce, don't chatter).
+  const [announcedPct, setAnnouncedPct] = useState<number | null>(null);
   const [folio, setFolio] = useState<{ left?: number; right?: number }>({});
   const [immersive, setImmersive] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // ── Highlights ────────────────────────────────────────────────────────
+  const highlightsRef = useRef<HighlightManager | null>(null);
+  const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
+  const [notesOpen, setNotesOpen] = useState(false);
+  // Pending selection (popover anchor + the range it will highlight), or the
+  // existing highlight the reader tapped.
+  const [pending, setPending] = useState<
+    | { at: { x: number; y: number }; cfiRange: string; text: string; existing?: HighlightRecord }
+    | null
+  >(null);
 
   const { setTheme: applyChromeTheme } = useTheme();
 
@@ -78,12 +102,24 @@ export function ReaderShell({
   );
   const setStoreTheme = useReaderSettings((s) => s.setTheme);
 
+  // The highlight manager is created once but must paint with the CURRENT
+  // theme's wash, so its closure reads this ref rather than a captured value.
+  const themeRef = useRef(initialSettings.theme);
+  useEffect(() => {
+    themeRef.current = settings.theme;
+  }, [settings.theme]);
+
   // ── Hydrate the store once from the server-loaded row ──────────────────
   // (createReader is seeded straight from the `initialSettings` prop, so the
   // one-render gap before this effect runs is harmless.)
   useEffect(() => {
     useReaderSettings.getState().hydrate(initialSettings, userId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Screen view (SPEC §9 M4) — name only, no bookId/title/CFI ──────────
+  useEffect(() => {
+    trackScreen("reader");
   }, []);
 
   // ── Theme is single-source: the reader-settings store. The toggle writes
@@ -102,6 +138,8 @@ export function ReaderShell({
   useEffect(() => {
     let cancelled = false;
     let unsubRelocated: (() => void) | undefined;
+    let unsubSelected: (() => void) | undefined;
+    let unsubHighlights: (() => void) | undefined;
 
     (async () => {
       try {
@@ -123,6 +161,10 @@ export function ReaderShell({
           if (cancelled) return;
           setPercent(loc.percent);
           setFolio({ left: loc.displayedPage, right: loc.totalPages });
+          const p = Math.round(loc.percent * 100);
+          setAnnouncedPct((prev) =>
+            prev === null || Math.abs(p - prev) >= 5 ? p : prev,
+          );
         });
 
         await controller.attach(viewerRef.current);
@@ -134,6 +176,41 @@ export function ReaderShell({
         const tracker = trackPosition(controller, bookId);
         trackerRef.current = tracker;
         await tracker.restore();
+
+        // Highlights: the manager is style-agnostic, so the concrete wash comes
+        // from the design layer here. `themeRef` keeps the closure reading the
+        // live theme rather than the value captured at mount.
+        const highlights = manageHighlights(controller, bookId, {
+          stylesFor: (color) => highlightStyles(color, themeRef.current),
+          onHighlightClick: (h) => {
+            const box = frameRef.current?.getBoundingClientRect();
+            setPending({
+              at: {
+                x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
+                y: (box?.top ?? 0) + 48,
+              },
+              cfiRange: h.cfiRange,
+              text: h.text,
+              existing: h,
+            });
+          },
+        });
+        highlightsRef.current = highlights;
+        unsubHighlights = highlights.subscribe(setHighlights);
+        await highlights.restore();
+
+        unsubSelected = controller.onSelected(({ cfiRange, text }) => {
+          if (cancelled) return;
+          const box = frameRef.current?.getBoundingClientRect();
+          setPending({
+            at: {
+              x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
+              y: (box?.top ?? 0) + 48,
+            },
+            cfiRange,
+            text,
+          });
+        });
 
         if (!cancelled) setLoad({ state: "ready" });
       } catch (err) {
@@ -151,6 +228,10 @@ export function ReaderShell({
     return () => {
       cancelled = true;
       unsubRelocated?.();
+      unsubSelected?.();
+      unsubHighlights?.();
+      highlightsRef.current?.stop();
+      highlightsRef.current = null;
       trackerRef.current?.stop();
       trackerRef.current = null;
       controllerRef.current?.destroy();
@@ -181,6 +262,42 @@ export function ReaderShell({
     if (!controller) return;
     void (dir === "next" ? controller.next() : controller.prev());
   }, []);
+
+  // ── Highlight actions ─────────────────────────────────────────────────
+  const dismissHighlight = useCallback(() => {
+    setPending(null);
+    controllerRef.current?.clearSelection();
+  }, []);
+
+  const pickColor = useCallback(
+    (color: string) => {
+      const p = pending;
+      if (!p) return;
+      const mgr = highlightsRef.current;
+      if (p.existing) {
+        // Re-colouring: drop the old paint, re-create at the same range.
+        void mgr?.remove(p.existing.id).then(() =>
+          mgr?.create({ cfiRange: p.cfiRange, text: p.text, color }),
+        );
+      } else {
+        void mgr?.create({ cfiRange: p.cfiRange, text: p.text, color });
+        trackHighlightCreated();
+      }
+      dismissHighlight();
+    },
+    [pending, dismissHighlight],
+  );
+
+  const removeHighlight = useCallback(() => {
+    const id = pending?.existing?.id;
+    if (id) void highlightsRef.current?.remove(id);
+    dismissHighlight();
+  }, [pending, dismissHighlight]);
+
+  const openNotesFromPopover = useCallback(() => {
+    dismissHighlight();
+    setNotesOpen(true);
+  }, [dismissHighlight]);
 
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
   useEffect(() => {
@@ -218,6 +335,8 @@ export function ReaderShell({
         hidden={immersive}
         onSetTheme={setReaderTheme}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenNotes={() => setNotesOpen(true)}
+        highlightCount={highlights.length}
       />
 
       <SpreadFrame
@@ -251,6 +370,41 @@ export function ReaderShell({
         onOpenChange={setSettingsOpen}
         onSetTheme={setReaderTheme}
       />
+
+      <HighlightPopover
+        at={pending?.at ?? null}
+        existingColor={pending?.existing?.color ?? null}
+        onPick={pickColor}
+        onRemove={pending?.existing ? removeHighlight : undefined}
+        onAddNote={pending?.existing ? openNotesFromPopover : undefined}
+        onDismiss={dismissHighlight}
+      />
+
+      <NotesPanel
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        items={highlights.map((h) => ({
+          id: h.id,
+          cfiRange: h.cfiRange,
+          text: h.text,
+          color: h.color,
+          note: h.note,
+        }))}
+        onGoTo={(cfiRange) => {
+          setNotesOpen(false);
+          void controllerRef.current?.goTo(cfiRange);
+        }}
+        onSetNote={(id, note) => void highlightsRef.current?.setNote(id, note)}
+        onRemove={(id) => void highlightsRef.current?.remove(id)}
+      />
+
+      {/* Polite, throttled progress announcement for screen readers. Updated
+          only on 5% boundaries (see `announcedPct`) so it never chatters. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {load.state === "ready" && announcedPct != null
+          ? `${announcedPct}% read`
+          : ""}
+      </p>
     </>
   );
 }

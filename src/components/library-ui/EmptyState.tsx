@@ -45,9 +45,11 @@ export function EmptyState() {
 
   return (
     <div className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-5 px-6 py-16 text-center">
-      <h2 className="font-display text-ink [font-size:var(--leaf-text-2xl)]">
+      {/* The only page heading when the shelf is empty (the library <h1> count
+          renders only when books exist), so this is an <h1>. */}
+      <h1 className="font-display text-ink [font-size:var(--leaf-text-2xl)]">
         Your shelf is empty
-      </h2>
+      </h1>
       <p className="font-ui text-ink-mid [font-size:var(--leaf-text-lg)] [line-height:var(--leaf-leading-body)]">
         Add a book — a public-domain classic or your own EPUB — and it will rest
         here, ready to open.

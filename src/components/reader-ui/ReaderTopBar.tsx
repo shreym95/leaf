@@ -19,6 +19,8 @@ export interface ReaderTopBarProps {
   hidden: boolean;
   onSetTheme: (theme: ReaderTheme) => void;
   onOpenSettings: () => void;
+  onOpenNotes: () => void;
+  highlightCount: number;
 }
 
 export function ReaderTopBar({
@@ -28,6 +30,8 @@ export function ReaderTopBar({
   hidden,
   onSetTheme,
   onOpenSettings,
+  onOpenNotes,
+  highlightCount,
 }: ReaderTopBarProps) {
   const nextTheme: ReaderTheme =
     (THEME_IDS[(THEME_IDS.indexOf(theme) + 1) % THEME_IDS.length] as
@@ -56,7 +60,7 @@ export function ReaderTopBar({
       </div>
 
       <span
-        aria-label="Leaf"
+        aria-hidden
         className="hidden flex-none font-mono font-medium uppercase text-accent [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)] sm:block"
       >
         Leaf
@@ -71,6 +75,15 @@ export function ReaderTopBar({
           aria-label={`Switch to ${nextLabel} theme`}
         >
           {nextLabel}
+        </Button>
+        <Button
+          variant="quiet"
+          size="sm"
+          mono
+          onClick={onOpenNotes}
+          aria-label={`Highlights and notes (${highlightCount})`}
+        >
+          Notes{highlightCount > 0 ? ` ${highlightCount}` : ""}
         </Button>
         <Button
           variant="quiet"
