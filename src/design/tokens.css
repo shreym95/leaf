@@ -109,6 +109,7 @@
     transparent
   );
   --leaf-reader-frame-pad-x: clamp(1rem, 5vw, 5rem);
+  --leaf-reader-frame-pad-b: var(--leaf-space-4);
   --leaf-reader-frame-radius: var(--leaf-radius-sm);
   --leaf-reader-frame-shadow: var(--leaf-shadow-book);
   --leaf-reader-bar-pad-x: var(--leaf-space-5);
@@ -131,8 +132,18 @@
   :root {
     --leaf-reader-frame-w: 100vw;
     --leaf-reader-frame-pad-x: 0px;
-    --leaf-reader-viewer-pad-x: var(--leaf-space-2);
-    --leaf-reader-viewer-pad-y: var(--leaf-space-3);
+    --leaf-reader-frame-pad-b: 0px;
+    /* The viewer element IS epub.js's container: it measures that box and sizes
+       its columns to it. Padding here shrinks the iframe *after* the column
+       width is fixed, so the last column overhangs and the page looks
+       lopsided — 44px of inset on the left, a clipped edge on the right. Keep
+       it at zero and let the insets come from epub.js's own body padding plus
+       the Margins setting, which are symmetric by construction. */
+    --leaf-reader-viewer-pad-x: 0px;
+    --leaf-reader-viewer-pad-y: 0px;
+    /* Full-bleed means the page fills the screen — no cap, or the paper shows
+       through as strips above and below. */
+    --leaf-reader-frame-max-h: none;
     --leaf-reader-frame-radius: 0px;
     --leaf-reader-frame-shadow: none;
     --leaf-reader-bar-pad-x: var(--leaf-space-4);

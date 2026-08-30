@@ -41,8 +41,11 @@ export function SpreadFrame({
   return (
     <main
       aria-label="Reader"
-      className="flex min-h-0 flex-1 items-center justify-center pb-4"
-      style={{ paddingInline: "var(--leaf-reader-frame-pad-x)" }}
+      className="flex min-h-0 flex-1 items-center justify-center"
+      style={{
+        paddingInline: "var(--leaf-reader-frame-pad-x)",
+        paddingBottom: "var(--leaf-reader-frame-pad-b)",
+      }}
     >
       <div
         ref={frameRef}
@@ -93,8 +96,13 @@ export function SpreadFrame({
           className="absolute inset-y-0 right-0 z-[7] w-[14%] cursor-pointer"
         />
 
+        {/* Folios are a framed-page affordance: with the mat gone below `lg`
+            they land on top of the prose, so they only appear alongside the
+            frame. Progress lives in the bottom bar regardless. */}
         {folioLeft != null && (
-          <span className={`${folioClass} left-8`}>{folioLeft}</span>
+          <span className={`${folioClass} left-8 hidden lg:block`}>
+            {folioLeft}
+          </span>
         )}
         {folioRight != null && (
           <span className={`${folioClass} right-8 hidden lg:block`}>

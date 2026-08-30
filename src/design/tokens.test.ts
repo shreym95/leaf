@@ -36,6 +36,21 @@ describe("reader layout tokens", () => {
     expect(decl(root, "reader-frame-shadow")).toBe("var(--leaf-shadow-book)");
   });
 
+  it("hands epub.js an unpadded container on small screens", () => {
+    // The viewer element IS epub.js's container — it sizes its columns to that
+    // box. Padding it shrank the iframe after the column width was fixed, so the
+    // page rendered lopsided (36px inset one side, a clipped edge the other).
+    expect(decl(smallScreen, "reader-viewer-pad-x")).toBe("0px");
+    expect(decl(smallScreen, "reader-viewer-pad-y")).toBe("0px");
+  });
+
+  it("lets the page fill the screen, so no paper shows through", () => {
+    // A max-height cap left strips of `--leaf-paper` above and below the
+    // `--leaf-page` surface — visible as bands in a full-bleed reader.
+    expect(decl(smallScreen, "reader-frame-max-h")).toBe("none");
+    expect(decl(smallScreen, "reader-frame-pad-b")).toBe("0px");
+  });
+
   it("tightens the reader chrome on small screens rather than dropping it", () => {
     // The bars stay — they are the only way back to the library — but they get
     // smaller insets so they cost less of a short screen.

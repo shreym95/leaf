@@ -317,7 +317,13 @@ export function ReaderShell({
         onNext={() => turn("next")}
       />
 
-      <ImmersiveExit visible={immersive} onExit={exitImmersive} />
+      {/* Keyed so entering immersive remounts it: the control starts visible,
+          then fades on its own. */}
+      <ImmersiveExit
+        key={immersive ? "immersive" : "windowed"}
+        visible={immersive}
+        onExit={exitImmersive}
+      />
 
       <ReaderSettingsSheet
         open={settingsOpen}

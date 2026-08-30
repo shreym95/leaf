@@ -50,6 +50,28 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
 ## Post-M4 — reader space on small screens
 
+### Fixed
+- **The full-bleed page was not actually seamless.** Three separate causes,
+  all visible at once on a phone:
+  - *Bands above and below the text* — `--leaf-reader-frame-max-h: 820px` on an
+    844px screen (plus the mat's bottom padding) left strips of `--leaf-paper`
+    showing around the `--leaf-page` surface. The cap and that padding are now
+    `none` / `0` below the frame breakpoint. Gaps measured 16px/8px → **0/0**.
+  - *Unequal left and right margins* — the viewer element **is** epub.js's
+    container, and it sizes its columns to that box. Our padding shrank the
+    iframe *after* the column width was fixed, so the column (390px) overhung
+    its 374px viewport and the right edge clipped. Viewer padding is now zero on
+    small screens; the insets come from epub.js's own body padding plus the
+    Margins setting, which are symmetric by construction. Measured **36px on
+    both sides**.
+  - *Chrome sitting on the prose* — with the mat gone, the folio number landed
+    on the text and the immersive exit button covered the chapter heading.
+    Folios now appear only alongside the frame (progress is in the bottom bar
+    regardless), and the exit control **auto-hides after ~2.6s**, the way a
+    video player's does; tapping the middle of the page brings it back. The
+    reveal layer only exists while the button is hidden, so it never swallows a
+    selection, and the page-turn edges keep working throughout.
+
 ### Removed
 - **Highlight creation from a text selection is disabled.** The popover opened
   on any selection, covered the page, and had no way to dismiss itself — on a
