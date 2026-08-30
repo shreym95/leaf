@@ -38,11 +38,14 @@ describe("reader layout tokens", () => {
     expect(decl(root, "reader-frame-shadow")).toBe("var(--leaf-shadow-book)");
   });
 
-  it("hands epub.js an unpadded container on small screens", () => {
-    // The viewer element IS epub.js's container — it sizes its columns to that
-    // box. Padding it shrank the iframe after the column width was fixed, so the
-    // page rendered lopsided (36px inset one side, a clipped edge the other).
-    expect(decl(smallScreen, "reader-viewer-pad-x")).toBe("0px");
+  it("never pads epub.js's container horizontally, at any width", () => {
+    // The viewer element IS epub.js's container, and it sits outside the iframe.
+    // Horizontal padding there reaches only the two outer page edges and can
+    // never touch the gutter, so on a spread it made the outer margins 113px
+    // against 65px at the spine. The page's insets come from epub.js's own body
+    // padding (half the column gap, symmetric) plus the Margins setting.
+    const root = css.slice(0, css.indexOf('\n@media (max-width: 1023px)'));
+    expect(decl(root, "reader-viewer-pad-x")).toBe("0px");
     expect(decl(smallScreen, "reader-viewer-pad-y")).toBe("0px");
   });
 
@@ -74,7 +77,7 @@ describe("reader layout tokens", () => {
   it("tightens the reader chrome on small screens rather than dropping it", () => {
     // The bars stay — they are the only way back to the library — but they get
     // smaller insets so they cost less of a short screen.
-    for (const t of ["reader-viewer-pad-x", "reader-viewer-pad-y", "reader-bar-pad-x", "reader-bar-pad-y"]) {
+    for (const t of ["reader-viewer-pad-y", "reader-bar-pad-x", "reader-bar-pad-y"]) {
       expect(decl(smallScreen, t), t).toBeDefined();
     }
   });

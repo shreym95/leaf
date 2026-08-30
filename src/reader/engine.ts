@@ -69,6 +69,20 @@ function spreadFor(width: number): "always" | "none" {
   return width >= SPREAD_MIN_WIDTH ? "always" : "none";
 }
 
+/** An element's content box — its border box less its own padding. */
+function contentBox(
+  el: HTMLElement | undefined,
+): { width: number; height: number } | null {
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  const px = (v: string) => parseFloat(v) || 0;
+  return {
+    width: rect.width - px(cs.paddingLeft) - px(cs.paddingRight),
+    height: rect.height - px(cs.paddingTop) - px(cs.paddingBottom),
+  };
+}
+
 function viewportWidth(container: HTMLElement | undefined): number {
   const cw = container?.clientWidth ?? 0;
   if (cw > 0) return cw;
@@ -275,7 +289,10 @@ export async function createReader(
         // container that changed height without a window resize (entering or
         // leaving immersive) keeps the old page height until it re-measures.
         try {
-          const box = containerEl?.getBoundingClientRect();
+          // The CONTENT box, not the border box: any padding on the container
+          // is outside the iframe, so measuring it tells epub.js the page is
+          // bigger than it is and the columns stop matching what's visible.
+          const box = contentBox(containerEl);
           if (box && box.width > 0 && box.height > 0) {
             // epub.js accepts a CFI as a third argument to hold the reader's
             // place across the re-measure; its own types stop at two.

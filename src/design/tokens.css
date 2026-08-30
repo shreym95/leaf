@@ -99,7 +99,15 @@
   --leaf-reader-frame-w: min(1180px, 94vw);
   --leaf-reader-frame-max-h: 820px;
   --leaf-reader-viewer-pad-y: clamp(1.6rem, 4vh, 3rem);
-  --leaf-reader-viewer-pad-x: clamp(1.6rem, 3.4vw, 3rem);
+  /* Zero, and deliberately so. This element is epub.js's container: it sits
+     OUTSIDE the iframe, so horizontal padding here pads only the two outer page
+     edges and can never touch the gutter. On a spread that made the outer
+     margins 113px against 65px at the spine — the text crowding the fold and
+     drifting from the edge. The page's own insets come from epub.js's body
+     padding (half the column gap, symmetric by construction) plus the Margins
+     setting, so both edges of every page match. Breathing room around the book
+     is `--leaf-reader-frame-pad-x`, which pads the mat, not the container. */
+  --leaf-reader-viewer-pad-x: 0px;
   --leaf-reader-gutter-w: 70px;
   --leaf-reader-gutter-bg: linear-gradient(
     90deg,
@@ -155,7 +163,6 @@
        lopsided — 44px of inset on the left, a clipped edge on the right. Keep
        it at zero and let the insets come from epub.js's own body padding plus
        the Margins setting, which are symmetric by construction. */
-    --leaf-reader-viewer-pad-x: 0px;
     --leaf-reader-viewer-pad-y: 0px;
     /* Full-bleed means the page fills the screen — no cap, or the paper shows
        through as strips above and below. */

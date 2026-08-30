@@ -73,6 +73,18 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   `user_id`, so someone else's id matches nothing (and RLS would refuse anyway).
 
 ### Fixed
+- **Uneven page margins on the desktop spread.** The text crowded the fold and
+  drifted from the outer edge: outer margins measured **113px against 65px** at
+  the spine. The cause was our own horizontal padding on the viewer — that
+  element is epub.js's container and sits *outside* the iframe, so padding it
+  reaches only the two outer page edges and can never touch the gutter. It is
+  now zero at every width; the insets come from epub.js's body padding (half the
+  column gap, symmetric by construction) plus the Margins setting. All four
+  margins now measure **69px**. Breathing room around the book is
+  `--leaf-reader-frame-pad-x`, which pads the mat rather than the container.
+- **`relayout()` measured the padded box**, telling epub.js the page was bigger
+  than it is whenever the container had padding. It now measures the content
+  box — the same class of bug, one layer up.
 - **Facing-page folios on the desktop spread.** The right-hand folio was showing
   the section's page *count*, so a spread read "3 … 10" — a page number beside a
   total. It now reads 3 and 4. Only ever visible on desktop, where the right
