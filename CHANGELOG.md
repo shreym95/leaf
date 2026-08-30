@@ -2,6 +2,64 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Phase 0–1 — sepia, theme picker, tactile shelf
+
+Roadmap and rationale in `REVISED_PLAN.md` §7.
+
+### Added — Sepia, and one canonical theme union
+- **`sepia`** (warm natural paper) joins Day and Night. Registry order is now
+  display order, light → dark. `DEFAULT_THEME` is unchanged (`night`).
+- **A theme id is now data, not style.** The union lives in `src/lib/types.ts`
+  as `ThemeName`; `src/design/themes.ts` keys `THEMES` off it and re-exports it
+  as `ThemeId`; `ReaderTheme` in the store is an alias. Design imports a type
+  from lib, never the reverse — the seam still points the right way (SPEC §3.1).
+  There were **four** independent `"day" | "night"` unions before this; the
+  compiler now rejects a theme the database would refuse.
+- `supabase/migrations/0004_sepia_theme.sql` widens the two CHECK constraints
+  (`profiles.default_theme`, `reader_settings.theme`). **Must be applied before
+  deploying** — see DEPLOY.md.
+
+### Fixed — an unknown theme rendered the book as Day
+`content-hook.ts`'s `themeId()` was `s.theme === "night" ? "night" : "day"`, so
+any theme it did not know about was painted Day. Sepia would have turned the app
+chrome sepia and left the page white — the same "the theme changed on its own"
+class of bug reported twice in M7. Now narrows via the registry and falls back to
+`DEFAULT_THEME`. Regression tests assert every registered theme paints
+distinctly, and were confirmed to fail against the old code.
+
+### Changed — one theme control, chosen not cycled
+- **`ThemePicker`** (new) — a WAI-ARIA radio group showing every theme at once,
+  registry-driven. Replaces `ThemeToggle`, which was labelled with the *next*
+  theme: readable at two themes, a guessing game at three.
+- **`ThemeToggle` deleted.** A second way to set the theme is how the two M7
+  theme bugs happened; the dual write (store first, then document) is preserved
+  and still covered by the ported regression tests.
+- The reader's top bar no longer carries a theme button — it duplicated the
+  control in the "Aa" sheet and the bar already had four controls competing for
+  a phone's width. `ReaderSettingsSheet`'s theme field is now registry-driven,
+  so a new theme cannot be unreachable while reading.
+
+### Changed — tactile book cards
+Spine crease, hover elevation (motion-safe only), an integrated progress meter
+replacing the flat `12%` text, and a frosted disc under the actions menu. The
+meter is a `role="progressbar"` whose `aria-valuetext` speaks the same words the
+old text did, so nothing was lost to screen readers. The card is still one
+focusable link with the actions button outside it.
+
+### Fixed — hairline contrast (backlog)
+`--leaf-rule` was ~1.5:1 in every theme, short of WCAG 1.4.11's 3:1 for
+non-text boundaries. Now 3.09–3.18:1 across Day, Sepia and Night. Sepia's
+`--leaf-faint` also came in at 4.02:1 and was raised to 5.05:1 — the same
+failure the founder reported as "unreadable in night mode".
+
+### Infrastructure
+- Supabase CLI wired (`db:link`, `db:push`, `db:diff`, `db:types`).
+  `0001`–`0003` were applied by hand and are absent from the remote migration
+  history, so a bare `db push` would try to re-run them — DEPLOY.md carries the
+  one-time `migration repair` baseline runbook.
+- `/privacy`'s contact address is now a single `CONTACT_EMAIL` constant. Still
+  the placeholder; it is a one-line change when the founder picks an address.
+
 ## M4 — highlights, polish, ship
 
 ### Added — analytics + crash reporting (SPEC §9 M4)
