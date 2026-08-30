@@ -77,6 +77,15 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   compile error *and* dropped at runtime. Error boundaries at
   `app/global-error.tsx` and `(chrome)/error.tsx`.
 
+### Changed
+- **App bar rebuilt for narrow screens.** Five inline items in a three-column
+  flex collided with the wordmark and wrapped "Sign out" onto two lines on a
+  phone. The bar is now three stable slots — wordmark, theme toggle, one account
+  menu — with Library/Settings also inline from `sm:` up. Privacy, sign-out and
+  the signed-in identity moved into the menu. Verified as a single 57px row with
+  no overflow at 360 / 390 / 768 / 1280px. (`UserMenu` superseded by
+  `AccountMenu`.)
+
 ### Accessibility (SPEC §3.6)
 - Reader gained a `main` landmark; the settings `radiogroup` is now APG-conformant
   (one tab stop, arrow/Home/End); reading progress is announced politely and only
