@@ -158,7 +158,15 @@ export function ReaderShell({
         unsubRelocated = controller.onRelocated((loc) => {
           if (cancelled) return;
           setPercent(loc.percent);
-          setFolio({ left: loc.displayedPage, right: loc.totalPages });
+          // A two-page spread shows facing pages, so the right folio is the
+          // next page — not the section's page count. It read "3 … 10" on
+          // desktop, which is a page number beside a total. SpreadFrame hides
+          // the right folio below the spread breakpoint.
+          setFolio({
+            left: loc.displayedPage,
+            right:
+              loc.displayedPage != null ? loc.displayedPage + 1 : undefined,
+          });
           const p = Math.round(loc.percent * 100);
           setAnnouncedPct((prev) =>
             prev === null || Math.abs(p - prev) >= 5 ? p : prev,
