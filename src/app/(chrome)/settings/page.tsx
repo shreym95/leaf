@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getProfile } from "@/lib/db";
-import { AccountSection } from "@/components/settings-ui";
+import { AccountSection, CoverBackfill } from "@/components/settings-ui";
 import { ScreenView } from "@/components/analytics/ScreenView";
 
 /* Auth-gated + per-user data: never prerender (`requireUser` reads cookies,
@@ -35,6 +35,13 @@ export default async function SettingsPage() {
       </header>
 
       <AccountSection email={user.email ?? null} displayName={displayName} />
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-mono font-medium uppercase text-faint [letter-spacing:var(--leaf-tracking-label)] [font-size:var(--leaf-text-2xs)]">
+          Library
+        </h2>
+        <CoverBackfill />
+      </section>
     </main>
   );
 }

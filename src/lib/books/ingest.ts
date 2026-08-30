@@ -14,9 +14,37 @@ import type { Book, BookSource } from "@/lib/types";
 import { assertValidEpub, InvalidEpubError } from "@/lib/epub/validate";
 import { checkDrm } from "@/lib/epub/drm";
 import { extractEpubMetadata } from "@/lib/epub/metadata";
-import { uploadBookFile, deleteBookFile } from "@/lib/storage";
+import { extractEpubCover } from "@/lib/epub/cover";
+import { uploadBookFile, uploadCoverFile, deleteBookFile } from "@/lib/storage";
 
 export { InvalidEpubError };
+
+/**
+ * Pull the cover out of the EPUB and store it beside the book.
+ *
+ * Best-effort by design: plenty of EPUBs carry no cover, and a book with no
+ * picture is a complete book. Never throws — the shelf falls back to the title
+ * initial exactly as before.
+ */
+async function storeCover(
+  userId: string,
+  bookId: string,
+  bytes: ArrayBuffer | Uint8Array,
+): Promise<string | null> {
+  try {
+    const cover = await extractEpubCover(bytes);
+    if (!cover) return null;
+    return await uploadCoverFile(
+      userId,
+      bookId,
+      cover.bytes,
+      cover.mediaType,
+      cover.extension,
+    );
+  } catch {
+    return null;
+  }
+}
 
 const DRM_USER_MESSAGE =
   "This EPUB is DRM-protected and can't be added. Leaf only supports DRM-free books.";
@@ -77,6 +105,7 @@ export async function ingestEpub(params: IngestEpubParams): Promise<Book> {
   // 4. Upload. Generate the id up front so the storage key is deterministic.
   const bookId = crypto.randomUUID();
   const storagePath = await uploadBookFile(userId, bookId, bytes);
+  const coverPath = await storeCover(userId, bookId, bytes);
 
   // 5. Insert the row; roll the file back if that fails.
   try {
@@ -91,6 +120,7 @@ export async function ingestEpub(params: IngestEpubParams): Promise<Book> {
         source,
         source_ref: sourceRef,
         storage_path: storagePath,
+        cover_path: coverPath,
         cover_url: null,
         status: "reading",
       })
@@ -150,6 +180,8 @@ export async function registerUploadedEpub(
   }
   if (!title) title = "Untitled";
 
+  const coverPath = await storeCover(userId, bookId, bytes);
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("books")
@@ -161,6 +193,7 @@ export async function registerUploadedEpub(
       source: "upload",
       source_ref: null,
       storage_path: storagePath,
+      cover_path: coverPath,
       cover_url: null,
       status: "reading",
     })

@@ -54,10 +54,14 @@ export async function readRootfilePath(zip: JSZip): Promise<string> {
 }
 
 export interface ManifestItem {
+  /** Manifest id — EPUB 2 points at the cover by id, via `<meta name="cover">`. */
+  id: string;
   href: string;
   /** Absolute zip path (OPF-dir-relative `href` resolved). */
   path: string;
   mediaType: string;
+  /** EPUB 3 `properties`, e.g. `cover-image`, `nav`. */
+  properties: string;
 }
 
 export interface ParsedOpf {
@@ -66,6 +70,8 @@ export interface ParsedOpf {
   title: string;
   creators: string[];
   manifest: ManifestItem[];
+  /** `<meta name="cover" content="…">` — how EPUB 2 names its cover image. */
+  coverMetaId: string | null;
 }
 
 function dirname(path: string): string {
@@ -108,11 +114,17 @@ export async function readOpf(zip: JSZip): Promise<ParsedOpf> {
   }
   const doc = xml.parse(await opfText) as {
     package?: {
-      metadata?: { title?: unknown; creator?: unknown };
+      metadata?: {
+        title?: unknown;
+        creator?: unknown;
+        meta?: unknown;
+      };
       manifest?: {
         item?: Array<{
+          "@_id"?: string;
           "@_href"?: string;
           "@_media-type"?: string;
+          "@_properties"?: string;
         }>;
       };
     };
@@ -126,12 +138,24 @@ export async function readOpf(zip: JSZip): Promise<ParsedOpf> {
     .map((item) => {
       const href = item["@_href"] ?? "";
       return {
+        id: (item["@_id"] ?? "").trim(),
         href,
         path: resolvePath(opfDir, href),
         mediaType: (item["@_media-type"] ?? "").trim().toLowerCase(),
+        properties: (item["@_properties"] ?? "").trim().toLowerCase(),
       };
     })
     .filter((item) => item.href);
+
+  // `<meta name="cover" content="cover-id"/>` — one element or several.
+  const metas = pkg.metadata?.meta;
+  const metaList = (Array.isArray(metas) ? metas : metas ? [metas] : []) as Array<
+    Record<string, unknown>
+  >;
+  const coverMeta = metaList.find(
+    (m) => String(m["@_name"] ?? "").toLowerCase() === "cover",
+  );
+  const coverMetaId = coverMeta ? String(coverMeta["@_content"] ?? "") : null;
 
   return {
     opfPath,
@@ -139,6 +163,7 @@ export async function readOpf(zip: JSZip): Promise<ParsedOpf> {
     title: dcText(pkg.metadata?.title)[0] ?? "",
     creators: dcText(pkg.metadata?.creator),
     manifest,
+    coverMetaId: coverMetaId || null,
   };
 }
 

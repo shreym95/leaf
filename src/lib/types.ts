@@ -30,6 +30,8 @@ export interface Book {
   source_ref: string | null;
   /** Object key within the private `epubs` Storage bucket. */
   storage_path: string | null;
+  /** Storage key for the cover extracted from the EPUB (0002); signed to render. */
+  cover_path: string | null;
   cover_url: string | null;
   status: BookStatus;
   added_at: string;

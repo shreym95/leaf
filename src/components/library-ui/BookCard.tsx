@@ -44,9 +44,9 @@ export function BookCard({ book }: BookCardProps) {
         )}
       >
         <div className="relative aspect-[3/4] w-full overflow-hidden rounded-sm border border-rule bg-page">
-          {book.cover_url ? (
+          {book.coverUrl ? (
             <Image
-              src={book.cover_url}
+              src={book.coverUrl}
               alt={`Cover of ${book.title}`}
               fill
               sizes="(min-width: 40rem) 12rem, 45vw"

@@ -4,6 +4,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { Book } from "@/lib/types";
+import { signCoverUrls } from "@/lib/storage";
 
 /**
  * A book plus where the reader left off. The shelf shows progress rather than a
@@ -15,6 +16,8 @@ export interface LibraryBook extends Book {
   percent: number | null;
   /** When it was last read, or null if never. */
   lastReadAt: string | null;
+  /** A signed, short-lived URL for the extracted cover; null if there is none. */
+  coverUrl: string | null;
 }
 
 interface BookRow extends Book {
@@ -35,6 +38,7 @@ function toLibraryBook(row: BookRow): LibraryBook {
     ...(book as Book),
     percent: state?.percent ?? null,
     lastReadAt: state?.updated_at ?? null,
+    coverUrl: null, // filled in by listBooks, which signs the whole shelf at once
   };
 }
 
@@ -57,6 +61,14 @@ export async function listBooks(userId: string): Promise<LibraryBook[]> {
   if (error) throw error;
 
   const books = ((data as BookRow[] | null) ?? []).map(toLibraryBook);
+
+  // One signing call for the whole shelf rather than one per book.
+  const signed = await signCoverUrls(
+    books.map((b) => b.cover_path).filter((p): p is string => !!p),
+  );
+  for (const b of books) {
+    b.coverUrl = b.cover_path ? (signed.get(b.cover_path) ?? null) : null;
+  }
 
   return books.sort((a, b) => {
     if (a.lastReadAt && b.lastReadAt) {

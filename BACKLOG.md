@@ -47,18 +47,15 @@ Part of the UI overhaul, not a standalone fix (founder's call). The shelf's
 *data* problems are handled separately in M5/M6 — progress, sort order and real
 cover art — so the redesign inherits a shelf with something worth showing.
 
-### Metadata enrichment — M6, covers only
+### ~~Metadata enrichment — covers~~ — done (M6)
 
-**Cheapest win first:** import already fetches a cover URL for every catalogue
-result (`SearchResult.coverUrl`) and then throws it away — `ingest.ts` hard-codes
-`cover_url: null`. Storing it is nearly free. Uploads need the cover extracted
-from the EPUB itself (the OPF declares a cover image) and put in Storage.
+Covers are extracted from the EPUB itself at import and upload, stored beside
+the book in Storage, and backfilled for older books from Settings → Library.
 
-**Ratings are deferred, and Goodreads is not an option** — its API was shut down
-in 2020 (no new keys, existing ones retired). Open Library is the realistic
-source if ratings are ever wanted: free, no key, decent coverage of
-public-domain classics. Founder's call for now: covers only — ratings on
-public-domain classics are thin and closer to noise than signal.
+**Ratings remain undone and Goodreads remains impossible** — its API was retired
+in 2020. Open Library is the option if this is ever revisited: free, no key,
+reasonable coverage of public-domain classics. Deferred deliberately, not
+forgotten.
 
 ### Privacy policy contact address
 

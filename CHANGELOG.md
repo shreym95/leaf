@@ -48,6 +48,39 @@ All notable changes to Leaf. Kept per milestone (see SPEC §9).
   touch analytics; removing analytics is a delete of `src/lib/analytics.ts` +
   its call sites (grep `@/lib/analytics`).
 
+## M6 — real cover art
+
+### Added
+- **Covers are extracted from the EPUB itself** (`src/lib/epub/cover.ts`), not
+  taken from the catalogue's search result. One code path for Standard Ebooks,
+  Gutenberg *and* uploads — uploads have no catalogue entry, so it is the only
+  way they could ever get a cover — with no second network call and nothing that
+  can rot or start blocking hotlinks later.
+  - Tiered the way the chapter normalizer is: EPUB 3 `properties="cover-image"`,
+    then EPUB 2's `<meta name="cover">` id, then an image simply named "cover".
+    Returns null rather than throwing — a book without a picture is still a
+    complete book, and the shelf keeps its title-initial fallback.
+  - Verified against all three bundled Standard Ebooks titles and a real retail
+    upload (72 KB JPEG).
+- **`books.cover_path`** (migration `0002_book_cover.sql`) holds a Storage key in
+  the user's own folder in the `epubs` bucket, so covers inherit the same
+  owner-only RLS as the book file — no new bucket, no new policies. Kept
+  separate from `cover_url` so one column never means two things.
+- **The shelf signs every cover in one batch** (`signCoverUrls`) rather than one
+  round trip per book — the same mistake the auth layer made before M5.
+- **Backfill in Settings → Library.** Books added before M6 have no cover, and
+  re-importing a library to get pictures would be absurd. It re-reads the EPUBs
+  already in Storage, in bounded batches so a run can't outlast the serverless
+  time limit, and reports what it actually found rather than claiming success.
+- `next.config.ts` allow-lists the Supabase Storage host for `next/image`,
+  derived from the public env var so preview and production work unedited.
+
+### Not done
+- **Ratings.** Goodreads' API was shut down in 2020 (no new keys, existing ones
+  retired), so it is not an option. Open Library would be the realistic source.
+  Founder's call: skipped — ratings on public-domain classics are thin enough to
+  be closer to noise than signal.
+
 ## M5 — the shelf tells you where you are
 
 ### Changed
