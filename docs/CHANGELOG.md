@@ -2,6 +2,42 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Phase 2 — on-device instrumentation for the skipped last page (D2)
+
+Temporary diagnostic build. The "last page of a chapter is skipped" defect
+reproduces on a real phone but **not** in the Playwright harness, so the reader
+can now be asked for its own numbers on the device where it fails.
+
+### Added — an opt-in reader debug readout
+- **`src/reader/debug.ts`** — a style-agnostic probe that emits plain data:
+  spine section, `displayed.page`/`total`, the epub.js container's
+  `scrollLeft`/`offsetWidth`/`scrollWidth`, every `layout.*` value, the CFI, the
+  content box `relayout()` would hand `rendition.resize`, iframe/view widths,
+  epub.js's own advance test (`scrollLeft + offsetWidth + delta <= scrollWidth`),
+  per-section image-load timing, and a rolling 12-entry turn log that keeps the
+  state each turn *started* from.
+- **`ReaderDebugOverlay`** (`src/components/reader-ui/`) paints it — monospace,
+  token-driven, scrollable, with a copy-to-clipboard button. The seam holds:
+  the engine emits data, the component owns every pixel.
+- **Gate:** `/reader/<bookId>?debug=1`, and nothing else — not `true`, not a bare
+  `?debug`. Without it `createReader` is never even asked for the probe, so a
+  normal reader carries no instrumentation at all. `debugRequested` lives in its
+  own non-`"use client"` module so the Server Component route can call it.
+
+### Changed — signatures, additively
+- `ReaderController.next()/prev()` take an optional `source` label (`"tap-next"`,
+  `"key-right"`…) used **only** for the debug turn log.
+- `createReader(bytes, settings, { debug })` — third argument, default off.
+
+### Observation only
+Nothing about pagination or layout changed. The probe reads geometry (a
+measurement, never a mutation) and attaches image listeners with
+`addEventListener`, never `img.onload =` — epub.js assigns that itself
+(`contents.js` `imageLoadListeners()`) to trigger its own re-flow, and clobbering
+it would *cause* a defect instead of measuring one. A test pins that.
+
+---
+
 ## Phase 0–1 — sepia, theme picker, tactile shelf
 
 Roadmap and rationale in `REVISED_PLAN.md` §7.

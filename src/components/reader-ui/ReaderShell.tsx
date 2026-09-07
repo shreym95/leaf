@@ -23,6 +23,7 @@ import { SpreadFrame } from "./SpreadFrame";
 import { ReaderSettingsSheet } from "./ReaderSettingsSheet";
 import { NotesPanel } from "./NotesPanel";
 import { ImmersiveExit } from "./ImmersiveExit";
+import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
 import { useImmersive } from "./useImmersive";
 
 /**
@@ -48,6 +49,9 @@ export interface ReaderShellProps {
   fileUrl: string;
   userId: string;
   initialSettings: ReaderShellInitialSettings;
+  /** `?debug=1` only (see `./debug-flag`) — builds the engine's D2 probe and
+   *  paints the readout. Off for every normal reader. */
+  debug?: boolean;
 }
 
 type LoadState =
@@ -62,6 +66,7 @@ export function ReaderShell({
   fileUrl,
   userId,
   initialSettings,
+  debug = false,
 }: ReaderShellProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -148,7 +153,7 @@ export function ReaderShell({
         const bytes = await res.arrayBuffer();
         if (cancelled) return;
 
-        const controller = await createReader(bytes, initialSettings);
+        const controller = await createReader(bytes, initialSettings, { debug });
         if (cancelled || !viewerRef.current) {
           controller.destroy();
           return;
@@ -252,11 +257,24 @@ export function ReaderShell({
   }, []);
 
   // ── Page turn — instant (epub.js swaps content itself) ────────────────
-  const turn = useCallback((dir: "next" | "prev") => {
+  // `source` names the control that fired it; the engine only records it in the
+  // debug turn log (DEFECTS.md D2) and ignores it otherwise.
+  const turn = useCallback((dir: "next" | "prev", source: string) => {
     const controller = controllerRef.current;
     if (!controller) return;
-    void (dir === "next" ? controller.next() : controller.prev());
+    void (dir === "next" ? controller.next(source) : controller.prev(source));
   }, []);
+
+  // ── Debug readout accessors — stable identities so the overlay's
+  //    subscription effect doesn't re-run on every render. ─────────────────
+  const debugSnapshot = useCallback(
+    () => controllerRef.current?.debugSnapshot?.() ?? null,
+    [],
+  );
+  const debugSubscribe = useCallback(
+    (cb: () => void) => controllerRef.current?.onDebug?.(cb) ?? null,
+    [],
+  );
 
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
   useEffect(() => {
@@ -273,9 +291,9 @@ export function ReaderShell({
       if (settingsOpen) return; // don't drive the book while the sheet is open
 
       if (e.key === "ArrowRight") {
-        turn("next");
+        turn("next", "key-right");
       } else if (e.key === "ArrowLeft") {
-        turn("prev");
+        turn("prev", "key-left");
       } else if (key === "f") {
         toggleImmersive();
       }
@@ -303,8 +321,8 @@ export function ReaderShell({
         loading={load.state === "loading"}
         folioLeft={folio.left}
         folioRight={folio.right}
-        onPrev={() => turn("prev")}
-        onNext={() => turn("next")}
+        onPrev={() => turn("prev", "tap-prev")}
+        onNext={() => turn("next", "tap-next")}
         onToggleChrome={toggleImmersive}
         immersive={immersive}
       >
@@ -321,8 +339,8 @@ export function ReaderShell({
       <ReaderBottomBar
         percent={percent}
         hidden={immersive}
-        onPrev={() => turn("prev")}
-        onNext={() => turn("next")}
+        onPrev={() => turn("prev", "bar-prev")}
+        onNext={() => turn("next", "bar-next")}
       />
 
       {/* Keyed so entering immersive remounts it: the control starts visible,
@@ -357,6 +375,13 @@ export function ReaderShell({
         onSetNote={(id, note) => void highlightsRef.current?.setNote(id, note)}
         onRemove={(id) => void highlightsRef.current?.remove(id)}
       />
+
+      {debug && (
+        <ReaderDebugOverlay
+          snapshot={debugSnapshot}
+          subscribe={debugSubscribe}
+        />
+      )}
 
       {/* Polite, throttled progress announcement for screen readers. Updated
           only on 5% boundaries (see `announcedPct`) so it never chatters. */}

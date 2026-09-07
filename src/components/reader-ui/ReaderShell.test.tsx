@@ -147,6 +147,8 @@ describe("ReaderShell — settings reach the engine", () => {
     expect(createReader).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ fontSize: 1.06, theme: "night" }),
+      // Engine options; the D2 debug probe is off unless `?debug=1` asked.
+      { debug: false },
     );
   });
 });

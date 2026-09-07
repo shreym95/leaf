@@ -14,6 +14,15 @@
 
 import type { Book, Rendition } from "epubjs";
 import type { ThemeName } from "@/lib/types";
+import { createDebugProbe, type ReaderDebugProbe } from "./debug";
+
+// Re-exported so the reader chrome imports one module, not two.
+export type {
+  ReaderDebugSnapshot,
+  ReaderDebugTurn,
+  ReaderDebugImages,
+} from "./debug";
+import type { ReaderDebugSnapshot } from "./debug";
 
 // --- Shared interface (Agents B & C code against these EXACT shapes) --------
 
@@ -35,8 +44,9 @@ export interface ReaderLocation {
 
 export interface ReaderController {
   attach(container: HTMLElement): Promise<void>; // renderTo + display + locations.generate
-  next(): Promise<void>;
-  prev(): Promise<void>;
+  /** `source` is debug-only bookkeeping (which control was used); ignored otherwise. */
+  next(source?: string): Promise<void>;
+  prev(source?: string): Promise<void>;
   goTo(target: string): Promise<void>; // CFI or spine href
   relayout(): void; // recompute spread (call on resize; debounced inside)
   applySettings(s: ReaderContentSettings): void; // -> rendition.themes / font / override
@@ -52,6 +62,13 @@ export interface ReaderController {
   /** Clear the current text selection in the book iframe. */
   clearSelection(): void;
   readonly sectionCount: number;
+  /** Live pagination/geometry/image-timing readout. Present ONLY when
+   *  `createReader` was asked for `{ debug: true }` (behind `?debug=1`);
+   *  returns null otherwise. OBSERVE-ONLY — see `./debug`. */
+  debugSnapshot?(): ReaderDebugSnapshot | null;
+  /** Subscribe to debug snapshots (relocation, turn, resize, late image load).
+   *  Returns an unsubscribe fn, or null when debug is off. */
+  onDebug?(cb: (snap: ReaderDebugSnapshot) => void): (() => void) | null;
   destroy(): void;
 }
 
@@ -93,9 +110,16 @@ function viewportWidth(container: HTMLElement | undefined): number {
 
 // --- Factory -------------------------------------------------------------
 
+export interface ReaderEngineOptions {
+  /** Build the debug probe (`./debug`). Off by default — a normal reader never
+   *  pays for it, and nothing about pagination changes when it is on. */
+  debug?: boolean;
+}
+
 export async function createReader(
   bytes: ArrayBuffer,
   initial: ReaderContentSettings,
+  options?: ReaderEngineOptions,
 ): Promise<ReaderController> {
   // epub.js is browser-only (needs the DOM). Dynamic import so this module is
   // safe to evaluate during SSR; callers still invoke `createReader` from a
@@ -121,6 +145,7 @@ export async function createReader(
   let rendition: Rendition | undefined;
   let containerEl: HTMLElement | undefined;
   let contentPipeline: ReturnType<typeof registerContentPipeline> | undefined;
+  let debugProbe: ReaderDebugProbe | undefined;
   let locationsReady = false;
   let currentSpread: "always" | "none" = "none";
   let relayoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -237,6 +262,22 @@ export async function createReader(
         () => currentSettings,
       );
 
+      // Debug instrumentation, opt-in only. Registered AFTER the content
+      // pipeline so it observes the normalised DOM, and BEFORE the first
+      // display so chapter one's image timing is captured too.
+      if (options?.debug) {
+        try {
+          debugProbe = createDebugProbe({
+            rendition,
+            // The engine's own measurement — literally what `relayout()` passes.
+            measure: () => contentBox(containerEl),
+            getSpread: () => currentSpread,
+          });
+        } catch {
+          // instrumentation must never stop the book from opening
+        }
+      }
+
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
 
@@ -265,11 +306,15 @@ export async function createReader(
         });
     },
 
-    async next(): Promise<void> {
+    async next(source?: string): Promise<void> {
+      // Logged BEFORE the turn so the rolling log keeps the state a skip
+      // started from (DEFECTS.md D2).
+      debugProbe?.logTurn("next", source);
       await rendition?.next();
     },
 
-    async prev(): Promise<void> {
+    async prev(source?: string): Promise<void> {
+      debugProbe?.logTurn("prev", source);
       await rendition?.prev();
     },
 
@@ -404,6 +449,18 @@ export async function createReader(
       return sectionCount;
     },
 
+    debugSnapshot(): ReaderDebugSnapshot | null {
+      try {
+        return debugProbe?.snapshot() ?? null;
+      } catch {
+        return null;
+      }
+    },
+
+    onDebug(cb: (snap: ReaderDebugSnapshot) => void): (() => void) | null {
+      return debugProbe?.onChange(cb) ?? null;
+    },
+
     destroy(): void {
       if (relayoutTimer) {
         clearTimeout(relayoutTimer);
@@ -415,6 +472,12 @@ export async function createReader(
       }
       subscribers.clear();
       selectionSubscribers.clear();
+      try {
+        debugProbe?.destroy();
+      } catch {
+        // ignore probe teardown errors
+      }
+      debugProbe = undefined;
       try {
         contentPipeline?.destroy();
       } catch {
