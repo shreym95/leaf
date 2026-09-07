@@ -50,3 +50,6 @@ next-env.d.ts
 
 # local defect log (founder notes, not published)
 /DEFECTS.md
+
+# local UI inspiration screenshots (never tracked)
+/ui-inspiration/
