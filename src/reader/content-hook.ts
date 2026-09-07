@@ -206,8 +206,18 @@ function injectStylesheet(doc: Document, css: string): void {
   host.appendChild(style);
 }
 
+/** The shape of an epub.js `Contents` we actually use. */
+interface ContentsLike {
+  document?: Document;
+  sectionIndex?: number;
+  emit?: (name: string, ...args: unknown[]) => void;
+}
+
+/** A `Contents` whose chapter document is present — i.e. one we can restyle. */
+type LiveContents = ContentsLike & { document: Document };
+
 /** epub.js `getContents()` returns an array at runtime (its types say singular). */
-function contentDocuments(rendition: Rendition): Document[] {
+function contentObjects(rendition: Rendition): LiveContents[] {
   const getContents = (
     rendition as unknown as {
       getContents?: () => unknown;
@@ -216,9 +226,38 @@ function contentDocuments(rendition: Rendition): Document[] {
   if (typeof getContents !== "function") return [];
   const result = getContents.call(rendition);
   const list = Array.isArray(result) ? result : [result];
-  return list
-    .map((c) => (c as { document?: Document } | null)?.document)
-    .filter((d): d is Document => !!d);
+  return list.filter(
+    (c): c is LiveContents => !!(c as ContentsLike | null)?.document,
+  );
+}
+
+/**
+ * Tell epub.js to re-measure the chapter iframe after we have restyled it.
+ *
+ * epub.js sizes the iframe to the chapter as the *publisher* wrote it: the
+ * first `expand()` runs inside `view.render()`, before this hook has injected
+ * anything. Our stylesheet then changes the measure, the type size and the
+ * leading, so the text occupies materially more columns than the iframe epub.js
+ * sized — on a phone, `Peaches in Combat` went from 3010px to 5160px.
+ *
+ * Until the view's ResizeObserver catches up a frame or two later, the
+ * rendition container's `scrollWidth` is short, and epub.js's
+ * `managers/default/index.js` `moveTo()` silently clamps any restore past that
+ * width to `scrollWidth - delta` — dropping the reader pages back into the
+ * chapter (DEFECTS D5: entering immersive at a chapter end landed 5 pages
+ * earlier). Every restore that has to re-create the view is affected: immersive
+ * enter/exit, a window resize, and reopening the book on a saved position.
+ *
+ * `"expand"` is epub.js's own "the content changed size" signal and the view
+ * handles it synchronously, so the iframe is correct before the restoring
+ * `moveTo()` runs on the next microtask.
+ */
+function remeasure(contents: ContentsLike | null | undefined): void {
+  try {
+    if (typeof contents?.emit === "function") contents.emit("expand");
+  } catch {
+    // Older/other epub.js — its own ResizeObserver still catches up eventually.
+  }
 }
 
 function bookMeta(rendition: Rendition): {
@@ -258,10 +297,11 @@ export function registerContentPipeline(
 
   const onContent = (a: unknown, _b?: unknown): void => {
     const holder = a as
-      | { document?: Document; sectionIndex?: number; contents?: { document?: Document } }
+      | (ContentsLike & { contents?: ContentsLike })
       | null
       | undefined;
-    const doc = holder?.document ?? holder?.contents?.document;
+    const contents = holder?.document ? holder : holder?.contents;
+    const doc = contents?.document;
     if (!doc) return;
 
     const settings = getSettings();
@@ -284,18 +324,24 @@ export function registerContentPipeline(
     } catch {
       /* non-fatal */
     }
+
+    // 3. Steps 1 and 2 changed how wide the chapter is; epub.js measured it
+    //    before either ran. Make it re-measure NOW, while the restore that
+    //    follows still depends on the answer.
+    remeasure(contents);
   };
 
   rendition.hooks.content.register(onContent);
 
   const refresh = (): void => {
     const css = stylesheetFor(getSettings());
-    for (const doc of contentDocuments(rendition)) {
+    for (const contents of contentObjects(rendition)) {
       try {
-        injectStylesheet(doc, css);
+        injectStylesheet(contents.document, css);
       } catch {
         /* non-fatal */
       }
+      remeasure(contents);
     }
   };
 

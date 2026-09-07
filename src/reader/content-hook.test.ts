@@ -267,6 +267,122 @@ describe("registerContentPipeline", () => {
     expect(unknown).toBe(fallback);
   });
 
+  // ── D5: the chapter is re-measured before epub.js restores a position ──
+  //
+  // epub.js sizes the chapter iframe inside `view.render()` — BEFORE this hook
+  // runs — so it measures the chapter as the publisher wrote it. Our stylesheet
+  // then changes the measure, size and leading, and the text needs materially
+  // more columns than the iframe epub.js sized. While the view is still stale,
+  // `managers/default/index.js moveTo()` clamps any restore past that width:
+  //
+  //     distX = Math.floor(offset.left / this.layout.delta) * this.layout.delta;
+  //     if (distX + this.layout.delta > this.container.scrollWidth) {
+  //       distX = this.container.scrollWidth - this.layout.delta;
+  //     }
+  //
+  // …which silently drops the reader back to the last column that fitted. The
+  // model below is that arithmetic, with the real numbers measured on a phone
+  // for "Peaches in Combat" (3010px as the publisher wrote it -> 5160px once
+  // our stylesheet lands, 430px columns, a restore targeting x = 4767).
+
+  const PUBLISHER_WIDTH = 3010;
+  const STYLED_WIDTH = 5160;
+  const DELTA = 430;
+  const RESTORE_AT = 4767; // where the saved CFI resolves once we have restyled
+
+  /** A stand-in for the epub.js view + container the restore scrolls. */
+  function makeView(doc: Document) {
+    // What the text actually occupies: our stylesheet is what grows it.
+    const contentWidth = () =>
+      doc.querySelector('style[id="leaf-content-pipeline"]')
+        ? STYLED_WIDTH
+        : PUBLISHER_WIDTH;
+    // What epub.js has measured. Sized once during render, then only on "expand".
+    let scrollWidth = contentWidth();
+    return {
+      expand: () => {
+        scrollWidth = contentWidth();
+      },
+      /** managers/default/index.js moveTo(), paginated + ltr. */
+      moveTo: (left: number) => {
+        let distX = Math.floor(left / DELTA) * DELTA;
+        if (distX + DELTA > scrollWidth) distX = scrollWidth - DELTA;
+        return distX;
+      },
+      scrollWidth: () => scrollWidth,
+    };
+  }
+
+  it("tells epub.js to re-measure the chapter after restyling it (D5)", () => {
+    const { rendition, handlers, contents, doc } = makeRendition();
+    const view = makeView(doc);
+    // epub.js's Contents is an EventEmitter and the view listens for "expand".
+    const emit = vi.fn((name: string) => {
+      if (name === "expand") view.expand();
+    });
+
+    registerContentPipeline(rendition, () => DAY);
+    handlers[0]({ ...contents, emit }, rendition);
+
+    expect(emit).toHaveBeenCalledWith("expand");
+    // The re-measure has to see the restyled chapter, so it must come after the
+    // stylesheet — re-measuring first would just re-read the publisher's width.
+    expect(view.scrollWidth()).toBe(STYLED_WIDTH);
+    // …and the restore therefore lands on the reader's column, not on the last
+    // column that fitted the stale width.
+    expect(view.moveTo(RESTORE_AT)).toBe(4730);
+  });
+
+  it("without the re-measure, a restore near a chapter end is clamped backwards", () => {
+    // Guards the assertion above: prove the model can actually fail, so the
+    // test cannot pass for the wrong reason. This is the shipped behaviour
+    // before the fix — the reader lands 5 pages back inside the same chapter.
+    const { rendition, handlers, contents, doc } = makeRendition();
+    const view = makeView(doc);
+
+    registerContentPipeline(rendition, () => DAY);
+    handlers[0]({ ...contents, emit: undefined }, rendition); // no re-measure
+
+    expect(view.scrollWidth()).toBe(PUBLISHER_WIDTH);
+    expect(view.moveTo(RESTORE_AT)).toBe(2580); // 6 columns in, not 11
+  });
+
+  it("refresh() re-measures too — a size change re-flows the chapter", () => {
+    const { rendition, handlers, contents } = makeRendition();
+    const emit = vi.fn();
+    const withEmit = { ...contents, emit };
+    (rendition as unknown as { getContents: () => unknown[] }).getContents =
+      () => [withEmit];
+
+    const pipeline = registerContentPipeline(rendition, () => DAY);
+    handlers[0](withEmit, rendition);
+    emit.mockClear();
+
+    pipeline.refresh();
+    expect(emit).toHaveBeenCalledWith("expand");
+  });
+
+  it("survives a contents object with no emit (never breaks rendering)", () => {
+    const { rendition, handlers, contents, doc } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    // A plain `{ document }` holder — what older epub.js hands the hook.
+    expect(() => handlers[0]({ document: doc, sectionIndex: 0 }, rendition)).not.toThrow();
+    // …and one whose emit throws.
+    expect(() =>
+      handlers[0](
+        {
+          ...contents,
+          emit: () => {
+            throw new Error("detached");
+          },
+        },
+        rendition,
+      ),
+    ).not.toThrow();
+    expect(doc.querySelectorAll('style[id="leaf-content-pipeline"]')).toHaveLength(1);
+  });
+
   it("destroy() deregisters the hook; the handle is also callable as teardown", () => {
     const { rendition, handlers } = makeRendition();
     const pipeline = registerContentPipeline(rendition, () => DAY);
