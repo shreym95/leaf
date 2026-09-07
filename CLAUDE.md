@@ -10,6 +10,8 @@ Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer
 
 - UI is a SWAPPABLE layer: visuals only in `src/design` + `src/components/*-ui` + `src/components/primitives`;
   `src/reader` / `src/lib` / `src/store` stay style-agnostic and never import from `design`/`components`.
+- DESIGN.md is the single source of truth for the design language (tokens, themes, type, motion,
+  a11y floor, how to add a theme). Read it before any visual change; update it when the rules change.
 - No hard-coded colors/space/fonts in components — use tokens (`var(--leaf-*)` or mapped Tailwind utilities).
 - No secrets client-side; RLS on every table (test cross-user denial).
 - REPO IS PUBLIC (`github.com/shreym95/leaf`, public since 2026-09-07). Nothing sensitive goes

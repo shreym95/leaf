@@ -1,11 +1,13 @@
 # Leaf
 
 A calm web e-reader for public-domain classics and your own DRM-free EPUBs.
-Real epub.js pagination, fine-press typography, Day/Night themes, synced library.
+Real epub.js pagination, fine-press typography, Day/Sepia/Night themes, synced library.
 
-MVP 1 — see [`SPEC.md`](./SPEC.md) for scope, architecture, and milestones,
-[`CLAUDE.md`](./CLAUDE.md) for the build rules, [`BACKLOG.md`](./BACKLOG.md)
-for deferred work, and [`DEPLOY.md`](./DEPLOY.md) for deploys.
+See [`DESIGN.md`](./DESIGN.md) for the design language — **start there for any
+visual or theme work**. [`SPEC.md`](./SPEC.md) for scope, architecture and
+milestones, [`CLAUDE.md`](./CLAUDE.md) for the build rules,
+[`REVISED_PLAN.md`](./REVISED_PLAN.md) for the UI/UX roadmap,
+[`BACKLOG.md`](./BACKLOG.md) for deferred work, [`DEPLOY.md`](./DEPLOY.md) for deploys.
 
 ## Develop
 
@@ -28,7 +30,8 @@ npm run dev        # http://localhost:3000
 
 The UI is a **swappable layer** — a redesign next version should touch only:
 
-- `src/design/` — all design tokens (the only place with literal colors/sizes/fonts)
+- `src/design/` — all design tokens (the only place with literal colors/sizes/fonts);
+  documented in [`DESIGN.md`](./DESIGN.md)
 - `src/components/` — presentational chrome (primitives, reader-ui, library-ui)
 
 Logic (`src/reader`, `src/lib`, `src/store`) is style-agnostic and may not import from
@@ -36,5 +39,9 @@ Logic (`src/reader`, `src/lib`, `src/store`) is style-agnostic and may not impor
 
 ## Environment
 
-Copy `.env.example` to `.env.local`. Supabase is wired in M1 — until then the values
-are placeholders.
+Copy `.env.example` to `.env.local` and fill it from your own Supabase project.
+No real values are committed — this repo is public.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
