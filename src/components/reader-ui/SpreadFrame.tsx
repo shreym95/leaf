@@ -21,6 +21,11 @@ export interface SpreadFrameProps {
   folioRight?: number;
   onPrev: () => void;
   onNext: () => void;
+  /** Touch-only centre tap: show/hide the reader chrome. */
+  onToggleChrome: () => void;
+  /** Whether the chrome is currently hidden — only used to name the centre tap
+   *  zone for assistive tech. */
+  immersive: boolean;
   children?: ReactNode;
 }
 
@@ -36,6 +41,8 @@ export function SpreadFrame({
   folioRight,
   onPrev,
   onNext,
+  onToggleChrome,
+  immersive,
   children,
 }: SpreadFrameProps) {
   return (
@@ -86,20 +93,40 @@ export function SpreadFrame({
         {/* Tap zones for turning — supplementary to the labelled bottom-bar
             buttons and the ←/→ keys. Kept out of the tab sequence (tabIndex
             -1) but given real names rather than aria-hidden, so they are not
-            focusable-yet-hidden (an axe violation). */}
+            focusable-yet-hidden (an axe violation).
+
+            Sizing is deliberately different per input. On touch the frame is
+            full-bleed, so the old 14% edges were ~55px on a phone and left the
+            middle 72% of the screen inert — a thumb landing mid-screen did
+            nothing, which read as "the tap didn't register". Touch therefore
+            gets e-reader-conventional zones (30% back / 45% forward) with the
+            remaining centre band toggling the chrome, so no part of the page
+            is dead.
+
+            The centre band is touch-only (`lg:hidden`). With a mouse, a click
+            fires after a drag-select too, so a centre click zone would toggle
+            immersive every time a reader selected a word to copy. Pointer
+            devices keep the narrow 14% edges and an inert middle. */}
         <button
           type="button"
           aria-label="Previous page"
           tabIndex={-1}
           onClick={onPrev}
-          className="absolute inset-y-0 left-0 z-[7] w-[14%] cursor-pointer"
+          className="absolute inset-y-0 left-0 z-[7] w-[30%] cursor-pointer lg:w-[14%]"
+        />
+        <button
+          type="button"
+          aria-label={immersive ? "Show reading controls" : "Hide reading controls"}
+          tabIndex={-1}
+          onClick={onToggleChrome}
+          className="absolute inset-y-0 left-[30%] z-[7] w-[25%] cursor-pointer lg:hidden"
         />
         <button
           type="button"
           aria-label="Next page"
           tabIndex={-1}
           onClick={onNext}
-          className="absolute inset-y-0 right-0 z-[7] w-[14%] cursor-pointer"
+          className="absolute inset-y-0 right-0 z-[7] w-[45%] cursor-pointer lg:w-[14%]"
         />
 
         {/* Folios are a framed-page affordance: with the mat gone below `lg`

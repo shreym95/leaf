@@ -80,6 +80,9 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "coverage/**",
+    // Local, gitignored browser harness for reproducing device-only defects
+    // (see DEFECTS.md). Node scripts, not shipped code.
+    ".harness/**",
   ]),
 ]);
 

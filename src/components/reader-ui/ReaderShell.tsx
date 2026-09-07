@@ -305,6 +305,8 @@ export function ReaderShell({
         folioRight={folio.right}
         onPrev={() => turn("prev")}
         onNext={() => turn("next")}
+        onToggleChrome={toggleImmersive}
+        immersive={immersive}
       >
         {load.state === "error" && (
           <p
