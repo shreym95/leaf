@@ -84,6 +84,61 @@ import { registerContentPipeline } from "./content-hook";
 
 const SPREAD_MIN_WIDTH = 1024; // ≥ this → two-page spread, else single page
 
+/**
+ * Remove accumulated sub-pixel scroll drift before a forward turn.
+ *
+ * DEFECTS.md D2. epub.js decides whether a section has another page with
+ * (managers/default/index.js, `next()`):
+ *
+ *     left = container.scrollLeft + container.offsetWidth + layout.delta;
+ *     if (left <= container.scrollWidth) scrollBy(delta) else -> next section
+ *
+ * and it advances with `container.scrollLeft += delta`. On a device whose pixel
+ * ratio is fractional the browser snaps every scroll offset to a whole DEVICE
+ * pixel, so each `+=` lands slightly past the exact page boundary and the error
+ * compounds. Measured on an Android phone at dpr 2.975, where a 409px page step
+ * snaps to 1217 device px = 409.0756 css px — drifting +0.0756 per page:
+ *
+ *     page 11  scrollLeft 4090.08   (11 x 409 = 4090)
+ *     page 15  scrollLeft 5726.39   (14 x 409 = 5726)
+ *     page 18  scrollLeft 6953.61   (17 x 409 = 6953)
+ *
+ * until on that second-to-last page `6953.61 + 409 + 409 = 7771.61` exceeds
+ * `scrollWidth 7771` by 0.61px, epub.js concludes the chapter is finished, and
+ * the final page is never shown.
+ *
+ * So snap back to the exact page boundary before handing the turn over, but only
+ * while a page demonstrably remains. Geometry decides that, NOT `displayed.page`
+ * — the same device logs reported page `1` while sitting on page 18.
+ *
+ * The 1px undershoot is deliberate: assigning `scrollLeft` re-snaps to a device
+ * pixel too, which can land a fraction ABOVE the boundary and fail the test all
+ * over again. One pixel is far below the threshold of visibility, and far below
+ * the ~delta-sized margin separating "another page" from "chapter finished", so
+ * it cannot manufacture a phantom page.
+ */
+export function undriftForNextPage(rendition: unknown): void {
+  const manager = (
+    rendition as {
+      manager?: { container?: HTMLElement; layout?: { delta?: number } };
+    } | undefined
+  )?.manager;
+  const container = manager?.container;
+  const delta = manager?.layout?.delta;
+  if (!container || typeof delta !== "number" || !(delta > 0)) return;
+
+  const pages = Math.round(container.scrollWidth / delta);
+  const index = Math.round(container.scrollLeft / delta);
+  if (!Number.isFinite(pages) || !Number.isFinite(index)) return;
+  // At the true end of a section epub.js must stay free to move to the next one.
+  if (index >= pages - 1) return;
+
+  const exact = index * delta;
+  if (container.scrollLeft > exact) {
+    container.scrollLeft = Math.max(0, exact - 1);
+  }
+}
+
 function spreadFor(width: number): "always" | "none" {
   return width >= SPREAD_MIN_WIDTH ? "always" : "none";
 }
@@ -310,6 +365,7 @@ export async function createReader(
       // Logged BEFORE the turn so the rolling log keeps the state a skip
       // started from (DEFECTS.md D2).
       debugProbe?.logTurn("next", source);
+      undriftForNextPage(rendition);
       await rendition?.next();
     },
 
