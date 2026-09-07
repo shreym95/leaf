@@ -198,7 +198,7 @@ export function ReaderShell({
         // dismiss itself — on a phone, where selection is easy to trigger by
         // accident, it was unusable. Existing highlights still render, and the
         // notes panel still reads, annotates and deletes them. Creating a
-        // highlight needs a touch-first design first — see BACKLOG.md.
+        // highlight needs a touch-first design first — see docs/BACKLOG.md.
         // Re-enable by restoring `controller.onSelected(...)` here.
 
         if (!cancelled) setLoad({ state: "ready" });

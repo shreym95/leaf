@@ -3,11 +3,14 @@
 A calm web e-reader for public-domain classics and your own DRM-free EPUBs.
 Real epub.js pagination, fine-press typography, Day/Sepia/Night themes, synced library.
 
-See [`DESIGN.md`](./DESIGN.md) for the design language — **start there for any
-visual or theme work**. [`SPEC.md`](./SPEC.md) for scope, architecture and
-milestones, [`CLAUDE.md`](./CLAUDE.md) for the build rules,
-[`REVISED_PLAN.md`](./REVISED_PLAN.md) for the UI/UX roadmap,
-[`BACKLOG.md`](./BACKLOG.md) for deferred work, [`DEPLOY.md`](./DEPLOY.md) for deploys.
+All project documentation lives in [`docs/`](./docs) — see
+[`docs/README.md`](./docs/README.md) for the map. Most-used:
+[`DESIGN.md`](./docs/DESIGN.md) (design language — **start there for any visual or
+theme work**), [`SPEC.md`](./docs/SPEC.md) (scope + architecture),
+[`REVISED_PLAN.md`](./docs/REVISED_PLAN.md) (UI/UX roadmap),
+[`BACKLOG.md`](./docs/BACKLOG.md) (open work),
+[`DEPLOY.md`](./docs/DEPLOY.md) (deploys + migrations).
+Build rules for agents are in [`CLAUDE.md`](./CLAUDE.md), at the root.
 
 ## Develop
 
@@ -31,7 +34,7 @@ npm run dev        # http://localhost:3000
 The UI is a **swappable layer** — a redesign next version should touch only:
 
 - `src/design/` — all design tokens (the only place with literal colors/sizes/fonts);
-  documented in [`DESIGN.md`](./DESIGN.md)
+  documented in [`DESIGN.md`](./docs/DESIGN.md)
 - `src/components/` — presentational chrome (primitives, reader-ui, library-ui)
 
 Logic (`src/reader`, `src/lib`, `src/store`) is style-agnostic and may not import from

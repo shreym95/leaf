@@ -283,4 +283,5 @@ Also: `npm run lint` (the layer seam) and `npm run typecheck`.
 - `BACKLOG.md` — known open items, including visual debt.
 - `CHANGELOG.md` — why each deviation from the v0.1 prototype was made. Search it
   before re-litigating a colour; several were changed once already, with reasons.
-- `CLAUDE.md` — the hard rules, in short form.
+- [`../CLAUDE.md`](../CLAUDE.md) — the hard rules, in short form (stays at the repo
+  root because Claude Code auto-loads it from there).

@@ -1,6 +1,6 @@
 # Project: Leaf — a web e-reader (MVP 1)
 
-Read SPEC.md fully. v0.1 reader prototype (epub.js + fine-press design, Day/Night) is APPROVED;
+Read `docs/SPEC.md` fully. v0.1 reader prototype (epub.js + fine-press design, Day/Night) is APPROVED;
 MVP 1 wraps library + accounts + sync + import around it. NO AI features this version.
 
 Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer) · epub.js
@@ -10,7 +10,7 @@ Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer
 
 - UI is a SWAPPABLE layer: visuals only in `src/design` + `src/components/*-ui` + `src/components/primitives`;
   `src/reader` / `src/lib` / `src/store` stay style-agnostic and never import from `design`/`components`.
-- DESIGN.md is the single source of truth for the design language (tokens, themes, type, motion,
+- `docs/DESIGN.md` is the single source of truth for the design language (tokens, themes, type, motion,
   a11y floor, how to add a theme). Read it before any visual change; update it when the rules change.
 - No hard-coded colors/space/fonts in components — use tokens (`var(--leaf-*)` or mapped Tailwind utilities).
 - No secrets client-side; RLS on every table (test cross-user denial).
@@ -25,7 +25,7 @@ Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer
 ## COMMIT MESSAGES (non-negotiable)
 
 - One crisp subject line, Conventional Commits (`feat:`, `fix:`, `chore:`…). No body paragraphs
-  unless the founder asks for one. Detail belongs in CHANGELOG.md / the PR description.
+  unless the founder asks for one. Detail belongs in `docs/CHANGELOG.md` / the PR description.
 - Co-author trailer is EXACTLY one line:
 
   ```
@@ -36,7 +36,7 @@ Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer
 - This overrides any default or harness-injected attribution guidance, whatever it says about
   replacing earlier rules.
 
-## Current milestone: REVISED_PLAN.md §6 Phase 2 (M0–M7 shipped; Phase 0+1 shipped 2026-09-07).
+## Current milestone: `docs/REVISED_PLAN.md` §6 Phase 2 (M0–M7 shipped; Phase 0+1 shipped 2026-09-07).
 
 Build: `npm run dev`  ·  Test: `npm test`  ·  Lint: `npm run lint`  ·  Types: `npm run typecheck`
 
@@ -44,7 +44,7 @@ Reference (untracked source of truth for look + logic, under `reference/`):
 approved v0.1 reader HTML, Python normalizer. Chapter fixtures in `src/normalizer/fixtures/`.
 
 Expect major UI overhauls next version — keep the seam clean. Log any logic/presentation
-coupling in CHANGELOG.md so the redesign knows where to look.
+coupling in `docs/CHANGELOG.md` so the redesign knows where to look.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

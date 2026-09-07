@@ -1,5 +1,11 @@
 # Leaf — MVP 1 Build Spec (for Claude Code)
 
+> **Note (2026-09-07):** this is the original build brief, kept as written. The repo
+> layout it describes has since changed: all docs now live in `docs/`, and only
+> `README.md`, `LICENSE` and `CLAUDE.md` remain at the root. See
+> [`../README.md`](../README.md) for the current map.
+
+
 > **What this is.** Instructions to build MVP 1 of *Leaf*, a beautiful web e-reader for public-domain classics and users' own DRM-free EPUBs, deployed full-stack on Vercel. It is written for two readers: the **founder** (owns product decisions, tests on real devices) and the **coding agent** (implements against the specs and acceptance criteria below). Put this file at repo root as `SPEC.md`, keep `CLAUDE.md` (template in §11) beside it.
 >
 > **Status going in.** A working v0.1 reading-screen prototype already exists and is approved: it runs **epub.js** for real pagination (two-page spread on desktop, single page on mobile), with a fine-press design and two themes (Day / Night). MVP 1 wraps a real product — library, accounts, sync, book sources, upload — around that reader. The prototype file and the Python normalizer from prototyping are the visual + logic reference; the agent should ask the founder for them and treat them as the source of truth for look and for heading-normalization behavior.
