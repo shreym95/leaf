@@ -47,3 +47,6 @@ next-env.d.ts
 
 # local browser harness (not shipped)
 /.harness
+
+# local defect log (founder notes, not published)
+/DEFECTS.md
