@@ -10,6 +10,7 @@ import {
   registerContentPipeline,
   type ReaderContentSettings,
 } from "./content-hook";
+import { CHAPTER_END_ORNAMENT } from "@/design/content-theme";
 import { DEFAULT_THEME, THEME_IDS } from "@/design/themes";
 
 const OZ = `<?xml version="1.0" encoding="utf-8"?>
@@ -74,6 +75,25 @@ function makeRendition() {
   return { rendition: rendition as unknown as Rendition, themes, handlers, contents, doc };
 }
 
+/** ~230 chars of prose — a handful of these clears the chapter-length floor. */
+const PROSE =
+  "The corridor ran on far past the reach of the lamplight, and with every step the sound of the sea behind them grew fainter, until at last it was only a pressure against the ear that might as easily have been the silence itself.";
+
+/** A parsed XHTML chapter document. `bodyType` sets `<body epub:type>`. */
+function chapterDoc(sectionInner: string, bodyType = "bodymatter"): Document {
+  return new DOMParser().parseFromString(
+    `<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <head><title>t</title></head>
+  <body epub:type="${bodyType}"><section epub:type="chapter">${sectionInner}</section></body>
+</html>`,
+    "application/xml",
+  );
+}
+
+const HEADING = `<hgroup><h2 epub:type="z3998:ordinal z3998:roman">VII</h2><p epub:type="title">The Bronze Doors</p></hgroup>`;
+const PROSE_BLOCK = `<p>${PROSE}</p>`.repeat(6); // ~1350 chars
+
 describe("registerContentPipeline", () => {
   it("registers exactly one content hook", () => {
     const { rendition, handlers } = makeRendition();
@@ -112,6 +132,153 @@ describe("registerContentPipeline", () => {
 
     expect(doc.querySelectorAll('style[id="leaf-content-pipeline"]')).toHaveLength(1);
     expect(doc.querySelectorAll("article.chapter")).toHaveLength(1);
+  });
+
+  // ── Phase 2: printer's fleuron closing a chapter ──────────────────────────
+
+  it("closes a full-length chapter with the fleuron ornament, exactly once", () => {
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    const doc = chapterDoc(HEADING + PROSE_BLOCK);
+    handlers[0]({ document: doc, sectionIndex: 3 }, rendition);
+
+    const ends = doc.querySelectorAll("article.chapter p.chapter-end");
+    expect(ends).toHaveLength(1);
+    expect(ends[0].getAttribute("aria-hidden")).toBe("true"); // decoration only
+    expect(ends[0].textContent).toBe(CHAPTER_END_ORNAMENT);
+    // last thing in the chapter, so it reads as a close
+    expect(doc.querySelector("article.chapter")?.lastElementChild).toBe(ends[0]);
+  });
+
+  it("does not stack the fleuron across pipeline re-runs (idempotent)", () => {
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    const doc = chapterDoc(HEADING + PROSE_BLOCK);
+    handlers[0]({ document: doc, sectionIndex: 3 }, rendition);
+    handlers[0]({ document: doc, sectionIndex: 3 }, rendition);
+    handlers[0]({ document: doc, sectionIndex: 3 }, rendition);
+
+    expect(doc.querySelectorAll("p.chapter-end")).toHaveLength(1);
+  });
+
+  it("keeps front matter clean — tagged front/back matter never gets a fleuron", () => {
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    // A publisher's introduction: real title, thousands of characters — only
+    // the `epub:type` on <body> marks it as not-a-chapter.
+    const doc = chapterDoc(
+      `<hgroup><h2>Introduction</h2></hgroup>${`<p>${PROSE}</p>`.repeat(20)}`,
+      "frontmatter z3998:non-fiction",
+    );
+    handlers[0]({ document: doc, sectionIndex: 2 }, rendition);
+
+    expect(doc.querySelector("p.chapter-end")).toBeNull();
+  });
+
+  it("keeps front matter clean — a short unstructured section gets no fleuron", () => {
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    // No heading -> "§" fallback; a copyright / "Also by" / author-bio page is
+    // exactly this. ~670 chars: past the base floor, but an unstructured
+    // section has to clear the higher floor, and this does not.
+    const doc = chapterDoc(`<p>${PROSE}</p>`.repeat(3)); // ~670 chars
+    handlers[0]({ document: doc, sectionIndex: 3 }, rendition);
+
+    expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("§");
+    expect(doc.querySelector("p.chapter-end")).toBeNull();
+  });
+
+  it("keeps front matter clean — a short titled section (part divider) gets no fleuron", () => {
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    const doc = chapterDoc(
+      `<hgroup><h2>Part I</h2></hgroup><p>A short epigraph, and nothing else.</p>`,
+    );
+    handlers[0]({ document: doc, sectionIndex: 1 }, rendition);
+
+    expect(doc.querySelector("p.chapter-end")).toBeNull();
+  });
+
+  it("a long unstructured section (a Calibre-exported chapter) does get the fleuron", () => {
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    // Calibre strips headings and epub:type — every section is "§". A real
+    // chapter still runs to thousands of characters, so it clears the higher
+    // unstructured floor.
+    const doc = chapterDoc(`<h1 class="chapter"><img src="x.jpg"/></h1>${`<p>${PROSE}</p>`.repeat(10)}`);
+    handlers[0]({ document: doc, sectionIndex: 9 }, rendition);
+
+    expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("§");
+    expect(doc.querySelectorAll("p.chapter-end")).toHaveLength(1);
+  });
+
+  it("a relayout re-parse of already-normalized front matter never sprouts a fleuron", () => {
+    // On every relayout epub.js re-serializes the section's cached (already
+    // rewritten) DOM into a fresh iframe and fires the content hook again — by
+    // which point the raw epub:type / Gutenberg markers the exclusion was read
+    // from are gone. A Project Gutenberg licence page (long, unstructured "§",
+    // marked only by its wrapper class) must stay clean on that second pass.
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    const raw = new DOMParser().parseFromString(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head>` +
+        `<body><section class="pg-boilerplate pgheader" id="pg-header">` +
+        `${`<p>${PROSE}</p>`.repeat(12)}</section></body></html>`,
+      "application/xml",
+    );
+    handlers[0]({ document: raw, sectionIndex: 0 }, rendition);
+    expect(raw.querySelector("p.chapter-end")).toBeNull();
+
+    // What epub.js hands back next time: a fresh parse of that normalized DOM.
+    const reparsed = new DOMParser().parseFromString(
+      new XMLSerializer().serializeToString(raw),
+      "application/xml",
+    );
+    expect(reparsed.querySelector("article.chapter")).not.toBeNull();
+    handlers[0]({ document: reparsed, sectionIndex: 0 }, rendition);
+    expect(reparsed.querySelector("p.chapter-end")).toBeNull();
+  });
+
+  it("keeps the fleuron across a relayout re-parse of a real chapter", () => {
+    // The mirror of the case above: the ornament a first pass added rides along
+    // in the serialized DOM and is neither dropped nor duplicated on re-parse.
+    const { rendition, handlers } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+
+    const raw = chapterDoc(HEADING + PROSE_BLOCK);
+    handlers[0]({ document: raw, sectionIndex: 4 }, rendition);
+    expect(raw.querySelectorAll("p.chapter-end")).toHaveLength(1);
+
+    const reparsed = new DOMParser().parseFromString(
+      new XMLSerializer().serializeToString(raw),
+      "application/xml",
+    );
+    handlers[0]({ document: reparsed, sectionIndex: 4 }, rendition);
+    handlers[0]({ document: reparsed, sectionIndex: 4 }, rendition);
+    expect(reparsed.querySelectorAll("p.chapter-end")).toHaveLength(1);
+  });
+
+  it("excludes the fleuron from the reading-size and palette overrides", () => {
+    // The ornament keeps its accent colour and display face only because the
+    // pipeline's `!important` text rules skip `.chapter-end`, the same way they
+    // skip `.chapter-ordinal`.
+    const { rendition, handlers, doc } = makeRendition();
+    registerContentPipeline(rendition, () => DAY);
+    handlers[0]({ document: doc, sectionIndex: 0 }, rendition);
+
+    const css =
+      doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+    expect(css).toContain(":not(.chapter-ordinal):not(.chapter-title):not(.chapter-end)");
+    expect(css).toMatch(/\.chapter p:not\(\.chapter-ordinal\):not\(\.chapter-end\)\{color:/);
+    // and the one place it IS styled
+    expect(css).toContain(".chapter-end{");
   });
 
   it("refresh() re-injects the stylesheet for the new settings", () => {
