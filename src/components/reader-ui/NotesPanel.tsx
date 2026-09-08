@@ -7,8 +7,22 @@ import { highlightVar } from "@/design/highlight-theme";
 /**
  * NotesPanel — the per-book list of highlights and notes (SPEC §8). Sheet-based
  * so it shares the reader's focus-trap / Esc behaviour. Presentational: the
- * shell owns the highlight manager and passes data + callbacks.
+ * shell owns the managers and passes data + callbacks.
+ *
+ * ── PLACEHOLDER: the bookmarks section ────────────────────────────────────
+ * The bookmark schema (`bookmarks` table, 0005), the db layer
+ * (`src/lib/db/bookmarks.ts`) and the manager (`src/reader/bookmarks.ts`) are
+ * the stable, deliberate part. THIS SURFACE IS NOT: it is a deliberately plain
+ * "bookmark / un-bookmark this page" control plus a flat list, living inside
+ * the existing Notes sheet so it adds no new chrome and no tap target over the
+ * page (DEFECTS D1). When the design for bookmarks is decided (REVISED_PLAN
+ * §4A is NOT approved), only this component and its wiring in ReaderShell
+ * change — the schema and data layer do not.
+ * ─────────────────────────────────────────────────────────────────────────
  */
+
+const sectionLabelClass =
+  "font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-label)]";
 
 export interface NoteItem {
   id: string;
@@ -18,6 +32,16 @@ export interface NoteItem {
   note: string | null;
 }
 
+/** A saved bookmark, flattened for display (see `BookmarkRecord`). */
+export interface BookmarkItem {
+  id: string;
+  cfi: string;
+  /** Chapter title at save time, or null. */
+  label: string | null;
+  /** 0–1 progress at save time, or null. */
+  percent: number | null;
+}
+
 export interface NotesPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -25,6 +49,16 @@ export interface NotesPanelProps {
   onGoTo: (cfiRange: string) => void;
   onSetNote: (id: string, note: string | null) => void;
   onRemove: (id: string) => void;
+
+  // ── bookmarks (placeholder surface — see the file header) ───────────────
+  bookmarks: BookmarkItem[];
+  /** False before the reader has reported a position — the toggle can't act. */
+  canBookmark: boolean;
+  /** Whether the page currently on screen already has a bookmark. */
+  currentPageBookmarked: boolean;
+  onToggleBookmark: () => void;
+  onGoToBookmark: (cfi: string) => void;
+  onRemoveBookmark: (id: string) => void;
 }
 
 function NoteRow({
@@ -121,6 +155,44 @@ function NoteRow({
   );
 }
 
+function BookmarkRow({
+  item,
+  onGoTo,
+  onRemove,
+}: {
+  item: BookmarkItem;
+  onGoTo: (cfi: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const pct =
+    item.percent != null ? `${Math.round(item.percent * 100)}%` : null;
+  return (
+    <li className="flex items-center justify-between gap-3 border-b border-rule pb-4 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => onGoTo(item.cfi)}
+        className="flex flex-1 items-baseline gap-3 rounded-sm text-left font-body text-ink [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)] hover:text-accent focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+      >
+        <span className="flex-1">{item.label ?? "Bookmarked page"}</span>
+        {pct && (
+          <span className="flex-none font-mono text-faint [font-size:var(--leaf-text-3xs)]">
+            {pct}
+          </span>
+        )}
+      </button>
+      <Button
+        variant="quiet"
+        size="sm"
+        mono
+        onClick={() => onRemove(item.id)}
+        aria-label={`Delete bookmark${item.label ? ` — ${item.label}` : ""}`}
+      >
+        Delete
+      </Button>
+    </li>
+  );
+}
+
 export function NotesPanel({
   open,
   onOpenChange,
@@ -128,28 +200,72 @@ export function NotesPanel({
   onGoTo,
   onSetNote,
   onRemove,
+  bookmarks,
+  canBookmark,
+  currentPageBookmarked,
+  onToggleBookmark,
+  onGoToBookmark,
+  onRemoveBookmark,
 }: NotesPanelProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent title={`Highlights (${items.length})`}>
-        {items.length === 0 ? (
-          <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)]">
-            Select any passage while reading to highlight it. Your highlights and
-            notes stay with the book, on every device.
-          </p>
-        ) : (
-          <ul className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
-            {items.map((item) => (
-              <NoteRow
-                key={item.id}
-                item={item}
-                onGoTo={onGoTo}
-                onSetNote={onSetNote}
-                onRemove={onRemove}
-              />
-            ))}
-          </ul>
-        )}
+      <SheetContent title="Notes">
+        <div className="flex flex-col gap-7">
+          <section className="flex flex-col gap-4">
+            <h3 className={sectionLabelClass}>Highlights ({items.length})</h3>
+            {items.length === 0 ? (
+              <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)]">
+                Select any passage while reading to highlight it. Your highlights
+                and notes stay with the book, on every device.
+              </p>
+            ) : (
+              <ul className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto">
+                {items.map((item) => (
+                  <NoteRow
+                    key={item.id}
+                    item={item}
+                    onGoTo={onGoTo}
+                    onSetNote={onSetNote}
+                    onRemove={onRemove}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className={sectionLabelClass}>Bookmarks ({bookmarks.length})</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                mono
+                disabled={!canBookmark}
+                aria-pressed={currentPageBookmarked}
+                onClick={onToggleBookmark}
+              >
+                {currentPageBookmarked ? "Remove bookmark" : "Bookmark this page"}
+              </Button>
+            </div>
+            {bookmarks.length === 0 ? (
+              <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)]">
+                Bookmark the page you are on to come back to it later. Bookmarks
+                stay with the book, on every device.
+              </p>
+            ) : (
+              <ul className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto">
+                {bookmarks.map((item) => (
+                  <BookmarkRow
+                    key={item.id}
+                    item={item}
+                    onGoTo={onGoToBookmark}
+                    onRemove={onRemoveBookmark}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
       </SheetContent>
     </Sheet>
   );

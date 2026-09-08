@@ -34,6 +34,10 @@ describe.skipIf(noKeys)("RLS cross-user isolation (SPEC §3.3)", () => {
   let bookAId = "";
   let bookBId = "";
   let clientA: SupabaseClient;
+  // `bookmarks` (migration 0005) is hand-applied and may not be live yet. When
+  // it isn't, the seed below is skipped and the bookmark isolation test skips
+  // itself — the rest of the suite still runs.
+  let bookmarksSeeded = true;
 
   beforeAll(async () => {
     if (!ANON_KEY) throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY required for this test");
@@ -90,6 +94,22 @@ describe.skipIf(noKeys)("RLS cross-user isolation (SPEC §3.3)", () => {
     });
     if (hl.error) throw hl.error;
 
+    const bm = await admin.from("bookmarks").insert({
+      book_id: bookBId,
+      user_id: userBId,
+      cfi: "epubcfi(/6/2!/4/2)",
+      label: "B's private chapter",
+      percent: 0.42,
+    });
+    if (bm.error) {
+      // Tolerate ONLY "table not created yet" — anything else is a real failure.
+      if (/find the table|does not exist|schema cache/i.test(bm.error.message)) {
+        bookmarksSeeded = false;
+      } else {
+        throw bm.error;
+      }
+    }
+
     // anon client signed in as user A.
     clientA = createClient(SUPABASE_URL!, ANON_KEY!, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -130,6 +150,16 @@ describe.skipIf(noKeys)("RLS cross-user isolation (SPEC §3.3)", () => {
   it("user A cannot read user B's highlights", async () => {
     const { data, error } = await clientA
       .from("highlights")
+      .select("*")
+      .eq("book_id", bookBId);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+  });
+
+  it("user A cannot read user B's bookmarks", async (ctx) => {
+    if (!bookmarksSeeded) ctx.skip(); // `bookmarks` lands with migration 0005
+    const { data, error } = await clientA
+      .from("bookmarks")
       .select("*")
       .eq("book_id", bookBId);
     expect(error).toBeNull();

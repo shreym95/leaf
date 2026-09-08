@@ -25,3 +25,9 @@ export {
   deleteHighlight,
   type CreateHighlightInput,
 } from "./highlights";
+export {
+  listBookmarks,
+  createBookmark,
+  deleteBookmark,
+  type CreateBookmarkInput,
+} from "./bookmarks";

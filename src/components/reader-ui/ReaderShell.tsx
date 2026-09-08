@@ -16,6 +16,11 @@ import {
   type HighlightManager,
   type HighlightRecord,
 } from "@/reader/highlights";
+import {
+  manageBookmarks,
+  type BookmarkManager,
+  type BookmarkRecord,
+} from "@/reader/bookmarks";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderBottomBar } from "./ReaderBottomBar";
@@ -91,6 +96,20 @@ export function ReaderShell({
   const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
   const [notesOpen, setNotesOpen] = useState(false);
 
+  // ── Bookmarks (placeholder UI, stable schema — see NotesPanel header) ──
+  const bookmarksRef = useRef<BookmarkManager | null>(null);
+  const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
+  // The page currently on screen: its start CFI + progress, kept so the
+  // bookmark toggle knows what to save and whether it is already saved. A ref
+  // mirror lets the toggle callback stay identity-stable.
+  const [here, setHere] = useState<{ cfi?: string; percent: number }>({
+    percent: 0,
+  });
+  const hereRef = useRef(here);
+  useEffect(() => {
+    hereRef.current = here;
+  }, [here]);
+
   const { setTheme: applyChromeTheme } = useTheme();
 
   // Live settings from the store (hydrated below).
@@ -143,6 +162,7 @@ export function ReaderShell({
     let unsubRelocated: (() => void) | undefined;
     let unsubSelected: (() => void) | undefined;
     let unsubHighlights: (() => void) | undefined;
+    let unsubBookmarks: (() => void) | undefined;
 
     (async () => {
       try {
@@ -163,6 +183,7 @@ export function ReaderShell({
         unsubRelocated = controller.onRelocated((loc) => {
           if (cancelled) return;
           setPercent(loc.percent);
+          setHere({ cfi: loc.cfi, percent: loc.percent });
           // A two-page spread shows facing pages, so the right folio is the
           // next page — not the section's page count. It read "3 … 10" on
           // desktop, which is a page number beside a total. SpreadFrame hides
@@ -198,6 +219,13 @@ export function ReaderShell({
         unsubHighlights = highlights.subscribe(setHighlights);
         await highlights.restore();
 
+        // Bookmarks: no rendition painting (the visible treatment is a later
+        // design decision) — just load the list and keep it in sync.
+        const bookmarks = manageBookmarks(bookId);
+        bookmarksRef.current = bookmarks;
+        unsubBookmarks = bookmarks.subscribe(setBookmarks);
+        await bookmarks.restore();
+
         // NOTE: the selection-triggered highlight popover is DISABLED.
         // It opened on any text selection, sat over the page, and had no way to
         // dismiss itself — on a phone, where selection is easy to trigger by
@@ -224,8 +252,11 @@ export function ReaderShell({
       unsubRelocated?.();
       unsubSelected?.();
       unsubHighlights?.();
+      unsubBookmarks?.();
       highlightsRef.current?.stop();
       highlightsRef.current = null;
+      bookmarksRef.current?.stop();
+      bookmarksRef.current = null;
       trackerRef.current?.stop();
       trackerRef.current = null;
       controllerRef.current?.destroy();
@@ -263,6 +294,26 @@ export function ReaderShell({
     const controller = controllerRef.current;
     if (!controller) return;
     void (dir === "next" ? controller.next(source) : controller.prev(source));
+  }, []);
+
+  // ── Bookmark / un-bookmark the page on screen ─────────────────────────
+  // Placeholder control (see NotesPanel header). Matches the current page by
+  // exact start-CFI — good enough for a plain toggle; a redesign can make the
+  // match fuzzier if it needs to.
+  const toggleBookmark = useCallback(() => {
+    const mgr = bookmarksRef.current;
+    const cfi = hereRef.current.cfi;
+    if (!mgr || !cfi) return;
+    const existing = mgr.list().find((b) => b.cfi === cfi);
+    if (existing) {
+      void mgr.remove(existing.id);
+    } else {
+      void mgr.create({
+        cfi,
+        label: controllerRef.current?.currentChapterLabel() ?? null,
+        percent: hereRef.current.percent,
+      });
+    }
   }, []);
 
   // ── Debug readout accessors — stable identities so the overlay's
@@ -374,6 +425,22 @@ export function ReaderShell({
         }}
         onSetNote={(id, note) => void highlightsRef.current?.setNote(id, note)}
         onRemove={(id) => void highlightsRef.current?.remove(id)}
+        bookmarks={bookmarks.map((b) => ({
+          id: b.id,
+          cfi: b.cfi,
+          label: b.label,
+          percent: b.percent,
+        }))}
+        canBookmark={Boolean(here.cfi)}
+        currentPageBookmarked={
+          here.cfi != null && bookmarks.some((b) => b.cfi === here.cfi)
+        }
+        onToggleBookmark={toggleBookmark}
+        onGoToBookmark={(cfi) => {
+          setNotesOpen(false);
+          void controllerRef.current?.goTo(cfi);
+        }}
+        onRemoveBookmark={(id) => void bookmarksRef.current?.remove(id)}
       />
 
       {debug && (

@@ -108,8 +108,10 @@ that file twice.
 `0001`–`0003` were run in the Supabase SQL editor; the CLI is not wired. They must
 run **in order** if the project is ever rebuilt. This stops being housekeeping the
 moment another migration is needed — the sepia theme in `REVISED_PLAN.md` needs
-`0004` (the theme columns carry `check (… in ('day','night'))`), and the ribbon
-bookmark needs storage of its own.
+`0004` (the theme columns carry `check (… in ('day','night'))`), and bookmarks
+need storage of their own: `0005_bookmarks.sql` (the `bookmarks` table) is
+written and also hand-applied. The visible bookmark treatment (`REVISED_PLAN`
+§4A) is still an open design question — only the schema and data layer are settled.
 
 ### Custom domain
 

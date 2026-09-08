@@ -2,6 +2,44 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Phase 2 — bookmarks (durable backend, placeholder UI)
+
+The schema and data layer are the deliverable and are meant to be stable. The
+UI is deliberately minimal and disposable: the bookmark design (REVISED_PLAN
+§4A, the silk ribbon) is **not approved**, so nothing of it is built.
+
+### Added — schema + data layer (the stable part)
+- **`supabase/migrations/0005_bookmarks.sql`** — `bookmarks(id, book_id,
+  user_id, cfi, label, percent, created_at)`, an index on `book_id`,
+  `enable row level security`, and an owner-only `bookmarks_owner_all` policy —
+  modelled on `highlights` (0001). A separate table, not a column on
+  `reading_state` (which is one row per book; bookmarks are many). `label` (the
+  chapter title at save time) and `percent` are **denormalised on purpose** so a
+  bookmark list renders without opening the EPUB or resolving a CFI; both are
+  nullable snapshots. Hand-apply in the SQL editor like the others.
+- **`src/lib/db/bookmarks.ts`** — `listBookmarks` / `createBookmark` /
+  `deleteBookmark`, mirroring `highlights.ts` (explicit Supabase client,
+  browser-safe, RLS is the guard). Exported from `src/lib/db/index.ts`.
+- **`src/reader/bookmarks.ts`** — `manageBookmarks(bookId)`, a load / add /
+  remove / subscribe manager mirroring the highlight manager but with no
+  rendition painting (there is no approved visible treatment). Best-effort
+  writes, same as `position.ts`.
+- Cross-user denial covered in `src/lib/db/rls.integration.test.ts`.
+
+### Changed — engine, additively
+- `ReaderController.currentChapterLabel()` — best-effort current chapter title
+  from the EPUB's own TOC (fragments / leading `./` normalised away). Used only
+  to denormalise `bookmarks.label` at save time; returns `undefined` on any miss.
+
+### Added — placeholder UI (the disposable part)
+- The existing **Notes** sheet (`src/components/reader-ui/NotesPanel.tsx`) grows
+  a second section: a single "Bookmark this page / Remove bookmark" control and
+  a flat list. No new panel, no new route, and **no new tap target over the
+  page** (page-turn zones cover the whole touch screen — DEFECTS D1). Tapping a
+  row navigates to its CFI via the controller's `goTo`. Tokens only, real
+  labels, keyboard-reachable, focus-visible. The file header says plainly that
+  only this surface changes when the design is decided.
+
 ## Phase 2 — on-device instrumentation for the skipped last page (D2)
 
 Temporary diagnostic build. The "last page of a chapter is skipped" defect

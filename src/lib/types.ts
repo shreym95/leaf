@@ -72,6 +72,23 @@ export interface Highlight {
   created_at: string;
 }
 
+/** `public.bookmarks` (0005) — many per (book, user), unlike `reading_state`. */
+export interface Bookmark {
+  id: string;
+  book_id: string;
+  user_id: string;
+  /** epub.js CFI of the bookmarked page's start (same kind of value as
+   *  `reading_state.cfi`). */
+  cfi: string;
+  /** Chapter title captured at save time, from the book's TOC. Null when the
+   *  TOC has no entry for the section. Denormalised — see 0005. */
+  label: string | null;
+  /** 0–1 progress at save time. Null when `book.locations` was not ready yet.
+   *  Denormalised — see 0005. */
+  percent: number | null;
+  created_at: string;
+}
+
 /**
  * `public.reader_settings` — PK `user_id`. Mirrors the `useReaderSettings`
  * store shape (`src/store/reader-settings.ts`).

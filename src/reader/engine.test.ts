@@ -23,7 +23,11 @@ const { book, rendition, ePubFn } = vi.hoisted(() => {
     getContents: vi.fn(() => [] as unknown[]),
     destroy: vi.fn(),
     currentLocation: vi.fn(() => ({
-      start: { cfi: "epubcfi(/6/2!/4)", displayed: { page: 1, total: 2 } },
+      start: {
+        cfi: "epubcfi(/6/2!/4)",
+        href: "text/part0003.html",
+        displayed: { page: 1, total: 2 },
+      },
     })),
   };
   const book = {
@@ -33,6 +37,7 @@ const { book, rendition, ePubFn } = vi.hoisted(() => {
       generate: vi.fn(async (): Promise<unknown[]> => []),
       percentageFromCfi: vi.fn(() => 0.5),
     },
+    navigation: { toc: [] as unknown[] },
     renderTo: vi.fn((_el: unknown, _opts: Record<string, unknown>) => rendition),
     destroy: vi.fn(),
   };
@@ -198,6 +203,37 @@ describe("wiring", () => {
       "epubcfi(/6/8!/4,/1:2,/1:40)",
       "highlight",
     );
+  });
+
+  it("currentChapterLabel() resolves the current section's title from the EPUB TOC", async () => {
+    book.navigation.toc = [
+      { href: "text/part0001.html", label: "Chapter 1" },
+      {
+        href: "text/part0003.html#top",
+        label: "  Chapter 3  ",
+        subitems: [{ href: "text/part0004.html", label: "Chapter 3.1" }],
+      },
+    ];
+    try {
+      const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+      await reader.attach(document.createElement("div"));
+      // currentLocation() (mock) reports href "text/part0003.html"; the TOC
+      // entry carries a fragment and padding — both are normalised away.
+      expect(reader.currentChapterLabel()).toBe("Chapter 3");
+    } finally {
+      book.navigation.toc = [];
+    }
+  });
+
+  it("currentChapterLabel() is undefined when the TOC has no matching entry", async () => {
+    book.navigation.toc = [{ href: "text/part0099.html", label: "Elsewhere" }];
+    try {
+      const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+      await reader.attach(document.createElement("div"));
+      expect(reader.currentChapterLabel()).toBeUndefined();
+    } finally {
+      book.navigation.toc = [];
+    }
   });
 
   it("percent stays 0 until locations.generate resolves, then reflects book.locations", async () => {

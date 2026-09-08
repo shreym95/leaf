@@ -48,6 +48,11 @@ export interface ReaderController {
   next(source?: string): Promise<void>;
   prev(source?: string): Promise<void>;
   goTo(target: string): Promise<void>; // CFI or spine href
+  /** Best-effort chapter title for the current position, from the EPUB's own
+   *  table of contents. Denormalised onto a bookmark at save time (Phase 2) so
+   *  a bookmark list renders without re-resolving CFIs. `undefined` when the
+   *  TOC has no entry for the current section. */
+  currentChapterLabel(): string | undefined;
   relayout(): void; // recompute spread (call on resize; debounced inside)
   applySettings(s: ReaderContentSettings): void; // -> rendition.themes / font / override
   onRelocated(cb: (loc: ReaderLocation) => void): () => void; // returns an unsubscribe fn
@@ -343,6 +348,40 @@ export async function createReader(
     }
   }
 
+  // Best-effort: walk the EPUB's own TOC for the entry whose href matches the
+  // given spine href (fragments and leading `./` stripped from both sides), and
+  // return its label. Used to denormalise a chapter title onto a bookmark at
+  // save time — never load-bearing, so any miss returns undefined.
+  type NavItemish = { href?: string; label?: string; subitems?: unknown[] };
+  function chapterLabelForHref(href: string | undefined): string | undefined {
+    if (!href) return undefined;
+    try {
+      const toc = (book.navigation as { toc?: unknown } | undefined)?.toc;
+      if (!Array.isArray(toc) || toc.length === 0) return undefined;
+      const bare = (s: string) => s.split("#")[0].replace(/^\.?\//, "");
+      const want = bare(href);
+      const walk = (items: NavItemish[]): string | undefined => {
+        for (const it of items) {
+          if (typeof it?.href === "string" && bare(it.href) === want) {
+            const label = typeof it.label === "string" ? it.label.trim() : "";
+            if (label) return label;
+          }
+          const sub = Array.isArray(it?.subitems)
+            ? (it.subitems as NavItemish[])
+            : undefined;
+          if (sub) {
+            const nested = walk(sub);
+            if (nested) return nested;
+          }
+        }
+        return undefined;
+      };
+      return walk(toc as NavItemish[]);
+    } catch {
+      return undefined;
+    }
+  }
+
   // epub.js applies theme/CSS changes to the iframe but does NOT re-flow the
   // paginated columns — the current page goes blank until the next turn forces
   // a re-layout. Re-`display()` the current CFI to re-flow in place. Coalesced
@@ -449,6 +488,17 @@ export async function createReader(
     async goTo(target: string): Promise<void> {
       // `display` accepts a CFI or a spine href.
       await rendition?.display(target);
+    },
+
+    currentChapterLabel(): string | undefined {
+      try {
+        const here = rendition?.currentLocation() as
+          | { start?: { href?: string } }
+          | undefined;
+        return chapterLabelForHref(here?.start?.href);
+      } catch {
+        return undefined;
+      }
     },
 
     relayout(): void {
