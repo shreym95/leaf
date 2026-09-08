@@ -186,7 +186,7 @@ export function ImportSheet({
               const status = rows[rowKey(r)] ?? { state: "idle" };
               return (
                 <li key={rowKey(r)} className="flex items-start gap-3">
-                  <div className="relative aspect-[3/4] w-12 flex-none overflow-hidden rounded-xs border border-rule bg-page">
+                  <div className="relative aspect-[2/3] w-12 flex-none overflow-hidden rounded-xs border border-rule bg-page">
                     {r.coverUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img

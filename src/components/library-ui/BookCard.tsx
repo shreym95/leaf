@@ -23,7 +23,7 @@ import { BookActions } from "./BookActions";
  *     progressbar's `aria-valuetext`;
  *   - the actions trigger on a frosted disc so it never clashes with busy
  *     cover artwork;
- *   - the cover shown whole (`object-contain`) in a fixed 3:4 footprint, any
+ *   - the cover shown whole (`object-contain`) in a fixed 2:3 footprint, any
  *     letterbox falling on the card ground rather than a crop or a bar.
  *
  * Every visual value is a token (mapped utility or `var(--leaf-*)`), never a
@@ -74,12 +74,13 @@ export function BookCard({ book }: BookCardProps) {
             "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]",
           )}
         >
-          {/* The cover sits in a fixed 3:4 footprint so the shelf grid stays
-              even, but real covers run every aspect ratio. `object-contain`
-              shows the whole cover; the letterbox that leaves is the card
-              ground (`bg-page`), read as the book resting on a page — never a
-              bar. See docs/DESIGN.md §11. */}
-          <div className="relative aspect-[3/4] w-full overflow-hidden rounded-sm border border-rule bg-page [box-shadow:var(--leaf-shadow-spine)]">
+          {/* The card footprint is 2:3 — the ratio nearly every trade book
+              cover is published at — so `object-contain` shows the cover whole
+              with no visible letterbox for the common case. It was 3:4, which
+              left pale bands down both sides of every normal cover. Odd-ratio
+              covers still letterbox onto the card ground (`bg-page`), reading as
+              the book resting on a page rather than a UI artifact. */}
+          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule bg-page [box-shadow:var(--leaf-shadow-spine)]">
             {book.coverUrl ? (
               <Image
                 src={book.coverUrl}

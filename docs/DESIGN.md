@@ -279,20 +279,20 @@ Also: `npm run lint` (the layer seam) and `npm run typecheck`.
 ## 11. Book covers on the shelf
 
 The shelf (`src/components/library-ui/BookCard.tsx`) lays covers out on a grid of
-**fixed 3:4 cards** so the rows stay even. Real covers do not oblige — Standard
+**fixed 2:3 cards** so the rows stay even. Real covers do not oblige — Standard
 Ebooks runs tall 1:1.6 plates, Gutenberg scans are all over the place, uploads
 are whatever the publisher shipped.
 
 **The rule: show the whole cover, never crop it.** The cover image is
-`object-contain` inside the 3:4 footprint. A cover whose ratio differs from 3:4
+`object-contain` inside the 2:3 footprint. A cover whose ratio differs from 2:3
 is letterboxed, and **the letterbox is the card ground (`bg-page`)** — the same
 warm surface the no-cover fallback initial sits on. It reads as the book resting
 on a page. It is never a black bar, never a blurred-cover fill, and the cover is
 never cropped to fill the card (`object-cover` was the old behaviour and the bug
-behind DEFECTS D3 — every non-3:4 cover lost its edges).
+behind DEFECTS D3 — every non-3:4 cover lost its edges; the footprint was then 3:4, which letterboxed the 2:3 ratio nearly every real cover uses).
 
 The spine crease (`--leaf-shadow-spine`), card elevation and progress ribbon all
-sit on the 3:4 container, so they frame the card footprint consistently whatever
+sit on the 2:3 container, so they frame the card footprint consistently whatever
 the cover's own proportions.
 
 ---
