@@ -139,6 +139,66 @@ export function undriftForNextPage(rendition: unknown): void {
   }
 }
 
+/**
+ * After stepping BACK into the previous chapter, make sure we land on its LAST
+ * page — the way turning back a page in a printed book works.
+ *
+ * DEFECTS.md D6. epub.js already intends this: `prev()` ends with
+ * `scrollTo(container.scrollWidth - layout.delta)`
+ * (managers/default/index.js). But that reads `scrollWidth` at a moment when the
+ * prepended view may not have settled at its final width, and an on-device log
+ * caught it landing on page 1 of a 23-page chapter instead of page 23:
+ *
+ *     #67 tap-prev  s15 1/18 -> s14 1/23
+ *     #63 tap-prev  s15 1/14 -> s14 1/19
+ *
+ * Both happened immediately after a section change, which is the moment the
+ * measurement is least settled. So re-assert the destination from geometry once
+ * the turn has resolved, and only when the section actually changed — paging
+ * back WITHIN a chapter must be left alone.
+ *
+ * Not reproducible off-device (the harness lands correctly with and without the
+ * D5 fix), so this is deliberately a re-assertion rather than a timing patch: if
+ * epub.js already got it right, this is a no-op.
+ */
+function snapBackToChapterEnd(rendition: unknown, previousIndex: number | undefined): void {
+  const manager = (
+    rendition as {
+      manager?: { container?: HTMLElement; layout?: { delta?: number } };
+    } | undefined
+  )?.manager;
+  const container = manager?.container;
+  const delta = manager?.layout?.delta;
+  if (!container || typeof delta !== "number" || !(delta > 0)) return;
+
+  const index = sectionIndexOf(rendition);
+  // Only when we actually crossed into an earlier section.
+  if (index === undefined || previousIndex === undefined) return;
+  if (index >= previousIndex) return;
+
+  const pages = Math.round(container.scrollWidth / delta);
+  if (!Number.isFinite(pages) || pages < 2) return;
+
+  const lastPage = (pages - 1) * delta;
+  // Already there (allowing for the sub-pixel scroll snapping behind D2).
+  if (container.scrollLeft >= lastPage - 1) return;
+  container.scrollLeft = lastPage;
+}
+
+/** Current spine index, or undefined if epub.js cannot report one right now. */
+function sectionIndexOf(rendition: unknown): number | undefined {
+  try {
+    const here = (
+      rendition as { currentLocation?: () => unknown } | undefined
+    )?.currentLocation?.() as { start?: { index?: number } } | undefined;
+    const index = here?.start?.index;
+    return typeof index === "number" ? index : undefined;
+  } catch {
+    // currentLocation throws mid-transition; treat as unknown.
+    return undefined;
+  }
+}
+
 function spreadFor(width: number): "always" | "none" {
   return width >= SPREAD_MIN_WIDTH ? "always" : "none";
 }
@@ -371,7 +431,19 @@ export async function createReader(
 
     async prev(source?: string): Promise<void> {
       debugProbe?.logTurn("prev", source);
+      const from = sectionIndexOf(rendition);
       await rendition?.prev();
+      // epub.js scrolls to the chapter end itself; re-assert it from geometry
+      // because that scroll can run against an unsettled width (D6). A frame
+      // later the prepended view has its final size.
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => resolve());
+        } else {
+          resolve();
+        }
+      });
+      snapBackToChapterEnd(rendition, from);
     },
 
     async goTo(target: string): Promise<void> {
