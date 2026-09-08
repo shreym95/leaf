@@ -98,8 +98,30 @@
   /* --- Reader chrome / spread frame (M3) ---------------------------------
      Geometry for the open-book frame, the folio slots, the footer progress
      bar, and the page-turn crossfade opacity. Recreated from the approved
-     v0.1 prototype's `.book` / `.prog` / `.book.turning` rules. */
-  --leaf-reader-frame-w: min(1180px, 94vw);
+     v0.1 prototype's `.book` / `.prog` / `.book.turning` rules.
+
+     The frame is ASPECT-LOCKED to an open two-page spread (1180 : 820, ~1.44:1).
+     HEIGHT is the driver — the frame fills the available height (`-h` is `100%`
+     of the reader `<main>`, capped at `-max-h` 820px) and SpreadFrame derives
+     the WIDTH from it via `aspect-ratio` (`-w` is `auto`). So a short window
+     yields a NARROWER book instead of a letterbox. Before this, `-w` scaled
+     straight with the viewport while height was only capped by a constant, so a
+     windowed browser on a 14" laptop (available height well under 820px) took
+     nearly the full width against a squeezed height — a 1.85:1+ letterbox (D4).
+
+     `-min-w` floors the width at the two-page-spread threshold
+     (`src/reader/engine.ts` `SPREAD_MIN_WIDTH`, 1024px): the reader engine sizes
+     epub.js to a single page below that container width, and the gutter / folios
+     assume a spread, so the frame must not shrink past it. On a window too short
+     to fit a 1.44 spread at ≥1024px wide the frame therefore rests at the floor
+     and the ratio rises toward the old letterbox — but far less (≈1024/availH),
+     and the spread stays intact. `-min-w` tracks `94vw` below ~1090px so a
+     just-desktop viewport is not overflowed. */
+  --leaf-reader-frame-aspect: 1180 / 820;
+  --leaf-reader-frame-w: auto;
+  --leaf-reader-frame-min-w: min(1024px, 94vw);
+  --leaf-reader-frame-max-w: min(1180px, 94vw);
+  --leaf-reader-frame-h: 100%;
   --leaf-reader-frame-max-h: 820px;
   --leaf-reader-viewer-pad-y: clamp(1.6rem, 4vh, 3rem);
   /* Zero, and deliberately so. This element is epub.js's container: it sits
@@ -157,7 +179,15 @@
 @media (max-width: 1023px) {
   :root {
     --leaf-reader-surface: var(--leaf-page);
+    /* Full-bleed: fill the screen, no ratio constraint — there is no second
+       page and no mat, so the spread proportions do not apply. `-w`/`-h` are
+       both `100%` (definite) and `aspect` is `auto`, so the frame is the
+       viewport. */
+    --leaf-reader-frame-aspect: auto;
     --leaf-reader-frame-w: 100%;
+    --leaf-reader-frame-min-w: 0px;
+    --leaf-reader-frame-max-w: none;
+    --leaf-reader-frame-h: 100%;
     --leaf-reader-frame-pad-x: 0px;
     --leaf-reader-frame-pad-b: 0px;
     /* The viewer element IS epub.js's container: it measures that box and sizes

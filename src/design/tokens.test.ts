@@ -34,9 +34,64 @@ describe("reader layout tokens", () => {
 
   it("keeps the framed book on wide screens", () => {
     const root = css.slice(0, css.indexOf("\n@media (max-width: 1023px)"));
-    expect(decl(root, "reader-frame-w")).toContain("min(");
+    expect(decl(root, "reader-frame-max-w")).toContain("min(");
     expect(decl(root, "reader-frame-pad-x")).toContain("clamp(");
     expect(decl(root, "reader-frame-shadow")).toBe("var(--leaf-shadow-book)");
+  });
+
+  it("locks the framed spread to an open-book aspect ratio (D4)", () => {
+    // D4: `--leaf-reader-frame-w` scaled straight with the viewport while height
+    // was only capped by a constant (820px). In a windowed browser on a 14"
+    // laptop the available height is well under 820px, so the frame took nearly
+    // the full width against a squeezed height — a 1.85:1+ letterbox, nothing
+    // like an open book. The frame is now aspect-locked and HEIGHT-driven:
+    // `-h` is `100%` (fills the available height, capped at `-max-h`), and
+    // SpreadFrame derives the width from it via `aspect-ratio` (`-w` is `auto`),
+    // so a short window yields a NARROWER book, not a wider-than-tall one.
+    const root = css.slice(0, css.indexOf("\n@media (max-width: 1023px)"));
+
+    const aspect = decl(root, "reader-frame-aspect");
+    expect(aspect).toBeDefined();
+    const [aw, ah] = aspect!.split("/").map((n) => parseFloat(n));
+    const ratio = aw / ah;
+    expect(ratio).toBeGreaterThan(1.3); // wider than tall — a two-page spread
+    expect(ratio).toBeLessThan(1.6); //    but not a letterbox
+
+    // Height is the driver; width is derived from it.
+    expect(decl(root, "reader-frame-h")).toBe("100%");
+    expect(decl(root, "reader-frame-w")).toBe("auto");
+
+    // Width still carries the 1180px / 94vw cap, and the cap box has the same
+    // proportions as the ratio, so the full-size desktop spread is unchanged:
+    // max-w 1180px ÷ max-h 820px === the aspect ratio.
+    const maxW = decl(root, "reader-frame-max-w")!;
+    expect(maxW).toContain("94vw");
+    expect(maxW).toContain(`${aw}px`);
+    expect(decl(root, "reader-frame-max-h")).toBe(`${ah}px`);
+  });
+
+  it("floors the framed spread at the two-page-spread threshold (D4)", () => {
+    // The width is height-derived, but the reader engine
+    // (`src/reader/engine.ts` SPREAD_MIN_WIDTH) sizes epub.js to a SINGLE page
+    // once the container drops below 1024px, and the gutter + folios assume a
+    // spread. So the frame must never shrink past that: on a window too short
+    // for a 1.44 spread it rests at this floor and letterboxes a little rather
+    // than collapsing the spread. `min(…, 94vw)` keeps a just-desktop viewport
+    // from being overflowed.
+    const root = css.slice(0, css.indexOf("\n@media (max-width: 1023px)"));
+    const minW = decl(root, "reader-frame-min-w")!;
+    expect(minW).toContain("1024px");
+    expect(minW).toContain("94vw");
+  });
+
+  it("drops the aspect lock and the spread floor when full-bleed", () => {
+    // Below 1024px there is no second page and no mat, so the spread
+    // proportions do not apply — the frame is simply the viewport.
+    expect(decl(smallScreen, "reader-frame-aspect")).toBe("auto");
+    expect(decl(smallScreen, "reader-frame-h")).toBe("100%");
+    expect(decl(smallScreen, "reader-frame-w")).toBe("100%");
+    expect(decl(smallScreen, "reader-frame-min-w")).toBe("0px");
+    expect(decl(smallScreen, "reader-frame-max-w")).toBe("none");
   });
 
   it("never pads epub.js's container horizontally, at any width", () => {
