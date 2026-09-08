@@ -5,6 +5,12 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Book } from "@/lib/types";
 import { signCoverUrls } from "@/lib/storage";
+import { IS_DEMO } from "@/lib/demo/flag";
+import {
+  demoListBooks,
+  demoGetBook,
+  demoCountArchivedBooks,
+} from "@/lib/demo/fixtures";
 
 /**
  * A book plus where the reader left off. The shelf shows progress rather than a
@@ -55,6 +61,8 @@ export async function listBooks(
   userId: string,
   { archived = false }: { archived?: boolean } = {},
 ): Promise<LibraryBook[]> {
+  if (IS_DEMO) return demoListBooks({ archived });
+
   const supabase = await createClient();
   const query = supabase
     .from("books")
@@ -94,6 +102,8 @@ export async function getBook(
   userId: string,
   bookId: string,
 ): Promise<Book | null> {
+  if (IS_DEMO) return demoGetBook(bookId);
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("books")
@@ -122,6 +132,8 @@ export async function setBookArchived(
 
 /** How many books the reader has hidden — so the shelf can offer to show them. */
 export async function countArchivedBooks(userId: string): Promise<number> {
+  if (IS_DEMO) return demoCountArchivedBooks();
+
   const supabase = await createClient();
   const { count, error } = await supabase
     .from("books")

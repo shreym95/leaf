@@ -9,6 +9,8 @@
 // which are belt-and-braces / path construction).
 
 import { createClient } from "@/lib/supabase/server";
+import { IS_DEMO } from "@/lib/demo/flag";
+import { demoBookFileUrl } from "@/lib/demo/fixtures";
 
 const BUCKET = "epubs";
 const EPUB_CONTENT_TYPE = "application/epub+zip";
@@ -66,6 +68,9 @@ export async function signBookUrl(
   storagePath: string,
   expiresSec = 3600,
 ): Promise<string> {
+  // Demo mode: the bundled EPUBs are served straight from `/public/bundled/`.
+  if (IS_DEMO) return demoBookFileUrl(storagePath);
+
   assertOwnedPath(userId, storagePath);
   const supabase = await createClient();
   const { data, error } = await supabase.storage
