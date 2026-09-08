@@ -64,6 +64,16 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
 const BODY_FONT = '"EB Garamond", Garamond, "Times New Roman", serif';
 const DISPLAY_FONT = '"Fraunces", Georgia, serif';
 
+/**
+ * Printer's fleuron closing every chapter (REVISED_PLAN §6 Phase 2).
+ *
+ * The glyph is deliberately a ONE-LINE change — swap the character here and
+ * nothing else moves. Its single style rule is `.chapter-end` in
+ * `buildContentTheme` below; `src/reader/content-hook.ts` only injects the
+ * node. Alternatives the founder may want: ❦ ❧ ⚜ ✦ (also ✽ ❈ ⁂).
+ */
+export const CHAPTER_END_ORNAMENT = "❦";
+
 export type ContentThemeStyles = Record<string, Record<string, string>>;
 
 /**
@@ -157,6 +167,22 @@ export function buildContentTheme(themeId: ThemeId): ContentThemeStyles {
       "font-feature-settings": '"smcp" 1',
       "letter-spacing": "0.02em",
       color: p.inkMid,
+    },
+
+    // Printer's fleuron closing the chapter (glyph: CHAPTER_END_ORNAMENT).
+    // THE one place to restyle the ornament — centred, accent, display face,
+    // generous air above. It is excluded from the pipeline's settings/palette
+    // `!important` overrides (like `.chapter-ordinal`), so plain values hold.
+    ".chapter-end": {
+      display: "block",
+      "text-align": "center",
+      "text-indent": "0",
+      "font-family": DISPLAY_FONT,
+      "font-size": "1.5rem",
+      "line-height": "1",
+      color: p.accent,
+      margin: "3rem 0 0",
+      "user-select": "none",
     },
 
     "::selection": {

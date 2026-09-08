@@ -12,7 +12,8 @@ here.
 
 Leaf is a **fine-press book, rendered in a browser**. Not a reading app with a
 book skin — the reference is a well-set printed page: generous margins, a real
-measure, drop caps, small-caps ledes, hairline rules, folios.
+measure, drop caps, small-caps ledes, hairline rules, folios, a printer's
+fleuron closing each chapter.
 
 Three consequences that decide most arguments:
 
@@ -101,7 +102,7 @@ missing token in one theme is a failing build, not a visual surprise.
 | `--leaf-ink` | Body text. |
 | `--leaf-ink-mid` | Secondary text, ledes. |
 | `--leaf-faint` | Tertiary text — captions, folios, metadata. **AA floor applies.** |
-| `--leaf-accent` | Drop caps, ordinals, links, active state. One per theme. |
+| `--leaf-accent` | Drop caps, ordinals, chapter-end fleuron, links, active state. One per theme. |
 | `--leaf-rule` | Hairline dividers. **1.4.11 floor applies.** |
 | `--leaf-gutter` | The spread's centre fold shading. |
 | `--leaf-focus` | Focus ring colour. |
@@ -127,7 +128,8 @@ Five families, all via `next/font`:
 
 - `--leaf-font-ui` — **Source Sans** — app chrome, buttons, captions.
 - `--leaf-font-body` — **EB Garamond** — long-form host text and book excerpts.
-- `--leaf-font-display` — **Fraunces** — titles, drop caps, chapter ordinals.
+- `--leaf-font-display` — **Fraunces** — titles, drop caps, chapter ordinals,
+  the chapter-end fleuron.
 - `--leaf-font-mono` — **JetBrains Mono** — folios, eyebrows, technical labels.
 - `--leaf-font-reader-legible` — **Atkinson Hyperlegible** — the reader's
   accessibility font choice.

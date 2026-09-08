@@ -2,6 +2,48 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Phase 2 — printer's fleuron at chapter ends
+
+A small centred typographic ornament closing each real chapter (REVISED_PLAN
+§4B / §6 Phase 2), for visual breath between chapters.
+
+### Added
+- **`CHAPTER_END_ORNAMENT`** (`src/design/content-theme.ts`) — the glyph, one
+  exported constant (`❦`; alternatives named in a comment). Its one style rule
+  is `.chapter-end` in `buildContentTheme` (centred, accent, display face,
+  `text-indent:0`, generous space above). Swapping the glyph or restyling is a
+  one-line edit in that file — nothing else moves.
+- **`appendChapterEndOrnament`** (`src/reader/content-hook.ts`) — appends
+  `<p class="chapter-end" aria-hidden="true">` to the normalized
+  `<article class="chapter">`, in the per-chapter pipeline right after
+  normalization and **before** the stylesheet inject + `"expand"` re-measure, so
+  the extra trailing height is counted when epub.js re-measures the column
+  (D2 / D5). `aria-hidden` — decoration, never voiced.
+
+### Logic/presentation coupling (for the redesign)
+- The ornament node is minted in `content-hook.ts` (logic) but its glyph and
+  its only style rule live in `content-theme.ts` (design) — the same sanctioned
+  bridge already used for the fine-press theme. To change how it looks, touch
+  `content-theme.ts` only.
+- **Non-chapter exclusion rule** (stated in `content-hook.ts`): skip the
+  ornament when ANY of — (1) the raw section is tagged front/back matter via
+  `epub:type` (`NON_CHAPTER_EPUB_TYPES`, read before the normalizer strips it),
+  (2) under `MIN_CHAPTER_TEXT` (500) chars of text, or (3) the normalizer found
+  no heading (`§` ordinal fallback) and it is under
+  `MIN_UNSTRUCTURED_CHAPTER_TEXT` (1200) chars. Front matter, title pages,
+  copyright/"Also by"/author-bio pages, part dividers, dedications and epigraphs
+  each fail at least one; a real chapter clears all three. Verified on Apollo
+  (Calibre export, every section is `§`): 40/40 chapters get it, 8/8 front/back
+  matter stay clean, idempotent across pipeline re-runs, every chapter still
+  walks to its last page.
+- **Pagination note:** the ornament adds ~one line + its top margin to the final
+  column, so a chapter whose text fills its last page can gain one trailing page
+  carrying only the ornament. No content or reading position is lost (D2/D5
+  clean); reduce `.chapter-end` `margin` in `content-theme.ts` if that trailing
+  page is unwanted.
+
+---
+
 ## Phase 2 — on-device instrumentation for the skipped last page (D2)
 
 Temporary diagnostic build. The "last page of a chapter is skipped" defect

@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { buildContentTheme } from "./content-theme";
-import { THEME_IDS } from "./themes";
+import { buildContentTheme, CHAPTER_END_ORNAMENT } from "./content-theme";
+import { DEFAULT_THEME, THEME_IDS } from "./themes";
 
 /**
  * content-theme.ts duplicates the palette hexes (the book iframe can't read the
@@ -61,6 +61,30 @@ describe("buildContentTheme palettes match tokens.css", () => {
       }
     });
   }
+});
+
+describe("chapter-end fleuron (Phase 2)", () => {
+  it("is a single glyph, swappable in one line", () => {
+    // The founder may restyle this — the whole contract is that it's one
+    // exported constant plus one style rule. Keep it a bare glyph.
+    expect(CHAPTER_END_ORNAMENT).toHaveLength(1);
+    expect(CHAPTER_END_ORNAMENT.trim()).toBe(CHAPTER_END_ORNAMENT);
+  });
+
+  it("has exactly one style rule, and it is centred / accent / display face", () => {
+    const styles = buildContentTheme(DEFAULT_THEME);
+    const rule = styles[".chapter-end"];
+    expect(rule).toBeDefined();
+    expect(rule["text-align"]).toBe("center");
+    expect(rule["text-indent"]).toBe("0");
+    expect(rule["font-family"]).toBe(styles[".chapter-ordinal"]["font-family"]);
+    expect(rule.color).toBe(styles[".chapter-ordinal"].color); // accent
+    // generous space above so it reads as a close, not a caption
+    expect(parseFloat(rule.margin)).toBeGreaterThanOrEqual(2);
+    // no other selector styles the ornament
+    const others = Object.keys(styles).filter((s) => s.includes("chapter-end"));
+    expect(others).toEqual([".chapter-end"]);
+  });
 });
 
 /** rgba(189, 130, 80, 0.24) -> rgba(189,130,80,0.24) ; hex lowercased. */
