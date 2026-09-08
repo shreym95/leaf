@@ -22,7 +22,9 @@ import { BookActions } from "./BookActions";
  *     old flat percentage text — still announced to screen readers via the
  *     progressbar's `aria-valuetext`;
  *   - the actions trigger on a frosted disc so it never clashes with busy
- *     cover artwork.
+ *     cover artwork;
+ *   - the cover shown whole (`object-contain`) in a fixed 3:4 footprint, any
+ *     letterbox falling on the card ground rather than a crop or a bar.
  *
  * Every visual value is a token (mapped utility or `var(--leaf-*)`), never a
  * literal.
@@ -72,6 +74,11 @@ export function BookCard({ book }: BookCardProps) {
             "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]",
           )}
         >
+          {/* The cover sits in a fixed 3:4 footprint so the shelf grid stays
+              even, but real covers run every aspect ratio. `object-contain`
+              shows the whole cover; the letterbox that leaves is the card
+              ground (`bg-page`), read as the book resting on a page — never a
+              bar. See docs/DESIGN.md §11. */}
           <div className="relative aspect-[3/4] w-full overflow-hidden rounded-sm border border-rule bg-page [box-shadow:var(--leaf-shadow-spine)]">
             {book.coverUrl ? (
               <Image
@@ -79,7 +86,7 @@ export function BookCard({ book }: BookCardProps) {
                 alt={`Cover of ${book.title}`}
                 fill
                 sizes="(min-width: 40rem) 12rem, 45vw"
-                className="object-cover"
+                className="object-contain"
               />
             ) : (
               <span

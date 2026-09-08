@@ -90,4 +90,17 @@ describe("BookCard", () => {
       "Cover of Frankenstein",
     );
   });
+
+  it("shows the whole cover, never a crop (DEFECTS D3)", () => {
+    // Real covers run every aspect ratio; `object-cover` cropped the edges off
+    // any cover that was not 3:4. The card must contain the cover, not fill.
+    render(
+      <BookCard
+        book={makeBook({ coverUrl: "https://example.com/cover.jpg" })}
+      />,
+    );
+    const img = screen.getByRole("img");
+    expect(img).toHaveClass("object-contain");
+    expect(img).not.toHaveClass("object-cover");
+  });
 });
