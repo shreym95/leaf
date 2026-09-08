@@ -62,12 +62,23 @@ export function SpreadFrame({
     >
       <div
         ref={frameRef}
-        className="relative h-full overflow-hidden bg-page"
+        className="relative overflow-hidden bg-page"
         style={{
           borderRadius: "var(--leaf-reader-frame-radius)",
           boxShadow: "var(--leaf-reader-frame-shadow)",
+          // Aspect-locked to an open spread: height is the driver (fills the
+          // available height, capped at `max-h`), width follows from
+          // `aspect-ratio`, so a short window yields a narrower book rather than
+          // a letterbox (D4). `min-w` floors the width at the two-page-spread
+          // threshold so the frame never shrinks into epub.js's single-page
+          // regime. Below 1024px every value collapses to `100%` / `auto` /
+          // `0px` / `none`, so the frame is simply the full-bleed viewport.
           width: "var(--leaf-reader-frame-w)",
+          height: "var(--leaf-reader-frame-h)",
+          minWidth: "var(--leaf-reader-frame-min-w)",
+          maxWidth: "var(--leaf-reader-frame-max-w)",
           maxHeight: "var(--leaf-reader-frame-max-h)",
+          aspectRatio: "var(--leaf-reader-frame-aspect)",
         }}
       >
         {/* Centred gutter shadow — desktop only (hidden < 1024px). */}

@@ -182,6 +182,33 @@ Desktop is a **framed two-page spread** on a mat. Below `1024px` the frame is
 dropped entirely and the page goes **full-bleed** — at 390px the framed layout gave
 text only 61% of the width.
 
+**The spread is aspect-locked.** It holds an open-book proportion —
+`--leaf-reader-frame-aspect: 1180 / 820` (≈ 1.44 : 1, two portrait pages side by
+side). **Height is the driver:** `--leaf-reader-frame-h` is `100%` (the frame
+fills the reader `<main>`, capped at `--leaf-reader-frame-max-h` `820px`), and
+`SpreadFrame` derives the width from it via `aspect-ratio` — `--leaf-reader-frame-w`
+is `auto`. So a shorter window gives a **narrower** book rather than a
+wider-than-tall one. `--leaf-reader-frame-max-w` (`min(1180px, 94vw)`) still caps
+the width, and its box has the ratio's own proportions (1180 ÷ 820), so a
+full-height desktop spread is unchanged. Before this, `-w` scaled straight with
+the viewport while height was only capped by a constant, so a windowed browser on
+a 14" laptop (available height well under 820px) letterboxed the spread to
+1.85 : 1 or worse (D4).
+
+`--leaf-reader-frame-min-w` floors the width at `min(1024px, 94vw)`. `1024px` is
+the reader engine's `SPREAD_MIN_WIDTH` (`src/reader/engine.ts`): below that
+container width the engine sizes epub.js to a **single page**, while the gutter
+and folios still assume a spread. A window too short to fit a 1.44 spread at
+≥ 1024px wide therefore rests at this floor — the book letterboxes a little
+(≈ `1024 ÷ availableHeight`, still far better than before) but stays a spread.
+The `94vw` term keeps a just-past-1024px viewport from overflowing the mat.
+
+Below `1024px` `-aspect` is `auto`, `-w`/`-h` are `100%`, `-min-w` is `0` and
+`-max-w` is `none`: full-bleed has no second page and no mat, so the proportion
+does not apply. `tokens.test.ts` pins all of this ("locks the framed spread to an
+open-book aspect ratio", "floors the framed spread at the two-page-spread
+threshold").
+
 **The one rule you must not break:** `--leaf-reader-viewer-pad-x` is `0px` at every
 width, and it stays that way. That element *is* epub.js's container; epub.js
 measures it to size its columns. Padding it shrinks the iframe after the column
