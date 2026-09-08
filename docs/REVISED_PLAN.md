@@ -214,7 +214,9 @@ These survive untouched and need a home:
 3. **`--leaf-rule` hairline contrast** (~1.5:1, arguably short of WCAG 1.4.11). Phase 1
    touches tokens anyway — fix it in the same pass rather than opening tokens twice.
 4. **Privacy policy contact address** — `/privacy` still says `[your contact email]`.
-5. **Migrations are applied by hand** — `0001`–`0003` were run in the Supabase SQL editor;
+5. **Guaranteed cross-device sync** — position sync is best-effort and last-write-wins today.
+   Scoped in §8 (lower priority, unscheduled). Related: DEFECTS D8.
+6. **Migrations are applied by hand** — `0001`–`0003` were run in the Supabase SQL editor;
    there is no CLI wired. See §D: this plan needs at least one more migration, which makes
    wiring the CLI a prerequisite rather than housekeeping.
 
@@ -279,3 +281,56 @@ Sequence it last, and consider splitting "read a cached book offline" from "sync
 offline" — the first is most of the value at a fraction of the risk.
 
 **Unscheduled, deliberately:** Open Library ratings, custom domain.
+
+---
+
+## 8. Guaranteed cross-device sync (enhancement — lower priority, unscheduled)
+
+**Founder ask, 2026-09-09:** move reading position from *silent best-effort* to *guaranteed
+state*, correct across multiple live devices.
+
+### Where it stands today
+
+`src/reader/position.ts` debounces relocations by 1.5s and upserts `{cfi, percent}` straight
+from the browser into `reading_state` (PK `(book_id, user_id)`, RLS-scoped). `restore()` reads
+that row on open and calls `goTo(cfi)`. That is a sound skeleton, and CFIs are the right unit —
+they survive different screen sizes, fonts and margins, so laptop page 40 and phone page 112
+resolve to the same place.
+
+Three properties it does NOT have:
+
+1. **Not live.** Restore runs only on open. Devices open at the same time never see each other.
+2. **Last write wins, blindly.** The upsert has no version or timestamp guard, so any stale device
+   that turns a single page can clobber a further-along position written by another.
+3. **Silent failure.** Write errors are swallowed by design (reading must never be interrupted),
+   so a reader gets no signal that their position was not saved. See DEFECTS D8 for the related
+   loss-on-backgrounding bug.
+
+### What "guaranteed" should mean
+
+Worth agreeing before building — "guaranteed" is not one thing:
+
+- **(a) Durable.** A turn that happened is eventually persisted, even if the tab is killed.
+  Needs the D8 fix (`visibilitychange` / `pagehide` + `sendBeacon`/`keepalive`) plus a retry
+  queue for offline writes. Cheapest, and the biggest real-world win.
+- **(b) Convergent.** Any set of devices that wrote ends up agreeing, deterministically. Needs a
+  conflict rule. The honest default for a reader is **furthest-position-wins**, not
+  last-write-wins — a reader almost never wants to be pulled backwards. Requires comparing CFIs
+  (epub.js `EpubCFI.compare`), or `percent` as a cheap proxy, plus an `updated_at` tiebreak.
+- **(c) Live.** Device B follows device A while both are open. Supabase Realtime on
+  `reading_state` makes this small to build, but it raises a product question: should the page
+  you are reading *move under you*? Probably not — the right shape is a passive prompt
+  ("Continue from page 112, last read on your phone?"), which also handles the non-live case.
+
+### Suggested order
+
+(a) durability → (b) convergence with furthest-wins → (c) a resume prompt rather than live
+following. (c) is the only part that changes what a reader sees, so it wants a design pass.
+
+### Interactions
+
+- **Phase 3 offline** (§5) needs the same retry queue and the same conflict rule — build them
+  once, here, and let Phase 3 consume them.
+- **Bookmarks and highlights** have the same silent best-effort write path and would inherit
+  whatever durability layer this adds.
+- A `version` or `updated_at` guard on `reading_state` may mean migration `0006`.
