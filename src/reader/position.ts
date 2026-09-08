@@ -15,6 +15,8 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
+import { IS_DEMO } from "@/lib/demo/flag";
+import { demoPositionKey, readDemoJSON, writeDemoJSON } from "@/lib/demo/local";
 import type { ReaderController, ReaderLocation } from "./engine";
 
 export interface PositionTracker {
@@ -39,6 +41,11 @@ export function trackPosition(
     if (!pending) return;
     const toWrite = pending;
     pending = undefined;
+    // Demo mode: keep the reading position in this browser's localStorage.
+    if (IS_DEMO) {
+      writeDemoJSON(demoPositionKey(bookId), toWrite);
+      return;
+    }
     try {
       const supabase = createClient();
       const {
@@ -64,6 +71,18 @@ export function trackPosition(
 
   return {
     async restore(): Promise<boolean> {
+      if (IS_DEMO) {
+        const saved = readDemoJSON<{ cfi: string; percent: number }>(
+          demoPositionKey(bookId),
+        );
+        if (!saved?.cfi) return false;
+        try {
+          await controller.goTo(saved.cfi);
+          return true;
+        } catch {
+          return false;
+        }
+      }
       try {
         const supabase = createClient();
         const {

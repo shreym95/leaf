@@ -20,6 +20,9 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
+Working on how Leaf looks? `npm run design` runs the app on fixtures with no
+Supabase, no `.env` and no login — see [`docs/DESIGN-LOCAL.md`](./docs/DESIGN-LOCAL.md).
+
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server |

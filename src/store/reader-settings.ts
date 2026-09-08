@@ -9,6 +9,8 @@
 
 import { create } from "zustand";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { IS_DEMO } from "@/lib/demo/flag";
+import { DEMO_SETTINGS_KEY, readDemoJSON, writeDemoJSON } from "@/lib/demo/local";
 import type { ThemeName } from "@/lib/types";
 
 export type FontFamily = "serif" | "sans" | "legible";
@@ -118,7 +120,7 @@ export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
       clearTimeout(timer);
       timer = undefined;
     }
-    if (!userId || !isSupabaseConfigured) return;
+    if (!userId) return;
     const s = get();
     const values: ReaderSettingsValues = {
       fontFamily: s.fontFamily,
@@ -127,6 +129,13 @@ export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
       margins: s.margins,
       theme: s.theme,
     };
+    // Demo mode: persist to this browser's localStorage instead of Supabase, so
+    // theme / font / size / spacing / margins survive a reload like the real app.
+    if (IS_DEMO) {
+      writeDemoJSON(DEMO_SETTINGS_KEY, values);
+      return;
+    }
+    if (!isSupabaseConfigured) return;
     try {
       const supabase = createClient();
       await supabase
@@ -187,6 +196,18 @@ export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
         if (initial[key] !== undefined) {
           // TS: each key's value type is preserved by the per-key assignment.
           (seed as Record<string, unknown>)[key] = initial[key];
+        }
+      }
+      // Demo mode: the server row is always empty, so a returning designer's
+      // saved choices live in localStorage — overlay them onto the seed.
+      if (IS_DEMO) {
+        const saved = readDemoJSON<Partial<ReaderSettingsValues>>(DEMO_SETTINGS_KEY);
+        if (saved) {
+          for (const key of VALUE_KEYS) {
+            if (saved[key] !== undefined) {
+              (seed as Record<string, unknown>)[key] = saved[key];
+            }
+          }
         }
       }
       set(seed);

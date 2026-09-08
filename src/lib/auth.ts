@@ -9,8 +9,15 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient, isSupabaseConfigured } from "./supabase/server";
+import { IS_DEMO } from "./demo/flag";
+import { DEMO_USER } from "./demo/fixtures";
 
 async function fetchUser(): Promise<User | null> {
+  // Demo mode: a fixed user, so the library / reader / settings routes render
+  // without a login. Never reachable in production — see `src/lib/demo/flag.ts`.
+  if (IS_DEMO) {
+    return DEMO_USER;
+  }
   if (!isSupabaseConfigured) {
     return null;
   }

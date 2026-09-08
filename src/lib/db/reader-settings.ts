@@ -4,6 +4,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ReaderSettings } from "@/lib/types";
+import { IS_DEMO } from "@/lib/demo/flag";
 
 /**
  * The user's reading settings row. The signup trigger (`handle_new_user`) seeds
@@ -13,6 +14,10 @@ import type { ReaderSettings } from "@/lib/types";
 export async function getReaderSettings(
   userId: string,
 ): Promise<ReaderSettings | null> {
+  // Demo mode: no row — the client store falls back to its defaults and then
+  // hydrates from localStorage (see `src/store/reader-settings.ts`).
+  if (IS_DEMO) return null;
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("reader_settings")
