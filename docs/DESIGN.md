@@ -330,6 +330,10 @@ the cover's own proportions.
 
 - `SPEC.md` — full build spec, data model, architecture.
 - `REVISED_PLAN.md` — the UI/UX roadmap; §2 is theme architecture, §6 the phasing.
+- `design-iterations/` — approved redesigns not yet built, as the designer handed
+  them over: a spec plus a runnable HTML prototype. These describe where the design
+  is going; this file describes what is in the code today. When they disagree, this
+  file is right about the present and the iteration folder is right about the intent.
 - `BACKLOG.md` — known open items, including visual debt.
 - `CHANGELOG.md` — why each deviation from the v0.1 prototype was made. Search it
   before re-litigating a colour; several were changed once already, with reasons.

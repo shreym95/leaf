@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="sepia">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Leaf — Subtle Minimal Reader Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --leaf-font-ui: 'Source Sans 3', system-ui, sans-serif;
+      --leaf-font-body: 'EB Garamond', Garamond, serif;
+      --leaf-font-display: 'Fraunces', Georgia, serif;
+      --leaf-font-mono: 'JetBrains Mono', monospace;
+      
+      --leaf-texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+      --leaf-texture-grid: radial-gradient(var(--leaf-rule) 0.75px, transparent 0.75px);
+      
+      /* Pure Minimal Flat Elevation */
+      --leaf-shadow-flat: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Light Theme (Flat Warm Sepia / Fine-Press Paper) */
+    [data-theme="sepia"], [data-theme="day"] {
+      --leaf-paper: #f2ece0;
+      --leaf-page: #f8f4eb;
+      --leaf-edge: #ded5c2;
+      --leaf-ink: #1f1a16;
+      --leaf-ink-mid: #685b4d;
+      --leaf-faint: #8a7c6d;
+      --leaf-accent: #1f1a16;
+      --leaf-rule: #dcd3c0;
+      
+      /* Subtle Understated Resting Elements */
+      --leaf-badge-bg: rgba(31, 26, 22, 0.08);
+      --leaf-badge-border: rgba(31, 26, 22, 0.14);
+      --leaf-badge-text: #453b30;
+      --leaf-track-bg: rgba(31, 26, 22, 0.12);
+      --leaf-track-fill: #453b30;
+      
+      /* Opened Pods (Solid Flat Charcoal) */
+      --leaf-pod-bg: #1f1a16;
+      --leaf-pod-border: #352d26;
+      --leaf-pod-text: #f2ece0;
+      --leaf-pod-text-muted: #9c8e7e;
+      --leaf-slider-track: #120e0b;
+      --leaf-slider-thumb: #f2ece0;
+      
+      --leaf-surface-overlay: var(--leaf-texture-grid), var(--leaf-texture-grain);
+      color-scheme: light;
+    }
+
+    /* Dark Theme (Flat Matte Carbon) */
+    [data-theme="night"] {
+      --leaf-paper: #12100e;
+      --leaf-page: #191613;
+      --leaf-edge: #000000;
+      --leaf-ink: #e4dac5;
+      --leaf-ink-mid: #9c8f7d;
+      --leaf-faint: #736758;
+      --leaf-accent: #e4dac5;
+      --leaf-rule: #2a231d;
+      
+      /* Subtle Understated Resting Elements */
+      --leaf-badge-bg: rgba(255, 255, 255, 0.08);
+      --leaf-badge-border: rgba(255, 255, 255, 0.12);
+      --leaf-badge-text: #beb29e;
+      --leaf-track-bg: rgba(255, 255, 255, 0.12);
+      --leaf-track-fill: #beb29e;
+      
+      /* Opened Pods (Solid Flat Matte Black) */
+      --leaf-pod-bg: #1c1713;
+      --leaf-pod-border: #302821;
+      --leaf-pod-text: #e4dac5;
+      --leaf-pod-text-muted: #8a7c6b;
+      --leaf-slider-track: #0d0b09;
+      --leaf-slider-thumb: #e4dac5;
+      
+      --leaf-surface-overlay: var(--leaf-texture-grain);
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    html, body {
+      height: 100%;
+      overflow: hidden; /* Strict single page */
+    }
+
+    body {
+      background-color: var(--leaf-paper);
+      background-image: var(--leaf-surface-overlay);
+      background-size: 20px 20px, auto;
+      color: var(--leaf-ink);
+      font-family: var(--leaf-font-ui);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Top Minimal Header */
+    .top-header {
+      width: 100%;
+      max-width: 620px;
+      padding: 1.25rem 1.5rem 0.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .nav-back {
+      font-family: var(--leaf-font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--leaf-ink-mid);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.15s;
+    }
+    .nav-back:hover { color: var(--leaf-ink); }
+
+    .brand-mark {
+      font-family: var(--leaf-font-mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--leaf-ink-mid);
+      font-weight: 500;
+    }
+
+    /* Flat Minimal Bookmark Tab (Top Edge) */
+    .ribbon-bookmark {
+      position: fixed;
+      right: max(1.5rem, calc((100vw - 620px) / 2 + 1.2rem));
+      top: 0;
+      z-index: 30;
+      cursor: pointer;
+      width: 18px;
+      height: 28px;
+      background: var(--leaf-ink);
+      opacity: 0.25;
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
+      transition: all 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+      border: none;
+    }
+    .ribbon-bookmark:hover { opacity: 0.7; height: 40px; }
+    .ribbon-bookmark.active { 
+      opacity: 0.9; 
+      height: 52px; 
+    }
+
+    /* Paginated Page Frame */
+    .page-frame {
+      width: 100%;
+      max-width: 620px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      padding: 0.5rem 1.5rem 0.5rem;
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .chapter-title {
+      font-family: var(--leaf-font-display);
+      font-size: 1.85rem;
+      line-height: 1.2;
+      color: var(--leaf-ink);
+      font-weight: 400;
+      text-align: center;
+      margin-bottom: 1.25rem;
+      transition: color 0.3s;
+    }
+
+    .prose {
+      font-family: var(--leaf-font-body);
+      font-size: 1.12rem;
+      line-height: 1.65;
+      text-align: justify;
+      hyphens: auto;
+      user-select: text;
+      -webkit-user-select: text;
+      transition: font-size 0.2s ease, color 0.3s ease;
+    }
+
+    .prose p {
+      margin-bottom: 0.85rem;
+      text-indent: 1.4em;
+    }
+
+    .prose p.first-para {
+      text-indent: 0;
+    }
+
+    .drop-cap {
+      float: left;
+      font-family: var(--leaf-font-display);
+      font-size: 3.4em;
+      line-height: 0.8;
+      padding: 0.05em 0.1em 0 0;
+      color: var(--leaf-ink);
+      font-weight: 500;
+    }
+
+    /* Page Turn Tap Zones */
+    .turn-zone {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 20%;
+      z-index: 5;
+      cursor: pointer;
+    }
+    .turn-zone-left { left: 0; }
+    .turn-zone-right { right: 0; }
+
+    /* Bottom Margin Safe Zone for Controls (ZERO overlap with prose) */
+    .bottom-margin-zone {
+      width: 100%;
+      max-width: 620px;
+      padding: 0.5rem 1rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      z-index: 30;
+      position: relative;
+    }
+
+    /* ========================================================= */
+    /* 1. SUBTLE PERSISTENT PROGRESS DOCK WITH SETTINGS HINT     */
+    /* ========================================================= */
+    .persistent-dock-system {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.2s;
+    }
+    .persistent-dock-system:hover {
+      opacity: 0.95;
+    }
+
+    .dock-badge {
+      background: var(--leaf-badge-bg);
+      color: var(--leaf-badge-text);
+      border: 1px solid var(--leaf-badge-border);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-family: var(--leaf-font-mono);
+      font-size: 0.68rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      transition: border-color 0.15s ease, background 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .dock-progress-bar-container {
+      background: var(--leaf-badge-bg);
+      border: 1px solid var(--leaf-badge-border);
+      border-radius: 999px;
+      height: 22px;
+      width: 130px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .dock-progress-bar-track {
+      width: 100%;
+      height: 2px;
+      background: var(--leaf-track-bg);
+      border-radius: 999px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .dock-progress-bar-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      width: 74%;
+      background: var(--leaf-track-fill);
+      border-radius: 999px;
+      transition: width 0.1s ease;
+    }
+
+    /* Settings Button on Far Right (Controls Hint) */
+    .dock-settings-btn {
+      background: var(--leaf-badge-bg);
+      color: var(--leaf-badge-text);
+      border: 1px solid var(--leaf-badge-border);
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+    .persistent-dock-system:hover .dock-settings-btn {
+      background: var(--leaf-ink);
+      color: var(--leaf-paper);
+      border-color: var(--leaf-ink);
+    }
+
+    /* Shared Flat Pod Style for Opened State */
+    .dock-pod {
+      background: var(--leaf-pod-bg);
+      color: var(--leaf-pod-text);
+      border: 1px solid var(--leaf-pod-border);
+      box-shadow: var(--leaf-shadow-flat);
+      transition: transform 0.15s ease, background 0.25s ease, border-color 0.25s ease;
+      position: relative;
+    }
+
+    /* ========================================================= */
+    /* 2. EXPANDED FLAT TWO-TIER DOCK SYSTEM                     */
+    /* ========================================================= */
+    .expanded-dock-container {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 420px;
+      animation: flatSlideUp 0.22s ease-out forwards;
+    }
+
+    @keyframes flatSlideUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Tier 1: Flat Minimal Progress Bar Island */
+    .progress-island-dock {
+      width: 100%;
+      border-radius: 12px;
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Flat 3px Progress Track */
+    .progress-track-wrapper {
+      position: relative;
+      width: 100%;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .progress-flat-groove {
+      width: 100%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: 999px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .progress-flat-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: var(--leaf-pod-text);
+      border-radius: 999px;
+      width: 74%;
+      transition: width 0.08s linear;
+    }
+
+    .progress-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--leaf-font-mono);
+      font-size: 0.68rem;
+      color: var(--leaf-pod-text-muted);
+      letter-spacing: 0.05em;
+      user-select: none;
+    }
+
+    .progress-chapter-highlight {
+      font-family: var(--leaf-font-display);
+      font-size: 0.84rem;
+      color: var(--leaf-pod-text);
+      font-weight: 500;
+    }
+
+    /* Tier 2: Split Flat Floating Pods Row */
+    .split-pods-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    /* Pod 1: Flat 2-State Sliding Theme Toggle with Flat Vector SVGs */
+    .pod-slider {
+      border-radius: 999px;
+      padding: 2px;
+      width: 62px;
+      height: 32px;
+      position: relative;
+      cursor: pointer;
+      background: var(--leaf-slider-track);
+      border: 1px solid var(--leaf-pod-border);
+    }
+
+    .slider-inner-icons {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      z-index: 1;
+      user-select: none;
+    }
+
+    .theme-icon {
+      color: var(--leaf-pod-text-muted);
+      transition: color 0.2s;
+    }
+
+    .slider-pill-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 26px;
+      height: 26px;
+      background: var(--leaf-slider-thumb);
+      border-radius: 50%;
+      transition: transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
+      z-index: 2;
+    }
+
+    .pod-slider.night-active .slider-pill-thumb {
+      transform: translateX(30px);
+    }
+
+    /* Pod 2: Flat Font Size Stepper */
+    .pod-font-stepper {
+      border-radius: 999px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      padding: 0 3px;
+      border: 1px solid var(--leaf-pod-border);
+    }
+
+    .stepper-btn {
+      background: none;
+      border: none;
+      color: var(--leaf-pod-text);
+      font-family: var(--leaf-font-ui);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      padding: 4px 10px;
+      cursor: pointer;
+      border-radius: 999px;
+      transition: background 0.15s;
+      opacity: 0.85;
+    }
+    .stepper-btn:hover { 
+      background: rgba(255,255,255,0.1); 
+      opacity: 1; 
+    }
+    .stepper-btn:active {
+      transform: scale(0.96);
+    }
+
+    .stepper-divider {
+      width: 1px;
+      height: 12px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    /* Pod 3, 4: Flat Action Pods */
+    .pod-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--leaf-pod-border);
+      background: var(--leaf-pod-bg);
+      color: var(--leaf-pod-text);
+    }
+    .pod-circle:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+    .pod-circle:active {
+      transform: scale(0.96);
+    }
+
+    /* Flat Popover Drawer for Table of Contents */
+    .toc-popover {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      background: var(--leaf-pod-bg);
+      border: 1px solid var(--leaf-pod-border);
+      box-shadow: var(--leaf-shadow-flat);
+      border-radius: 12px;
+      padding: 12px;
+      z-index: 50;
+      animation: popoverFade 0.18s ease forwards;
+    }
+
+    @keyframes popoverFade {
+      from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .toc-title {
+      font-family: var(--leaf-font-display);
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--leaf-pod-text);
+      margin-bottom: 8px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .toc-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 170px;
+      overflow-y: auto;
+    }
+
+    .toc-item {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--leaf-font-ui);
+      font-size: 0.8rem;
+      color: var(--leaf-pod-text-muted);
+      padding: 5px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .toc-item:hover {
+      background: rgba(255,255,255,0.08);
+      color: var(--leaf-pod-text);
+    }
+    .toc-item.current {
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--leaf-pod-text);
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Minimal Header -->
+  <header class="top-header">
+    <a href="index.html" class="nav-back">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+      </svg>
+      Library
+    </a>
+    <span class="brand-mark">Leaf</span>
+  </header>
+
+  <!-- Silk Ribbon Bookmark (Top Edge) -->
+  <button id="ribbonBookmark" class="ribbon-bookmark" title="Bookmark page" onclick="toggleBookmark()"></button>
+
+  <!-- Paginated Page Frame -->
+  <main class="page-frame" id="pageFrame">
+    <!-- Invisible Turn Zones -->
+    <div class="turn-zone turn-zone-left" onclick="prevPage()" title="Previous page"></div>
+    <div class="turn-zone turn-zone-right" onclick="nextPage()" title="Next page"></div>
+
+    <h1 class="chapter-title" id="pageHeading">Chapter 4 · The Creation</h1>
+
+    <article class="prose" id="proseContainer">
+      <p class="first-para">
+        <span class="drop-cap">I</span>t was on a dreary night of November that I beheld the accomplishment of my toils. With an anxiety that almost amounted to agony, I collected the instruments of life around me, that I might infuse a spark of being into the lifeless thing that lay at my feet. It was already one in the morning; the rain pattered dismally against the panes, and my candle was nearly burnt out, when, by the glimmer of the half-extinguished light, I saw the dull yellow eye of the creature open; it breathed hard, and a convulsive motion agitated its limbs.
+      </p>
+      
+      <p>
+        How can I describe my emotions at this catastrophe, or how delineate the wretch whom with such infinite pains and care I had endeavoured to form? His limbs were in proportion, and I had selected his features as beautiful. Beautiful! Great God! His yellow skin scarcely covered the work of muscles and arteries beneath.
+      </p>
+
+      <p>
+        His hair was of a lustrous black, and flowing; his teeth of a pearly whiteness; but these luxuriances only formed a more horrid contrast with his watery eyes, that seemed almost of the same colour as the dun-white sockets in which they were set.
+      </p>
+    </article>
+  </main>
+
+  <!-- Dedicated Bottom Margin Zone (ZERO overlap with reading text) -->
+  <footer class="bottom-margin-zone">
+    
+    <!-- ========================================================= -->
+    <!-- 1. SUBTLE PERSISTENT PROGRESS DOCK WITH SETTINGS HINT     -->
+    <!-- ========================================================= -->
+    <div class="persistent-dock-system" id="restingDock" onclick="expandDock()" title="Tap to open controls">
+      <div class="dock-badge" id="persistentChapterBadge">Ch. 4</div>
+      <div class="dock-progress-bar-container">
+        <div class="dock-progress-bar-track">
+          <div class="dock-progress-bar-fill" id="persistentFill"></div>
+        </div>
+      </div>
+      <div class="dock-badge" id="persistentPctBadge">74%</div>
+      
+      <!-- Settings Hint Button (2-Slider Adjustment Vector Icon) -->
+      <div class="dock-settings-btn" title="Reading Settings">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <line x1="4" y1="7" x2="20" y2="7"></line>
+          <line x1="4" y1="17" x2="20" y2="17"></line>
+          <circle cx="8" cy="7" r="2.5" fill="currentColor"></circle>
+          <circle cx="16" cy="17" r="2.5" fill="currentColor"></circle>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- 2. EXPANDED FLAT TWO-TIER DOCK SYSTEM                     -->
+    <!-- ========================================================= -->
+    <div class="expanded-dock-container" id="expandedDock">
+      
+      <!-- Tier 1: Flat Minimal Progress Bar Island -->
+      <div class="dock-pod progress-island-dock">
+        <div class="progress-track-wrapper" id="progressTrack" onclick="scrubProgress(event)" title="Click or drag to seek">
+          <div class="progress-flat-groove">
+            <div class="progress-flat-fill" id="progressFill"></div>
+          </div>
+        </div>
+        
+        <div class="progress-meta-row">
+          <span class="progress-chapter-highlight" id="scrubChapter">Chapter 4 · The Creation</span>
+          <span id="scrubStats">Page 42 of 180 · 14m left</span>
+        </div>
+      </div>
+
+      <!-- Tier 2: Split Flat Floating Pods Row -->
+      <div class="split-pods-row">
+        
+        <!-- Pod 1: Flat 2-State Sliding Theme Toggle with Flat Vector SVGs -->
+        <div class="dock-pod pod-slider" id="themeSwitch" onclick="toggleSlidingTheme()" title="Toggle Light / Dark">
+          <div class="slider-inner-icons">
+            <svg class="theme-icon sun-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="4"></circle>
+              <line x1="12" y1="2" x2="12" y2="4"></line>
+              <line x1="12" y1="20" x2="12" y2="22"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="2" y1="12" x2="4" y2="12"></line>
+              <line x1="20" y1="12" x2="22" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg class="theme-icon moon-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </div>
+          <div class="slider-pill-thumb"></div>
+        </div>
+
+        <!-- Pod 2: Flat Font Size Stepper -->
+        <div class="dock-pod pod-font-stepper">
+          <button class="stepper-btn" onclick="adjustFontSize(-0.06)" title="Smaller Text">A-</button>
+          <div class="stepper-divider"></div>
+          <button class="stepper-btn" onclick="adjustFontSize(0.06)" title="Larger Text">A+</button>
+        </div>
+
+        <!-- Pod 3: Table of Contents -->
+        <div style="position: relative;">
+          <button class="dock-pod pod-circle" onclick="toggleTOC(event)" title="Table of Contents">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          
+          <!-- Popover TOC Drawer -->
+          <div class="toc-popover" id="tocPopover">
+            <div class="toc-title">Table of Contents</div>
+            <ul class="toc-list">
+              <li class="toc-item" onclick="jumpChapter(1, 'Letter 1')"><span>Letter 1</span> <span>p. 1</span></li>
+              <li class="toc-item" onclick="jumpChapter(2, 'Chapter 1 · Childhood')"><span>Chapter 1</span> <span>p. 14</span></li>
+              <li class="toc-item" onclick="jumpChapter(3, 'Chapter 2 · Science')"><span>Chapter 2</span> <span>p. 26</span></li>
+              <li class="toc-item current" onclick="jumpChapter(4, 'Chapter 4 · The Creation')"><span>Chapter 4 · The Creation</span> <span>p. 42</span></li>
+              <li class="toc-item" onclick="jumpChapter(5, 'Chapter 5 · The Awakening')"><span>Chapter 5</span> <span>p. 58</span></li>
+              <li class="toc-item" onclick="jumpChapter(6, 'Chapter 6 · Geneva')"><span>Chapter 6</span> <span>p. 75</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Pod 4: Close / Collapse -->
+        <button class="dock-pod pod-circle" onclick="collapseDock()" title="Close Controls" style="opacity:0.75;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+
+      </div>
+
+    </div>
+
+  </footer>
+
+  <script>
+    let currentFontSize = 1.12;
+    let isNight = false;
+    let isDragging = false;
+
+    function expandDock() {
+      document.getElementById('restingDock').style.display = 'none';
+      document.getElementById('expandedDock').style.display = 'flex';
+      closeTOC();
+    }
+
+    function collapseDock() {
+      document.getElementById('expandedDock').style.display = 'none';
+      document.getElementById('restingDock').style.display = 'flex';
+      closeTOC();
+    }
+
+    function toggleSlidingTheme() {
+      isNight = !isNight;
+      const sw = document.getElementById('themeSwitch');
+      if (isNight) {
+        sw.classList.add('night-active');
+        document.documentElement.setAttribute('data-theme', 'night');
+      } else {
+        sw.classList.remove('night-active');
+        document.documentElement.setAttribute('data-theme', 'sepia');
+      }
+    }
+
+    function adjustFontSize(delta) {
+      currentFontSize = Math.min(1.45, Math.max(0.9, currentFontSize + delta));
+      document.getElementById('proseContainer').style.fontSize = currentFontSize + 'rem';
+    }
+
+    function toggleBookmark() {
+      const ribbon = document.getElementById('ribbonBookmark');
+      ribbon.classList.toggle('active');
+    }
+
+    function toggleTOC(e) {
+      e.stopPropagation();
+      const popover = document.getElementById('tocPopover');
+      popover.style.display = popover.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function closeTOC() {
+      const popover = document.getElementById('tocPopover');
+      if (popover) popover.style.display = 'none';
+    }
+
+    document.addEventListener('click', (e) => {
+      const popover = document.getElementById('tocPopover');
+      if (popover && popover.style.display === 'block' && !popover.contains(e.target)) {
+        popover.style.display = 'none';
+      }
+    });
+
+    function jumpChapter(num, title) {
+      document.getElementById('pageHeading').textContent = title;
+      document.getElementById('scrubChapter').textContent = title;
+      document.getElementById('persistentChapterBadge').textContent = `Ch. ${num}`;
+      closeTOC();
+    }
+
+    function updateScrub(clientX) {
+      const track = document.getElementById('progressTrack');
+      const rect = track.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(100, Math.round(((clientX - rect.left) / rect.width) * 100)));
+      
+      document.getElementById('progressFill').style.width = pct + '%';
+      document.getElementById('persistentFill').style.width = pct + '%';
+      
+      const totalPages = 180;
+      const calcPage = Math.max(1, Math.round((pct / 100) * totalPages));
+      const calcMin = Math.max(1, Math.round((1 - pct / 100) * 45));
+      
+      document.getElementById('scrubStats').textContent = `Page ${calcPage} of ${totalPages} · ${calcMin}m left`;
+      document.getElementById('persistentPctBadge').textContent = pct + '%';
+    }
+
+    function scrubProgress(e) {
+      updateScrub(e.clientX);
+    }
+
+    const trackWrapper = document.getElementById('progressTrack');
+    trackWrapper.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      updateScrub(e.clientX);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      updateScrub(e.clientX);
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    // Touch Support
+    trackWrapper.addEventListener('touchstart', (e) => {
+      isDragging = true;
+      if (e.touches[0]) updateScrub(e.touches[0].clientX);
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      if (e.touches[0]) updateScrub(e.touches[0].clientX);
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+      isDragging = false;
+    });
+
+    // Page turn simulation
+    let currentPage = 1;
+    function nextPage() {
+      currentPage = 2;
+      document.getElementById('pageHeading').textContent = "Chapter 4 · (Continued)";
+      document.getElementById('proseContainer').innerHTML = `
+        <p class="first-para">
+          The different accidents of life are not so changeable as the feelings of human nature. I had worked hard for nearly two years, for the sole purpose of infusing life into an inanimate body. For this I had deprived myself of rest and health.
+        </p>
+        <p>
+          I had desired it with an ardour that far exceeded moderation; but now that I had finished, the beauty of the dream vanished, and breathless horror and disgust filled my heart. Unable to endure the aspect of the being I had created, I rushed out of the room and continued a long time traversing my bed-chamber.
+        </p>
+        <p>
+          Unable to compose my mind to sleep, at length lassitude succeeded to the tumult I had before endured, and I threw myself on the bed in my clothes, endeavouring to seek a few moments of forgetfulness.
+        </p>
+      `;
+    }
+
+    function prevPage() {
+      currentPage = 1;
+      document.getElementById('pageHeading').textContent = "Chapter 4 · The Creation";
+      document.getElementById('proseContainer').innerHTML = `
+        <p class="first-para">
+          <span class="drop-cap">I</span>t was on a dreary night of November that I beheld the accomplishment of my toils. With an anxiety that almost amounted to agony, I collected the instruments of life around me, that I might infuse a spark of being into the lifeless thing that lay at my feet. It was already one in the morning; the rain pattered dismally against the panes, and my candle was nearly burnt out.
+        </p>
+        <p>
+          How can I describe my emotions at this catastrophe, or how delineate the wretch whom with such infinite pains and care I had endeavoured to form? His limbs were in proportion, and I had selected his features as beautiful. Beautiful! Great God! His yellow skin scarcely covered the work of muscles and arteries beneath.
+        </p>
+        <p>
+          His hair was of a lustrous black, and flowing; his teeth of a pearly whiteness; but these luxuriances only formed a more horrid contrast with his watery eyes, that seemed almost of the same colour as the dun-white sockets in which they were set.
+        </p>
+      `;
+    }
+  </script>
+</body>
+</html>

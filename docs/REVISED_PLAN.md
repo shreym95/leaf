@@ -174,9 +174,11 @@ export interface CachedBook {
 │  └── 4. Refine `ReaderTopBar.tsx` with tactile pill buttons & badge counts      │
 │                                                                                 │
 │  PHASE 2: LEAN-BACK SENSORY ELEMENTS                                            │
-│  ├── 1. Implement `RibbonBookmark` in `SpreadFrame.tsx` (storage decided in 0004)│
-│  ├── 2. Add chapter-end fleuron ornaments in `content-hook.ts`                   │
-│  └── 3. Highlight MODE: top-bar control + colour ribbon; off = native selection │
+│  ├── 1. `RibbonBookmark` — data layer SHIPPED (0005); visible design now §9A    │
+│  ├── 2. Chapter-end fleuron ornaments in `content-hook.ts`          [SHIPPED]   │
+│  ├── 3. Highlight MODE: top-bar control + colour ribbon; off = native select    │
+│  ├── 4. Library shelf: hero "Continue reading" + shelf grid       (§9, req 1)   │
+│  └── 5. Reader dock: resting dock + two-tier expanded deck        (§9, req 2)   │
 │                                                                                 │
 │  PHASE 3: OFFLINE-FIRST PWA ENGINE                                              │
 │  ├── 1. Implement `src/lib/storage/offline-store.ts` (IndexedDB caching)        │
@@ -271,8 +273,10 @@ Sepia palettes, the segmented picker, then the tactile cards. No aesthetic axis,
 analytics — both dropped, so Phase 1 is smaller than the original roadmap implied.
 
 **Phase 2 — sensory.**
-Highlight *mode* per §4C; the trigger is settled. Decide the bookmark's storage shape
-with the Phase 0 migration, not after it.
+Highlight *mode* per §4C; the trigger is settled. Bookmark storage shipped in `0005`; its
+visible design is settled by §9 (top-edge ribbon tab). Phase 2 also now carries design
+iteration 1 — the library shelf and the reader dock — scoped in §9. Requirement 1 can start
+immediately; requirement 2 waits on the single-column decision in §9D1.
 
 **Phase 3 — offline.**
 Largest and riskiest; it wants a service worker, a cache for cover bytes, and a sync queue
@@ -334,3 +338,98 @@ following. (c) is the only part that changes what a reader sees, so it wants a d
 - **Bookmarks and highlights** have the same silent best-effort write path and would inherit
   whatever durability layer this adds.
 - A `version` or `updated_at` guard on `reading_state` may mean migration `0006`.
+
+---
+
+## 9. Design iteration 1 — Library shelf + Reader dock (founder, 2026-09-09)
+
+**Source of truth:** `docs/design-iterations/2026-09-09-shelf-and-dock/` —
+`FRONTEND_HANDOFF.md` (v2.1.0) plus two runnable prototypes, `index.html` (library) and
+`reader.html` (reader). The handoff references `/home/shrey/leaf-design/…`; those are the
+designer's local paths. The copies in `docs/` are canonical for implementation.
+
+Two requirements, landing as **Phase 2 items 4 and 5**. Both are visual-layer work and must
+stay inside the swappable layer (`src/design`, `src/components/*-ui`, `src/components/primitives`).
+
+### A. Requirement 1 — Library main shelf
+
+| Piece | What it is |
+| :--- | :--- |
+| **Hero "Currently reading"** | Pinned spotlight above the grid for the single most recently read book: 130px `3/4` cover with a 12px spine crease (`::before` gradient), mono eyebrow, Fraunces title, progress track, `Continue Reading →` pill. |
+| **Shelf grid** | 4 / 3 / 2 columns (desktop / tablet / mobile), 10px spine crease per card, state label per card (`35% READ`, `COMPLETED`, `UNREAD`). |
+| **Header** | Wordmark + 3-way `DAY | SEPIA | NIGHT` segmented picker. |
+
+Touches `Shelf.tsx` (grid is `auto-fill/minmax` today, spec wants fixed column counts),
+`BookCard.tsx`, and a new `HeroCard.tsx`.
+
+**Data the hero needs that we do not store.** `LibraryBook` already carries `percent` and
+`lastReadAt`, so "most recently read" and "74% complete" are free. Two fields are not:
+
+1. **Chapter label** (`Chapter 4 · The Creation`). `reading_state` has only
+   `cfi, percent, updated_at`. Resolving a CFI to a chapter title needs the EPUB open, which
+   the shelf will not do. Fix: add `chapter_label text` to `reading_state` in migration `0006`
+   and write it from the debounced flush in `src/reader/position.ts` — the engine already
+   exposes `currentChapterLabel()` (added for bookmarks).
+2. **Time remaining** (`~18m left`). Needs the WPM model in §4D, which is unbuilt. Until it
+   exists, render percent only — do not ship a fabricated estimate.
+
+### B. Requirement 2 — Reader pill & dock system
+
+Replaces the current `ReaderTopBar` + `ReaderBottomBar` chrome with two states in one
+bottom safe zone:
+
+- **State A — resting dock.** One solid pill: chapter badge · 130×22px hairline progress ·
+  percent badge · settings trigger (2-slider vector SVG).
+- **State B — expanded two-tier deck.** Tier 1 = seekable 3px progress island with chapter
+  title + page ratio/time. Tier 2 = exactly four pods: sliding theme toggle (sun/moon vector,
+  62×32px), `[ A− | A+ ]` font stepper, table-of-contents popover, close.
+
+Plus a **top-edge ribbon bookmark** (`18×28px`, `clip-path` notch, right-aligned to the text
+column) — this is the visible design Phase 2 item 1 was blocked on. Note the handoff removes
+the bookmark *pod* from the dock but keeps the ribbon; the two are not in conflict.
+
+Hard constraints from §4 of the handoff: no `backdrop-filter` on prose or controls; flat
+vector SVGs, no emoji; resting dock and expanded pods share one solid surface (`#1f1a16`
+light/sepia, `#1c1713` night); transitions 180–240ms on `cubic-bezier(0.22, 0.61, 0.36, 1)`.
+
+### C. What already agrees with the shipped code
+
+- All four fonts (`Fraunces`, `EB Garamond`, `Source Sans 3`, `JetBrains Mono`) are loaded in
+  `layout.tsx` and bound to token variables. No font work.
+- Three themes (`day` / `sepia` / `night`) exist in `tokens.css` and `themes.ts`.
+- `100dvh` + `overflow: hidden` + `env(safe-area-inset-bottom)` match the current reader.
+- No blur on prose is already true.
+
+### D. Conflicts to settle before building
+
+1. **Single column vs two-page spread.** The prototype is one 620px column with
+   `overflow: hidden` and CSS-styled prose. The shipped reader is epub.js paginated and
+   renders a **two-page spread with a gutter above 1024px** (`--leaf-reader-frame-aspect`,
+   D4). "Strict single-page pagination" would delete that. **Founder decision required:**
+   single column everywhere, or apply the dock over the existing spread. Everything else in
+   requirement 2 works either way — this is the only structural fork.
+2. **Prose styling crosses the iframe boundary.** Drop cap, justification, hyphenation and
+   `text-indent` in the prototype are chrome CSS. In Leaf the prose lives inside the epub.js
+   iframe, so they belong in `src/design/content-theme.ts`, not the page stylesheet — the
+   two-documents problem in `docs/DESIGN.md` §3. Every palette value in the handoff exists
+   twice for the same reason.
+3. **Token names differ.** The handoff introduces `--leaf-ink-primary/mid/faint`,
+   `--leaf-bg-paper/page`, `--leaf-dock-*`, `--leaf-shadow-flat`. Ours are `--leaf-ink`,
+   `--leaf-ink-mid`, `--leaf-rule`, `--leaf-shadow-card`… Map the handoff's names onto the
+   existing scale and add only what is genuinely new (the `--leaf-dock-*` family). Do not
+   mass-rename — the names are referenced from tests and from `content-theme.ts`.
+4. **Immersive mode and the tap zones.** The resting dock is always visible, which is a
+   different product than today's hide-all-chrome immersive mode. Decide what the centre tap
+   band (D1) does once a persistent dock exists — likely toggle *expanded* rather than
+   *immersive*, and `useImmersive` may collapse into the dock state machine.
+5. **Reduced motion.** 180–240ms transitions must be gated behind
+   `prefers-reduced-motion` per the a11y floor; the handoff does not mention it.
+6. **Seekable progress needs CFI mapping.** Tier 1 drag-to-seek maps a fraction to a
+   position, which requires `book.locations` — the same structure D7 is about. Sequence D7
+   before the seek bar or the scrub will be dead until locations finish generating.
+
+### E. Sequencing
+
+Requirement 1 is independent and safe to start: shelf, hero, cards, plus migration `0006`
+for `chapter_label`. Requirement 2 is blocked on the single-column decision in §D1 and reads
+better after D7 (cached locations) lands, because the seek bar depends on it.

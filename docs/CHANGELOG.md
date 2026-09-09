@@ -2,6 +2,51 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Docs — design iteration 1 filed (library shelf + reader dock)
+
+Founder handed over a redesign on 2026-09-09: a spec plus two runnable
+prototypes. Nothing shipped — this entry records where it lives and what it
+implies, so the implementation does not have to re-derive it.
+
+### Added
+- **`docs/design-iterations/2026-09-09-shelf-and-dock/`** — `FRONTEND_HANDOFF.md`
+  (v2.1.0), `index.html` (library prototype), `reader.html` (reader prototype),
+  plus a `README.md` naming the two things that do not survive the copy: the
+  handoff's `/home/shrey/leaf-design/…` paths are the designer's machine, and the
+  prototypes style prose as ordinary DOM where Leaf styles it inside the epub.js
+  iframe.
+- **`REVISED_PLAN.md` §9** — the two requirements scoped against the shipped
+  code, plus §6 Phase 2 items 4 and 5.
+
+### Findings worth keeping
+- **The one structural fork (§9D1):** the reader prototype is a single 620px
+  column. The shipped reader is a two-page spread above 1024px (D4). Requirement
+  2's dock works over either, but "strict single-page pagination" would delete
+  the spread. Founder decision, not an implementation detail.
+- **The hero card needs a field we do not store.** `reading_state` holds
+  `cfi, percent, updated_at`; the hero wants a chapter label, and resolving a CFI
+  to a chapter title needs the EPUB open — which the shelf will not do. Shape of
+  the fix: `chapter_label text` in migration `0006`, written from the debounced
+  flush in `src/reader/position.ts`, which already has `currentChapterLabel()`
+  from the bookmarks work.
+- **Time-remaining ("~18m left") has no data behind it.** It needs the WPM model
+  in REVISED_PLAN §4D, which is unbuilt. Render percent only until it exists.
+- **The ribbon bookmark is unblocked.** `reader.html` specifies it as an 18×28px
+  top-edge tab with a `clip-path` notch — the visible design Phase 2 item 1 was
+  waiting on. The handoff removes the bookmark *pod* from the dock but keeps the
+  ribbon; those are not in conflict.
+- **No font or theme work.** All four faces (`Fraunces`, `EB Garamond`,
+  `Source Sans 3`, `JetBrains Mono`) are already loaded in `layout.tsx` and bound
+  to token variables, and `day`/`sepia`/`night` already exist.
+- **Token names differ, deliberately do not rename.** The handoff uses
+  `--leaf-ink-primary/mid/faint`, `--leaf-bg-paper/page`, `--leaf-shadow-flat`.
+  Map them onto the existing scale and add only the genuinely new `--leaf-dock-*`
+  family; the current names are referenced from tests and `content-theme.ts`.
+- **Two constraints the handoff omits:** its 180–240ms transitions must be gated
+  behind `prefers-reduced-motion`, and the Tier 1 seek bar depends on
+  `book.locations` — the same structure DEFECTS D7 is about, so D7 should land
+  first or the scrub is dead until locations finish generating.
+
 ## Phase 2 — printer's fleuron at chapter ends
 
 A small centred typographic ornament closing each real chapter (REVISED_PLAN

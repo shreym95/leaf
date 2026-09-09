@@ -10,6 +10,7 @@ what you are about to do.
 | [`REVISED_PLAN.md`](./REVISED_PLAN.md) | Planning the next feature. The UI/UX roadmap: §2 theme architecture, §4 reader experience, §6 phasing, §7 how it lines up with the shipped code. |
 | [`BACKLOG.md`](./BACKLOG.md) | Looking for known open work and deferred decisions. |
 | [`DEPLOY.md`](./DEPLOY.md) | Shipping, or applying a database migration. |
+| [`design-iterations/`](./design-iterations/) | Building an approved redesign. Founder-supplied handoff docs and runnable prototypes, newest folder last. Current: `2026-09-09-shelf-and-dock` (library shelf + reader dock), scoped in `REVISED_PLAN.md` §9. |
 | [`CHANGELOG.md`](./CHANGELOG.md) | Asking "why is it like this?" — every deviation from the approved v0.1 prototype is recorded with its reason. Search here before re-litigating a decision. |
 
 Three files deliberately stay at the repo root:

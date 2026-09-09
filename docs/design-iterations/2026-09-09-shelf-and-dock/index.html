@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="sepia">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leaf — Design Prototype: Library View</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=JetBrains+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --leaf-font-ui: 'Source Sans 3', system-ui, sans-serif;
+      --leaf-font-body: 'EB Garamond', Garamond, serif;
+      --leaf-font-display: 'Fraunces', Georgia, serif;
+      --leaf-font-mono: 'JetBrains Mono', monospace;
+      
+      --leaf-texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+      --leaf-texture-grid: radial-gradient(var(--leaf-rule) 0.75px, transparent 0.75px);
+      
+      --leaf-shadow-card: 
+        0 2px 4px -1px rgba(0, 0, 0, 0.08),
+        0 4px 14px -2px rgba(0, 0, 0, 0.12),
+        inset 1px 0 0 0 rgba(255, 255, 255, 0.2),
+        inset -1px 0 0 0 rgba(0, 0, 0, 0.1);
+      --leaf-shadow-card-hover:
+        0 12px 28px -6px rgba(0, 0, 0, 0.18),
+        0 4px 10px -2px rgba(0, 0, 0, 0.1);
+      --leaf-shadow-dock:
+        0 10px 30px -5px rgba(0, 0, 0, 0.15),
+        0 4px 10px -2px rgba(0, 0, 0, 0.08);
+    }
+
+    [data-theme="day"] {
+      --leaf-paper: #e7dfcc;
+      --leaf-page: #f1ebdc;
+      --leaf-edge: #d8ccae;
+      --leaf-ink: #26200f;
+      --leaf-ink-mid: #5c5237;
+      --leaf-faint: #6a5f45;
+      --leaf-accent: #8a2b1e;
+      --leaf-rule: #cabf9f;
+      --leaf-gutter: rgba(0, 0, 0, 0.05);
+      --leaf-focus: #8a2b1e;
+      --leaf-surface-overlay: var(--leaf-texture-grain);
+      color-scheme: light;
+    }
+
+    [data-theme="sepia"] {
+      --leaf-paper: #e4d8be;
+      --leaf-page: #ede2cb;
+      --leaf-edge: #d1c3a5;
+      --leaf-ink: #2b2218;
+      --leaf-ink-mid: #5e503f;
+      --leaf-faint: #7a6b57;
+      --leaf-accent: #9e472a;
+      --leaf-rule: #c7b897;
+      --leaf-gutter: rgba(43, 34, 24, 0.06);
+      --leaf-focus: #9e472a;
+      --leaf-surface-overlay: var(--leaf-texture-grid), var(--leaf-texture-grain);
+      color-scheme: light;
+    }
+
+    [data-theme="night"] {
+      --leaf-paper: #100d09;
+      --leaf-page: #1a1611;
+      --leaf-edge: #000000;
+      --leaf-ink: #e0d5bd;
+      --leaf-ink-mid: #a89a78;
+      --leaf-faint: #8f815f;
+      --leaf-accent: #c58a52;
+      --leaf-rule: #3a3020;
+      --leaf-gutter: rgba(0, 0, 0, 0.25);
+      --leaf-focus: #c58a52;
+      --leaf-surface-overlay: var(--leaf-texture-grain);
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background-color: var(--leaf-paper);
+      background-image: var(--leaf-surface-overlay);
+      background-size: 20px 20px, auto;
+      color: var(--leaf-ink);
+      font-family: var(--leaf-font-ui);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: background-color 0.5s ease, color 0.5s ease;
+      padding-bottom: 5rem;
+    }
+
+    /* Prototype Header Bar */
+    .prototype-bar {
+      width: 100%;
+      max-width: 900px;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--leaf-rule);
+      margin-bottom: 2rem;
+    }
+
+    .wordmark {
+      font-family: var(--leaf-font-mono);
+      font-size: 0.85rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--leaf-accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .theme-selector {
+      display: flex;
+      background: var(--leaf-page);
+      border: 1px solid var(--leaf-rule);
+      border-radius: 999px;
+      padding: 3px;
+      gap: 4px;
+    }
+
+    .theme-btn {
+      background: none;
+      border: none;
+      padding: 4px 12px;
+      font-family: var(--leaf-font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      color: var(--leaf-ink-mid);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .theme-btn.active {
+      background: var(--leaf-accent);
+      color: var(--leaf-page);
+      font-weight: 500;
+    }
+
+    /* Main Container */
+    .container {
+      width: 100%;
+      max-width: 860px;
+      padding: 0 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2.5rem;
+    }
+
+    /* Hero Spotlight Card */
+    .hero-card {
+      position: relative;
+      background: var(--leaf-page);
+      border: 1px solid var(--leaf-rule);
+      border-radius: 8px;
+      padding: 1.75rem;
+      box-shadow: var(--leaf-shadow-card);
+      display: flex;
+      flex-direction: row;
+      gap: 1.75rem;
+      align-items: center;
+      overflow: hidden;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .hero-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--leaf-shadow-card-hover);
+    }
+
+    .hero-cover {
+      width: 130px;
+      aspect-ratio: 3/4;
+      background: #2b2218;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px;
+      color: #ede2cb;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* Spine effect */
+    .hero-cover::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      width: 12px;
+      background: linear-gradient(90deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.1) 60%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .hero-eyebrow {
+      font-family: var(--leaf-font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--leaf-accent);
+      font-weight: 600;
+    }
+
+    .hero-title {
+      font-family: var(--leaf-font-display);
+      font-size: 1.65rem;
+      line-height: 1.2;
+      color: var(--leaf-ink);
+      font-weight: 500;
+    }
+
+    .hero-author {
+      font-family: var(--leaf-font-ui);
+      font-size: 0.95rem;
+      color: var(--leaf-ink-mid);
+    }
+
+    .hero-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--leaf-font-mono);
+      font-size: 0.75rem;
+      color: var(--leaf-faint);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 5px;
+      background: var(--leaf-rule);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 0.25rem 0;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--leaf-accent);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+
+    .resume-btn {
+      align-self: flex-start;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--leaf-accent);
+      color: var(--leaf-page);
+      padding: 0.65rem 1.4rem;
+      border-radius: 4px;
+      font-family: var(--leaf-font-ui);
+      font-size: 0.88rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .resume-btn:hover {
+      opacity: 0.92;
+      transform: translateX(2px);
+    }
+
+    /* Shelf Section */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--leaf-rule);
+      padding-bottom: 0.5rem;
+    }
+
+    .section-title {
+      font-family: var(--leaf-font-display);
+      font-size: 1.35rem;
+      color: var(--leaf-ink);
+    }
+
+    .shelf-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 1.75rem;
+    }
+
+    .book-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: inherit;
+      padding: 0.5rem;
+      border-radius: 6px;
+      transition: transform 0.25s ease, background 0.25s ease;
+      position: relative;
+    }
+
+    .book-card:hover {
+      transform: translateY(-4px);
+      background: rgba(0, 0, 0, 0.02);
+    }
+
+    .card-cover {
+      aspect-ratio: 3/4;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--leaf-shadow-card);
+      border: 1px solid var(--leaf-rule);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .card-cover::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      width: 10px;
+      background: linear-gradient(90deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.08) 60%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .cover-dracula { background: #3b1816; color: #ede2cb; }
+    .cover-oz { background: #1b3824; color: #e4d8be; }
+    .cover-timemachine { background: #1c2738; color: #f1ebdc; }
+    .cover-pride { background: #4a3424; color: #ede2cb; }
+
+    .card-title {
+      font-family: var(--leaf-font-display);
+      font-size: 0.98rem;
+      line-height: 1.25;
+      color: var(--leaf-ink);
+      font-weight: 500;
+    }
+
+    .card-author {
+      font-family: var(--leaf-font-ui);
+      font-size: 0.8rem;
+      color: var(--leaf-ink-mid);
+    }
+
+    .card-progress {
+      font-family: var(--leaf-font-mono);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--leaf-faint);
+    }
+
+    /* Floating Navigation Pill */
+    .floating-nav {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--leaf-page);
+      border: 1px solid var(--leaf-rule);
+      border-radius: 999px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: var(--leaf-shadow-dock);
+      z-index: 50;
+      backdrop-filter: blur(10px);
+    }
+
+    .nav-link {
+      font-family: var(--leaf-font-mono);
+      font-size: 0.76rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--leaf-ink-mid);
+      text-decoration: none;
+      padding: 6px 10px;
+      border-radius: 999px;
+      transition: all 0.2s;
+    }
+
+    .nav-link.active, .nav-link:hover {
+      color: var(--leaf-accent);
+      background: rgba(0,0,0,0.04);
+    }
+
+    @media (max-width: 600px) {
+      .hero-card { flex-direction: column; text-align: center; }
+      .hero-cover { width: 110px; }
+      .hero-meta { flex-direction: column; gap: 4px; }
+      .resume-btn { align-self: center; width: 100%; justify-content: center; }
+      .shelf-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Prototype Nav Bar -->
+  <header class="prototype-bar">
+    <a href="index.html" class="wordmark">Leaf · Fine Press</a>
+    
+    <div class="theme-selector">
+      <button class="theme-btn" onclick="setTheme('day')">Day</button>
+      <button class="theme-btn active" onclick="setTheme('sepia')">Sepia</button>
+      <button class="theme-btn" onclick="setTheme('night')">Night</button>
+    </div>
+  </header>
+
+  <main class="container">
+    
+    <!-- Hero "Continue Reading" Spotlight Card -->
+    <section class="hero-card">
+      <div class="hero-cover">
+        <span style="font-family:var(--leaf-font-mono); font-size:0.55rem; letter-spacing:0.18em; text-transform:uppercase; opacity:0.7;">Classics</span>
+        <div>
+          <div style="font-family:var(--leaf-font-display); font-size:1.1rem; line-height:1.1;">Frankenstein</div>
+          <div style="font-size:0.65rem; opacity:0.8; margin-top:4px;">Mary Shelley</div>
+        </div>
+        <span style="font-family:var(--leaf-font-mono); font-size:0.5rem; letter-spacing:0.1em; opacity:0.6;">1818</span>
+      </div>
+
+      <div class="hero-content">
+        <span class="hero-eyebrow">Continue Reading</span>
+        <h2 class="hero-title">Frankenstein; or, The Modern Prometheus</h2>
+        <p class="hero-author">Mary Wollstonecraft Shelley</p>
+
+        <div class="hero-meta">
+          <span>Chapter 4 · The Creation</span>
+          <span>74% complete • ~18 min remaining</span>
+        </div>
+
+        <div class="progress-track">
+          <div class="progress-bar" style="width: 74%;"></div>
+        </div>
+
+        <div style="margin-top: 0.5rem;">
+          <a href="reader.html" class="resume-btn">
+            <span>Resume Reading</span>
+            <span>&rarr;</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Library Shelf Grid -->
+    <section style="display: flex; flex-direction: column; gap: 1.25rem;">
+      <div class="section-header">
+        <h3 class="section-title">Your Shelf</h3>
+        <span style="font-family: var(--leaf-font-mono); font-size: 0.75rem; color: var(--leaf-faint);">4 Volumes</span>
+      </div>
+
+      <div class="shelf-grid">
+        
+        <!-- Book 1 -->
+        <a href="reader.html" class="book-card">
+          <div class="card-cover cover-dracula">
+            <span style="font-size:0.55rem; letter-spacing:0.15em; text-transform:uppercase; opacity:0.7;">Volume I</span>
+            <div style="font-family:var(--leaf-font-display); font-size:1.05rem;">Dracula</div>
+            <span style="font-size:0.55rem; opacity:0.7;">Bram Stoker</span>
+          </div>
+          <h4 class="card-title">Dracula</h4>
+          <p class="card-author">Bram Stoker</p>
+          <span class="card-progress">24% read</span>
+        </a>
+
+        <!-- Book 2 -->
+        <a href="reader.html" class="book-card">
+          <div class="card-cover cover-oz">
+            <span style="font-size:0.55rem; letter-spacing:0.15em; text-transform:uppercase; opacity:0.7;">Illustrated</span>
+            <div style="font-family:var(--leaf-font-display); font-size:1.05rem;">The Wizard of Oz</div>
+            <span style="font-size:0.55rem; opacity:0.7;">L. Frank Baum</span>
+          </div>
+          <h4 class="card-title">The Wonderful Wizard of Oz</h4>
+          <p class="card-author">L. Frank Baum</p>
+          <span class="card-progress">100% Finished</span>
+        </a>
+
+        <!-- Book 3 -->
+        <a href="reader.html" class="book-card">
+          <div class="card-cover cover-timemachine">
+            <span style="font-size:0.55rem; letter-spacing:0.15em; text-transform:uppercase; opacity:0.7;">Sci-Fi</span>
+            <div style="font-family:var(--leaf-font-display); font-size:1.05rem;">The Time Machine</div>
+            <span style="font-size:0.55rem; opacity:0.7;">H.G. Wells</span>
+          </div>
+          <h4 class="card-title">The Time Machine</h4>
+          <p class="card-author">H.G. Wells</p>
+          <span class="card-progress">Unread</span>
+        </a>
+
+        <!-- Book 4 -->
+        <a href="reader.html" class="book-card">
+          <div class="card-cover cover-pride">
+            <span style="font-size:0.55rem; letter-spacing:0.15em; text-transform:uppercase; opacity:0.7;">Classic</span>
+            <div style="font-family:var(--leaf-font-display); font-size:1.05rem;">Pride & Prejudice</div>
+            <span style="font-size:0.55rem; opacity:0.7;">Jane Austen</span>
+          </div>
+          <h4 class="card-title">Pride and Prejudice</h4>
+          <p class="card-author">Jane Austen</p>
+          <span class="card-progress">58% read</span>
+        </a>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Prototype Switcher Dock -->
+  <nav class="floating-nav">
+    <a href="index.html" class="nav-link active">Library View</a>
+    <span style="color:var(--leaf-rule);">•</span>
+    <a href="reader.html" class="nav-link">Reader View</a>
+  </nav>
+
+  <script>
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.toLowerCase() === theme);
+      });
+    }
+  </script>
+</body>
+</html>
