@@ -18,6 +18,9 @@ function renderPopover(over: Partial<Parameters<typeof TocPopover>[0]> = {}) {
       entries={ENTRIES}
       currentLabel="Chapter 1"
       onNavigate={onNavigate}
+      bookmarks={[]}
+      onGoToBookmark={() => {}}
+      onRemoveBookmark={() => {}}
       {...over}
     />,
   );
@@ -33,6 +36,9 @@ describe("TocPopover", () => {
         entries={ENTRIES}
         currentLabel={null}
         onNavigate={() => {}}
+        bookmarks={[]}
+        onGoToBookmark={() => {}}
+        onRemoveBookmark={() => {}}
       />,
     );
     expect(container).toBeEmptyDOMElement();
@@ -66,11 +72,33 @@ describe("TocPopover", () => {
     expect(screen.getByRole("button", { name: "Introduction" })).toHaveFocus();
   });
 
-  it("does not render a tab bar while there is only one tab", () => {
+  it("offers Contents and Bookmarks as tabs, Contents first", () => {
     renderPopover();
-    // Contents-only: no tablist scaffolding leaks into the DOM.
-    expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.queryByRole("tab")).toBeNull();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Contents", "Bookmarks"]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("switches to the bookmark list and navigates from it", async () => {
+    const user = userEvent.setup();
+    const onGoToBookmark = vi.fn();
+    renderPopover({
+      bookmarks: [
+        { id: "bm1", cfi: "epubcfi(/6/4!/4/2)", label: "Chapter 2", percent: 0.5 },
+      ],
+      onGoToBookmark,
+    });
+    await user.click(screen.getByRole("tab", { name: "Bookmarks" }));
+    // `^` so this does not also match "Remove bookmark Chapter 2".
+    await user.click(screen.getByRole("button", { name: /^Chapter 2/ }));
+    expect(onGoToBookmark).toHaveBeenCalledWith("epubcfi(/6/4!/4/2)");
+  });
+
+  it("says so when there are no bookmarks yet", async () => {
+    const user = userEvent.setup();
+    renderPopover({ bookmarks: [] });
+    await user.click(screen.getByRole("tab", { name: "Bookmarks" }));
+    expect(screen.getByText(/No bookmarks yet/i)).toBeTruthy();
   });
 
   it("handles an empty table of contents", () => {

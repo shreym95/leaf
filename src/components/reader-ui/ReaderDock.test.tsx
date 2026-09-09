@@ -26,7 +26,12 @@ function baseProps(over: Partial<ReaderDockProps> = {}): ReaderDockProps {
     onSetTheme: vi.fn(),
     fontSize: 1.06,
     onSetFontSize: vi.fn(),
-    onOpenSettings: vi.fn(),
+    bookmarked: false,
+    canBookmark: true,
+    onToggleBookmark: vi.fn(),
+    bookmarks: [],
+    onGoToBookmark: vi.fn(),
+    onRemoveBookmark: vi.fn(),
     ...over,
   };
 }
@@ -112,7 +117,7 @@ describe("ReaderDock — pods", () => {
       within(d).getByRole("button", { name: "Table of contents" }),
     ).toBeTruthy();
     expect(
-      within(d).getByRole("button", { name: "Reading settings" }),
+      within(d).getByRole("button", { name: "Bookmark this page" }),
     ).toBeTruthy();
     expect(
       within(d).getByRole("button", { name: "Close reading controls" }),
@@ -183,13 +188,31 @@ describe("ReaderDock — pods", () => {
     ).toBeEnabled();
   });
 
-  it("the ⋯ pod opens the settings sheet", async () => {
+  it("the bookmark pod names the action it will take and toggles", async () => {
     const user = userEvent.setup();
     const props = renderDock();
-    await user.click(
-      within(deck()).getByRole("button", { name: "Reading settings" }),
-    );
-    expect(props.onOpenSettings).toHaveBeenCalledTimes(1);
+    const pod = within(deck()).getByRole("button", {
+      name: "Bookmark this page",
+    });
+    expect(pod).toHaveAttribute("aria-pressed", "false");
+    await user.click(pod);
+    expect(props.onToggleBookmark).toHaveBeenCalledTimes(1);
+  });
+
+  it("the bookmark pod reflects an already-bookmarked page", () => {
+    renderDock({ bookmarked: true });
+    expect(
+      within(deck()).getByRole("button", {
+        name: "Remove bookmark from this page",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("disables the bookmark pod until there is a position to save", () => {
+    renderDock({ canBookmark: false });
+    expect(
+      within(deck()).getByRole("button", { name: "Bookmark this page" }),
+    ).toBeDisabled();
   });
 });
 

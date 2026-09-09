@@ -28,10 +28,7 @@ import {
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
-import { RibbonBookmark } from "./RibbonBookmark";
 import { SpreadFrame } from "./SpreadFrame";
-import { ReaderSettingsSheet } from "./ReaderSettingsSheet";
-import { NotesPanel } from "./NotesPanel";
 import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
 import { useImmersive } from "./useImmersive";
 
@@ -103,15 +100,18 @@ export function ReaderShell({
   // `F`; the `[immersive]` effect below still asks epub.js to re-measure.
   const { immersive, exit: exitImmersive, toggle: toggleImmersive } =
     useImmersive();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   // The reader dock's expanded deck. Lifted here because a page turn and the
   // SpreadFrame centre-tap band both close/toggle it.
   const [deckOpen, setDeckOpen] = useState(false);
 
   // ── Highlights ────────────────────────────────────────────────────────
+  // The manager still paints existing highlights into the book. There is no
+  // list UI for them at the moment: highlight MODE is disabled pending a design
+  // (REVISED_PLAN §4C), and the notes sheet that listed them went with the
+  // reader's old chrome. The subscription is kept so the list can come back
+  // without rewiring the engine.
   const highlightsRef = useRef<HighlightManager | null>(null);
-  const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [, setHighlights] = useState<HighlightRecord[]>([]);
 
   // ── Bookmarks (placeholder UI, stable schema — see NotesPanel header) ──
   const bookmarksRef = useRef<BookmarkManager | null>(null);
@@ -387,14 +387,10 @@ export function ReaderShell({
       const key = e.key.toLowerCase();
 
       if (e.key === "Escape") {
-        if (settingsOpen || notesOpen) return; // Radix closes the sheet itself
         if (deckOpen) return; // ReaderDock owns Esc while the deck is open
         if (immersive) exitImmersive();
         return;
       }
-
-      // Don't drive the book while a sheet is open.
-      if (settingsOpen || notesOpen) return;
 
       if (e.key === "ArrowRight") {
         turnAndCloseDeck("next", "key-right");
@@ -410,8 +406,6 @@ export function ReaderShell({
   }, [
     turnAndCloseDeck,
     immersive,
-    settingsOpen,
-    notesOpen,
     deckOpen,
     exitImmersive,
     toggleImmersive,
@@ -432,15 +426,6 @@ export function ReaderShell({
         folioRight={folio.right}
         onPrev={() => turnAndCloseDeck("prev", "tap-prev")}
         onNext={() => turnAndCloseDeck("next", "tap-next")}
-        onToggleDeck={() => setDeckOpen((o) => !o)}
-        deckOpen={deckOpen}
-        ribbon={
-          <RibbonBookmark
-            active={here.cfi != null && bookmarks.some((b) => b.cfi === here.cfi)}
-            disabled={!here.cfi}
-            onToggle={toggleBookmark}
-          />
-        }
       >
         {load.state === "error" && (
           <p
@@ -467,58 +452,24 @@ export function ReaderShell({
         onSetTheme={setReaderTheme}
         fontSize={settings.fontSize}
         onSetFontSize={(size) => useReaderSettings.getState().setFontSize(size)}
-        onOpenSettings={() => {
-          // Collapse the deck as the sheet takes over — one Escape target at a
-          // time (the deck and Radix both listen for it).
-          setDeckOpen(false);
-          setSettingsOpen(true);
-        }}
-      />
-
-      <ReaderSettingsSheet
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onSetTheme={setReaderTheme}
-        onOpenNotes={() => {
-          setSettingsOpen(false);
-          setNotesOpen(true);
-        }}
-      />
-
-
-      <NotesPanel
-        open={notesOpen}
-        onOpenChange={setNotesOpen}
-        items={highlights.map((h) => ({
-          id: h.id,
-          cfiRange: h.cfiRange,
-          text: h.text,
-          color: h.color,
-          note: h.note,
-        }))}
-        onGoTo={(cfiRange) => {
-          setNotesOpen(false);
-          void controllerRef.current?.goTo(cfiRange);
-        }}
-        onSetNote={(id, note) => void highlightsRef.current?.setNote(id, note)}
-        onRemove={(id) => void highlightsRef.current?.remove(id)}
+        bookmarked={
+          here.cfi != null && bookmarks.some((b) => b.cfi === here.cfi)
+        }
+        canBookmark={Boolean(here.cfi)}
+        onToggleBookmark={toggleBookmark}
         bookmarks={bookmarks.map((b) => ({
           id: b.id,
           cfi: b.cfi,
           label: b.label,
           percent: b.percent,
         }))}
-        canBookmark={Boolean(here.cfi)}
-        currentPageBookmarked={
-          here.cfi != null && bookmarks.some((b) => b.cfi === here.cfi)
-        }
-        onToggleBookmark={toggleBookmark}
         onGoToBookmark={(cfi) => {
-          setNotesOpen(false);
+          setDeckOpen(false);
           void controllerRef.current?.goTo(cfi);
         }}
         onRemoveBookmark={(id) => void bookmarksRef.current?.remove(id)}
       />
+
 
       {debug && (
         <ReaderDebugOverlay

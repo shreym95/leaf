@@ -7,7 +7,6 @@ import { SpreadFrame } from "./SpreadFrame";
 function renderFrame(overrides: Partial<Parameters<typeof SpreadFrame>[0]> = {}) {
   const onPrev = vi.fn();
   const onNext = vi.fn();
-  const onToggleDeck = vi.fn();
   render(
     <SpreadFrame
       viewerRef={createRef<HTMLDivElement>()}
@@ -15,12 +14,10 @@ function renderFrame(overrides: Partial<Parameters<typeof SpreadFrame>[0]> = {})
       loading={false}
       onPrev={onPrev}
       onNext={onNext}
-      onToggleDeck={onToggleDeck}
-      deckOpen={false}
       {...overrides}
     />,
   );
-  return { onPrev, onNext, onToggleDeck };
+  return { onPrev, onNext };
 }
 
 const widthOf = (name: string) => {
@@ -38,40 +35,25 @@ describe("SpreadFrame tap zones", () => {
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves no dead band on touch — the three zones tile the frame", () => {
+  it("leaves no dead band on touch — the two zones tile the frame", () => {
     // Regression (D1): the zones were 14% each, so ~55px per edge on a phone and
     // the middle 72% of the screen did nothing. A thumb landing mid-page read as
     // "the tap didn't register".
     renderFrame();
     const prev = Number(widthOf("Previous page"));
     const next = Number(widthOf("Next page"));
-    const centre = Number(widthOf("Show reading controls"));
-    expect(prev + centre + next).toBe(100);
-    // Forward is the common direction, so it gets the largest share.
+    expect(prev + next).toBe(100);
+    // Forward is the common direction, so it gets the larger share.
     expect(next).toBeGreaterThan(prev);
-    // Each zone must be a genuinely thumb-sized target, not a sliver.
-    for (const w of [prev, centre, next]) expect(w).toBeGreaterThanOrEqual(25);
+    for (const w of [prev, next]) expect(w).toBeGreaterThanOrEqual(30);
   });
 
-  it("centre tap opens the deck (not immersive), and is touch-only", async () => {
-    const user = userEvent.setup();
-    const { onToggleDeck, onPrev, onNext } = renderFrame();
-    const centre = screen.getByRole("button", { name: "Show reading controls" });
-    await user.click(centre);
-    expect(onToggleDeck).toHaveBeenCalledTimes(1);
-    expect(onPrev).not.toHaveBeenCalled();
-    expect(onNext).not.toHaveBeenCalled();
-    // Hidden from pointer devices: with a mouse, a click fires after a
-    // drag-select too, so a centre zone would toggle the deck every time a
-    // reader selected a word to copy.
-    expect(centre.className).toContain("lg:hidden");
-  });
-
-  it("names the centre zone for what the tap will do", () => {
-    renderFrame({ deckOpen: true });
-    expect(
-      screen.getByRole("button", { name: "Hide reading controls" }),
-    ).toBeTruthy();
+  it("has no centre zone at all", () => {
+    // It used to open the dock deck, and a target that large mid-page caught
+    // thumbs meant for a page turn — the deck kept opening unasked (founder,
+    // 2026-09-09). The deck now opens only from the dock's settings button.
+    renderFrame();
+    expect(screen.queryByRole("button", { name: /reading controls/i })).toBeNull();
   });
 
   it("keeps the narrow edge zones on pointer devices", () => {
@@ -85,19 +67,10 @@ describe("SpreadFrame tap zones", () => {
 
   it("keeps the tap zones out of the tab sequence but still named", () => {
     renderFrame();
-    for (const name of ["Previous page", "Next page", "Show reading controls"]) {
+    for (const name of ["Previous page", "Next page"]) {
       const el = screen.getByRole("button", { name });
       expect(el.getAttribute("tabindex")).toBe("-1");
       expect(el.getAttribute("aria-hidden")).toBeNull();
     }
-  });
-
-  it("renders the bookmark ribbon slot inside the frame", () => {
-    renderFrame({
-      ribbon: <button type="button">ribbon-under-test</button>,
-    });
-    expect(
-      screen.getByRole("button", { name: "ribbon-under-test" }),
-    ).toBeTruthy();
   });
 });

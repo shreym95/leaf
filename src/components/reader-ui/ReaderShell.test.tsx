@@ -132,16 +132,17 @@ describe("ReaderShell — settings reach the engine", () => {
     }
   });
 
-  it("drives the engine from the settings sheet, reached via the dock", async () => {
+  it("drives the engine from the deck's text-size stepper", async () => {
     const user = userEvent.setup();
     renderShell();
     await ready();
 
-    // Open the dock, then its `⋯` settings pod → the shared settings sheet.
+    // The reading-settings sheet (font family, spacing, margins) was removed
+    // from the dock: too many options for the job (founder, 2026-09-09). Text
+    // size is the one typographic control that stayed, and it is in the deck.
     await user.click(screen.getByRole("button", { name: /open reading controls/i }));
-    await user.click(screen.getByRole("button", { name: "Reading settings" }));
     h.applySettings.mockClear();
-    await user.click(screen.getByRole("radio", { name: "L" }));
+    await user.click(screen.getByRole("button", { name: "Increase text size" }));
 
     await waitFor(() => {
       expect(h.applySettings).toHaveBeenCalled();
@@ -203,16 +204,18 @@ describe("ReaderShell — settings reach the engine", () => {
     expect(h.goTo).toHaveBeenCalledWith("ch2.html");
   });
 
-  it("keeps the bookmark list reachable via the settings sheet's Notes row", async () => {
+  it("keeps the bookmark list reachable from the contents popover", async () => {
     const user = userEvent.setup();
     renderShell();
     await ready();
 
+    // The ribbon on the frame's top edge is gone — the pod creates bookmarks
+    // and the contents popover's second tab lists them.
     await user.click(screen.getByRole("button", { name: /open reading controls/i }));
-    await user.click(screen.getByRole("button", { name: "Reading settings" }));
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("tab", { name: "Bookmarks" }));
 
-    expect(screen.getByText(/Bookmarks \(/)).toBeTruthy();
+    expect(screen.getByText(/No bookmarks yet/i)).toBeTruthy();
   });
 
   it("seeds the engine with the server-provided settings", async () => {

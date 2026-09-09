@@ -21,14 +21,6 @@ export interface SpreadFrameProps {
   folioRight?: number;
   onPrev: () => void;
   onNext: () => void;
-  /** Touch-only centre tap: open / close the reader dock's expanded deck. */
-  onToggleDeck: () => void;
-  /** Whether the deck is currently open — only used to name the centre tap
-   *  zone for assistive tech. */
-  deckOpen: boolean;
-  /** The ribbon bookmark — rendered inside the frame so it aligns to the text
-   *  column. Optional so the component is still trivially testable. */
-  ribbon?: ReactNode;
   children?: ReactNode;
 }
 
@@ -44,9 +36,6 @@ export function SpreadFrame({
   folioRight,
   onPrev,
   onNext,
-  onToggleDeck,
-  deckOpen,
-  ribbon,
   children,
 }: SpreadFrameProps) {
   return (
@@ -111,42 +100,37 @@ export function SpreadFrame({
             focusable-yet-hidden (an axe violation).
 
             Sizing is deliberately different per input. On touch the frame is
-            full-bleed, so the old 14% edges were ~55px on a phone and left the
-            middle 72% of the screen inert — a thumb landing mid-screen did
-            nothing, which read as "the tap didn't register". Touch therefore
-            gets e-reader-conventional zones (30% back / 45% forward) with the
-            remaining centre band opening / closing the dock deck, so no part of
-            the page is dead.
+            full-bleed, so 14% edges were ~55px on a phone and left the middle
+            72% of the screen inert — a thumb landing mid-screen did nothing,
+            which read as "the tap didn't register" (D1). Touch therefore splits
+            the whole frame between back (35%) and forward (65%).
 
-            The centre band is touch-only (`lg:hidden`). With a mouse, a click
-            fires after a drag-select too, so a centre click zone would toggle
-            the deck every time a reader selected a word to copy. Pointer
-            devices keep the narrow 14% edges and an inert middle. */}
+            There is deliberately NO centre band. It used to open the dock deck,
+            and a zone that large in the middle of the page caught thumbs that
+            meant to turn a page — the deck kept appearing unasked (founder,
+            2026-09-09). The deck now opens only from the settings button beside
+            the resting dock, which is a small, deliberate target. Splitting the
+            frame two ways keeps every tap meaningful with nothing to hit by
+            accident.
+
+            Pointer devices keep the narrow 14% edges and an inert middle: with
+            a mouse a click fires after a drag-select too, so wide zones would
+            turn the page every time a reader selected a word to copy. */}
         <button
           type="button"
           aria-label="Previous page"
           tabIndex={-1}
           onClick={onPrev}
-          className="absolute inset-y-0 left-0 z-[7] w-[30%] cursor-pointer lg:w-[14%]"
-        />
-        <button
-          type="button"
-          aria-label={deckOpen ? "Hide reading controls" : "Show reading controls"}
-          tabIndex={-1}
-          onClick={onToggleDeck}
-          className="absolute inset-y-0 left-[30%] z-[7] w-[25%] cursor-pointer lg:hidden"
+          className="absolute inset-y-0 left-0 z-[7] w-[35%] cursor-pointer lg:w-[14%]"
         />
         <button
           type="button"
           aria-label="Next page"
           tabIndex={-1}
           onClick={onNext}
-          className="absolute inset-y-0 right-0 z-[7] w-[45%] cursor-pointer lg:w-[14%]"
+          className="absolute inset-y-0 right-0 z-[7] w-[65%] cursor-pointer lg:w-[14%]"
         />
 
-        {/* Bookmark ribbon — hung from the frame's top edge, right-aligned to
-            the text column (its inset is a token that tightens full-bleed). */}
-        {ribbon}
 
         {/* Folios are a framed-page affordance: with the mat gone below `lg`
             they land on top of the prose, so they only appear alongside the

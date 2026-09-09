@@ -13,8 +13,6 @@ export { ReaderDock } from "./ReaderDock";
 export type { ReaderDockProps } from "./ReaderDock";
 export { TocPopover } from "./TocPopover";
 export type { TocPopoverProps } from "./TocPopover";
-export { RibbonBookmark } from "./RibbonBookmark";
-export type { RibbonBookmarkProps } from "./RibbonBookmark";
 
 export { SpreadFrame } from "./SpreadFrame";
 export type { SpreadFrameProps } from "./SpreadFrame";

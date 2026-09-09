@@ -2,6 +2,54 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Change — fewer controls, one deliberate trigger (founder, 2026-09-09)
+
+A UX pass on the dock. The theme is simplicity: every control that survives has
+to earn the space it takes from the page.
+
+### Removed
+- **The top-edge ribbon bookmark.** It hung from the frame's top edge and spent
+  reading space, permanently, on something used a handful of times a book.
+  Bookmarking is now a **pod in the deck**; the list of bookmarks is a second tab
+  in the contents popover (`TocPopover`'s tab bar was built to appear the moment
+  a second tab existed — this is it). `RibbonBookmark` deleted.
+- **The `⋯` reading-settings pod**, and with it the `ReaderSettingsSheet` and
+  `NotesPanel` renders. Font family, line spacing and margins are no longer
+  reachable from the reader. **Note:** they are not reachable anywhere else
+  either — `/settings` has no typography section — so those three preferences are
+  effectively frozen at their stored values until they are given a home. The
+  components are kept, unreferenced, so that home is a wiring job rather than a
+  rebuild.
+- **The centre tap band.** It opened the deck, and a target that large in the
+  middle of the page caught thumbs meant for a page turn — the deck kept opening
+  unasked. The frame is now split two ways, 35% back / 65% forward, so there is
+  still no dead zone (which was D1) and nothing to hit by accident.
+
+### Changed
+- **The resting dock is two objects, not one.** The pill is a status readout and
+  is no longer clickable; the settings button sits beside it, on the right, and
+  is the deck's only trigger. Previously the whole pill was a button, which is
+  why stray taps near the bottom of the page opened the deck.
+- **Text size stayed.** It is the one typographic control a reader actually
+  reaches for mid-book, and it is one tap in the deck rather than two through a
+  sheet.
+- **Dock geometry**: height 34px → 40px, progress track 130px → 168px, and a new
+  `--leaf-dock-bottom` floats it clear of the bottom edge — further on a phone
+  (`--leaf-space-7`), where the home indicator and the browser's own bottom
+  chrome compete for that band.
+- **`Page 4 of 25` → `Pg. 4/25`.** The long form crowded the progress island on
+  a phone.
+- **Bare chapter ordinals get a `Ch.` prefix** (`formatChapterLabel`). EPUB
+  tables of contents are free text: some books name their chapters, Calibre
+  exports often give a bare number, and a lone "4" in the dock is a hanging
+  number with no referent. A real title is left exactly as the book wrote it —
+  prefixing "Chapter" onto "The Creation" would be inventing structure.
+
+### Note for whoever restores highlights
+`ReaderShell` still runs `manageHighlights`, so existing highlights are still
+painted into the book — only the list UI is gone. The subscription is kept
+(`const [, setHighlights]`) so the list can return without rewiring the engine.
+
 ## Fix — the dock is one surface, and its colours come from the theme
 
 Two problems, both visible only once the reader was actually rendered.

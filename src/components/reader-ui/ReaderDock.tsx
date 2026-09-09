@@ -11,7 +11,7 @@ import {
 import { THEME_IDS, THEMES } from "@/design/themes";
 import type { ReaderTheme } from "@/store/reader-settings";
 import type { ReaderTocEntry } from "@/reader/engine";
-import { TocPopover } from "./TocPopover";
+import { TocPopover, type DockBookmark } from "./TocPopover";
 
 /**
  * ReaderDock — the reader's bottom chrome (design iteration 1, REVISED_PLAN §9B
@@ -73,7 +73,15 @@ export interface ReaderDockProps {
   fontSize: number;
   onSetFontSize: (size: number) => void;
   /** Open the shared `ReaderSettingsSheet`. */
-  onOpenSettings: () => void;
+  /** Whether the current page is already bookmarked. */
+  bookmarked: boolean;
+  /** Saved bookmarks for this book — listed in the contents panel. */
+  bookmarks: DockBookmark[];
+  onGoToBookmark: (cfi: string) => void;
+  onRemoveBookmark: (id: string) => void;
+  /** Disabled until the engine reports a position to bookmark. */
+  canBookmark: boolean;
+  onToggleBookmark: () => void;
 }
 
 // ── Icons — flat vector line SVGs, no emoji (handoff §4) ──────────────────
@@ -123,6 +131,19 @@ function SettingsIcon() {
     </svg>
   );
 }
+function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      {...svgBase}
+      fill={filled ? "currentColor" : "none"}
+    >
+      <path d="M6 3h12v18l-6-4.5L6 21V3z" />
+    </svg>
+  );
+}
 function SunIcon() {
   return (
     <svg aria-hidden viewBox="0 0 24 24" className="h-3 w-3" {...svgBase}>
@@ -137,6 +158,20 @@ function MoonIcon() {
       <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
     </svg>
   );
+}
+
+/**
+ * EPUB tables of contents are free text: some books name their chapters, others
+ * (Calibre exports especially) give a bare ordinal. A lone "4" sitting in the
+ * dock reads as a hanging number with no referent, so ordinals — arabic or
+ * roman — get a "Ch." in front. A real title is left exactly as the book wrote
+ * it; prefixing "Chapter" onto "The Creation" would be inventing structure.
+ */
+function formatChapterLabel(label: string | null): string | null {
+  if (label == null) return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+  return /^(\d{1,4}|[ivxlcdm]{1,7})$/i.test(trimmed) ? `Ch. ${trimmed}` : trimmed;
 }
 
 // ── Shared pod surface ───────────────────────────────────────────────────
@@ -168,10 +203,13 @@ function ProgressIsland({
   pageTotal?: number;
 }) {
   const pct = Math.round(clamp(percent, 0, 1) * 100);
+  // "Pg. 4/25", not "Page 4 of 25": this sits in a 620px strip beside the
+  // chapter title, and the long form crowded it out on a phone.
   const ratio =
     page != null && pageTotal != null && pageTotal > 0
-      ? `Page ${page} of ${pageTotal}`
+      ? `Pg. ${page}/${pageTotal}`
       : `${pct}%`;
+  const label = formatChapterLabel(chapterLabel);
 
   return (
     <div
@@ -203,9 +241,9 @@ function ProgressIsland({
         <span
           className="truncate font-display [font-size:var(--leaf-text-sm)]"
           style={{ color: "var(--leaf-dock-text)" }}
-          title={chapterLabel ?? undefined}
+          title={label ?? undefined}
         >
-          {chapterLabel ?? "—"}
+          {label ?? "—"}
         </span>
         <span
           className="flex-none font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]"
@@ -355,7 +393,12 @@ export function ReaderDock({
   onSetTheme,
   fontSize,
   onSetFontSize,
-  onOpenSettings,
+  bookmarked,
+  bookmarks,
+  onGoToBookmark,
+  onRemoveBookmark,
+  canBookmark,
+  onToggleBookmark,
 }: ReaderDockProps) {
   const pct = Math.round(clamp(percent, 0, 1) * 100);
 
@@ -455,72 +498,83 @@ export function ReaderDock({
       className="pointer-events-none relative z-30 flex flex-none items-end justify-center px-[var(--leaf-reader-bar-pad-x)]"
       style={{
         height:
-          "calc(var(--leaf-dock-h) + var(--leaf-reader-bar-pad-y) * 2 + var(--leaf-safe-bottom))",
+          "calc(var(--leaf-dock-h) + var(--leaf-dock-bottom) + var(--leaf-reader-bar-pad-y))",
       }}
     >
-      {/* ── State A — resting pill ───────────────────────────────────────── */}
-      <button
-        ref={triggerRef}
-        type="button"
+      {/* ── State A — resting dock ───────────────────────────────────────── */}
+      {/* Two objects, not one. The pill is a STATUS readout and is not
+          clickable: making the whole thing a button meant every stray tap near
+          the bottom of the page opened the deck. The deck now has exactly one
+          trigger — the settings button beside it — which is small and
+          deliberate (founder, 2026-09-09). */}
+      <div
         inert={open}
         aria-hidden={open}
-        onClick={() => onOpenChange(true)}
-        aria-label={
-          `Open reading controls — ${pct}% read` +
-          (chapterLabel ? `, ${chapterLabel}` : "")
-        }
-        className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-[var(--leaf-space-3)] border px-[var(--leaf-dock-pad-x)] outline-none [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+        className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-[var(--leaf-dock-gap)] [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)]"
         style={{
-          ...podSurface,
-          bottom: "calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-bottom))",
-          height: "var(--leaf-dock-h)",
-          borderRadius: "var(--leaf-dock-radius)",
+          bottom: "var(--leaf-dock-bottom)",
           opacity: open ? 0 : 1,
         }}
       >
         {/* ONE surface. The handoff's §1 and §4 both hang on this: the resting
-            pill and the expanded pods are the same solid material, so the dock
-            never looks like a row of loose chips. Every child below is
-            transparent — the button itself is the dock. */}
-        <span
+            dock and the expanded pods are the same solid material, so it never
+            looks like a row of loose chips. Every child here is transparent. */}
+        <div
           aria-hidden
-          className="max-w-[11ch] truncate font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
-          style={{ color: "var(--leaf-dock-text-muted)" }}
-        >
-          {chapterLabel ?? "Reading"}
-        </span>
-
-        <span
-          aria-hidden
-          className="relative overflow-hidden rounded-pill"
+          className="flex items-center gap-[var(--leaf-space-3)] border px-[var(--leaf-dock-pad-x)]"
           style={{
-            width: "var(--leaf-dock-progress-w)",
-            height: "var(--leaf-dock-track-h)",
-            background: "var(--leaf-dock-track)",
+            ...podSurface,
+            height: "var(--leaf-dock-h)",
+            borderRadius: "var(--leaf-dock-radius)",
           }}
         >
           <span
-            className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
-            style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
-          />
-        </span>
+            className="max-w-[11ch] truncate font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
+            style={{ color: "var(--leaf-dock-text-muted)" }}
+          >
+            {formatChapterLabel(chapterLabel) ?? "Reading"}
+          </span>
 
-        <span
-          aria-hidden
-          className="font-mono tabular-nums [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
-          style={{ color: "var(--leaf-dock-text)" }}
-        >
-          {pct}%
-        </span>
+          <span
+            className="relative overflow-hidden rounded-pill"
+            style={{
+              width: "var(--leaf-dock-progress-w)",
+              height: "var(--leaf-dock-track-h)",
+              background: "var(--leaf-dock-track)",
+            }}
+          >
+            <span
+              className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
+              style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
+            />
+          </span>
 
-        <span
-          aria-hidden
-          className="flex flex-none items-center justify-center"
-          style={{ color: "var(--leaf-dock-text-muted)" }}
+          <span
+            className="font-mono tabular-nums [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
+            style={{ color: "var(--leaf-dock-text)" }}
+          >
+            {pct}%
+          </span>
+        </div>
+
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => onOpenChange(true)}
+          aria-label={
+            `Open reading controls — ${pct}% read` +
+            (chapterLabel ? `, ${formatChapterLabel(chapterLabel)}` : "")
+          }
+          className={`${podClass} rounded-pill hover:[background:var(--leaf-dock-hover)] active:scale-95`}
+          style={{
+            ...podSurface,
+            width: "var(--leaf-dock-h)",
+            height: "var(--leaf-dock-h)",
+          }}
         >
           <SettingsIcon />
-        </span>
-      </button>
+        </button>
+      </div>
 
       {/* ── State B — expanded two-tier deck ─────────────────────────────── */}
       <div
@@ -532,7 +586,7 @@ export function ReaderDock({
         tabIndex={-1}
         className="pointer-events-auto absolute left-1/2 flex flex-col gap-[var(--leaf-dock-deck-gap)] outline-none [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease),transform_var(--leaf-dur-ui)_var(--leaf-ease)]"
         style={{
-          bottom: "calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-bottom))",
+          bottom: "var(--leaf-dock-bottom)",
           width:
             "min(var(--leaf-dock-deck-max-w), calc(100vw - var(--leaf-space-5) * 2))",
           opacity: open ? 1 : 0,
@@ -610,13 +664,28 @@ export function ReaderDock({
               entries={toc}
               currentLabel={chapterLabel}
               onNavigate={navigateToc}
+              bookmarks={bookmarks}
+              onGoToBookmark={(cfi) => {
+                setTocOpen(false);
+                onGoToBookmark(cfi);
+              }}
+              onRemoveBookmark={onRemoveBookmark}
             />
           </div>
 
+          {/* Bookmarking lives here now. It used to be a tab on the frame's
+              top edge, which spent reading space on a control used a few times
+              a book. The list of bookmarks is a tab in the contents panel. */}
           <button
             type="button"
-            onClick={onOpenSettings}
-            aria-label="Reading settings"
+            onClick={onToggleBookmark}
+            disabled={!canBookmark}
+            aria-pressed={bookmarked}
+            aria-label={
+              bookmarked
+                ? "Remove bookmark from this page"
+                : "Bookmark this page"
+            }
             className={`${podClass} rounded-pill hover:[background:var(--leaf-dock-hover)] active:scale-95`}
             style={{
               ...podSurface,
@@ -624,7 +693,7 @@ export function ReaderDock({
               height: "var(--leaf-dock-pod-size)",
             }}
           >
-            <SettingsIcon />
+            <BookmarkIcon filled={bookmarked} />
           </button>
 
           <button

@@ -169,11 +169,16 @@
      deliberately reuses `--leaf-ease` (already the iteration's exact curve)
      and `--leaf-dur-ui`, so the reduced-motion block at the foot of this file
      keeps governing the dock for free. */
-  --leaf-dock-h: 34px;             /* resting pill height */
+  --leaf-dock-h: 40px;             /* resting pill height */
   --leaf-dock-radius: 999px;
-  --leaf-dock-pad-x: var(--leaf-space-3);
+  --leaf-dock-pad-x: var(--leaf-space-4);
   --leaf-dock-gap: var(--leaf-space-2);
-  --leaf-dock-progress-w: 130px;   /* resting pill's hairline progress */
+  --leaf-dock-progress-w: 168px;   /* resting pill's hairline progress */
+  /* How far the dock floats above the bottom edge. It is a control the thumb
+     reaches for, not a status bar pinned to the frame, so it sits clear of the
+     edge — further on a phone, where the home indicator and the browser's own
+     bottom chrome both compete for that band. */
+  --leaf-dock-bottom: calc(var(--leaf-space-5) + var(--leaf-safe-bottom));
   --leaf-dock-track-h: 3px;
   --leaf-dock-pod-size: 32px;      /* circular pods: contents, settings, close */
   --leaf-dock-theme-w: 62px;       /* theme pod */
@@ -270,6 +275,11 @@
     --leaf-reader-frame-shadow: none;
     --leaf-reader-bar-pad-x: var(--leaf-space-4);
     --leaf-reader-bar-pad-y: var(--leaf-space-2);
+    /* The dock sits higher on a phone: full-bleed means its bottom band is
+       shared with the home indicator and, in a browser tab, the URL bar. A dock
+       tucked against the edge is both hard to hit and easy to mistake for
+       browser chrome. */
+    --leaf-dock-bottom: calc(var(--leaf-space-7) + var(--leaf-safe-bottom));
     /* Full-bleed: the text runs close to the screen edge, so the ribbon tucks
        in tighter than it does against a desktop mat. */
     --leaf-ribbon-inset: var(--leaf-space-4);
