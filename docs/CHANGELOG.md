@@ -2,6 +2,47 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — the dock is one surface, and its colours come from the theme
+
+Two problems, both visible only once the reader was actually rendered.
+
+### The dock did not read as a dock
+Each of the resting pill's four parts (chapter badge, progress, percent,
+settings) carried its own background, border and shadow, so it painted as four
+loose chips rather than one object. The handoff hangs its §1 and §4 on the
+opposite: the resting pill and the expanded pods are **one solid material**, with
+no translucent mismatch between states. The surface now sits on the pill itself
+and every child inside it is transparent.
+
+### The dock surface was invisible on night
+`--leaf-dock-bg` was the handoff's `#1c1713`, and Leaf's night `--leaf-page` is
+`#1a1611` — about 1% apart, so the dock vanished into the page and only the
+children's own edges showed. The handoff's hexes assume its own canvas, not ours.
+
+Dock colours are now **composed from the active theme's palette**:
+
+- **Day** inverts the page: `--leaf-dock-bg: var(--leaf-ink)` with
+  `--leaf-dock-text: var(--leaf-page)`. That is the same ink-on-paper
+  relationship the book itself uses, read the other way round.
+- **Night cannot invert** — an ink-coloured surface there would be a bone-white
+  bar glowing beside the page. Instead the dock is the page *lifted*:
+  `color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 10%)`, which is distinct
+  from both `--leaf-page` (the phone's full-bleed reader ground) and
+  `--leaf-paper` (the desktop mat behind the book). It has to clear both, because
+  which one sits behind the dock depends on the breakpoint.
+- Border, track, hover and muted text are all `color-mix` off those two, so a
+  future palette change carries the dock with it and cannot leave it stranded.
+
+`--leaf-dock-text-muted` is mixed toward the surface rather than reusing
+`--leaf-ink-mid`: on day, `--leaf-ink-mid` is tuned for dark-on-light and lands
+at ~2.3:1 against an ink-coloured dock. The mix holds ~6:1.
+
+### Also
+- `ReaderTopBar` gains the fullscreen toggle. Immersive is Fullscreen-only since
+  stage 2, and the deck has no pod for it, so `F` was the only way in — no route
+  at all on a phone, which is the device the browser's URL bar actually costs.
+  `ReaderTopBar.test.tsx` covers the name flip and `aria-pressed`.
+
 ## Feature — reader dock (design iteration 1 §9B, stage 2)
 
 The reader's `ReaderTopBar` + `ReaderBottomBar` chrome is replaced by the

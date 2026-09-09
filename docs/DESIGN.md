@@ -354,6 +354,40 @@ is no words-per-minute model to derive a time from (REVISED_PLAN §9A).
 
 ---
 
+## 11b. The reader dock's palette
+
+The dock is the one surface in Leaf that is **not** simply a palette colour, and
+the rule is worth stating because it is easy to get wrong twice.
+
+**Never hard-code the dock's colours.** They are composed from the active theme:
+
+| | Day | Night |
+|---|---|---|
+| `--leaf-dock-bg` | `var(--leaf-ink)` | `color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 10%)` |
+| `--leaf-dock-text` | `var(--leaf-page)` | `var(--leaf-ink)` |
+
+**Day inverts; night lifts.** On a light theme the dock is the page turned over —
+ink as the surface, paper as the type. On a dark theme that inversion would be a
+bone-white bar glowing beside the text, so the dock is instead the page raised a
+little, reading as a solid object resting above the paper.
+
+**The dock must differ from BOTH `--leaf-page` and `--leaf-paper`.** Which of the
+two sits behind it depends on the breakpoint: below 1024px the reader is
+full-bleed on `--leaf-page`, above it the book sits on a `--leaf-paper` mat. A
+value that clears only one of them vanishes at the other width. This is exactly
+how the first version failed — it used a fixed `#1c1713`, one percent off night's
+`--leaf-page`.
+
+**Muted dock text is mixed toward the dock surface, not taken from
+`--leaf-ink-mid`.** The palette's mid tone is tuned for dark-on-light body text
+and lands around 2.3:1 against an ink-coloured dock. The mix holds ~6:1.
+
+**One surface, both states.** The resting pill and the expanded pods share the
+same material — children inside the pill are transparent. Giving each part its
+own background is what made the first version read as loose chips.
+
+---
+
 ## 12. Where the rest lives
 
 - `SPEC.md` — full build spec, data model, architecture.

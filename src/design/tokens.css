@@ -308,14 +308,20 @@
   --leaf-hl-sage: rgba(104, 140, 92, 0.28);
   --leaf-hl-sky: rgba(86, 132, 178, 0.28);
   --leaf-hl-rose: rgba(186, 92, 116, 0.28);
-  /* Reader dock — one solid flat surface shared by the resting pill and the
-     expanded deck (iteration 1 §4: no translucent mismatch between states). */
-  --leaf-dock-bg: #1f1a16;
-  --leaf-dock-border: #352d26;
-  --leaf-dock-text: #f2ece0;
-  --leaf-dock-text-muted: #9c8e7e;   /* ~5.5:1 on --leaf-dock-bg */
-  --leaf-dock-track: #352d26;
-  --leaf-dock-hover: #2a231e;
+  /* Reader dock — ONE solid surface shared by the resting pill and the expanded
+     deck (iteration 1 §1/§4: no translucent mismatch between states).
+     Composed from this theme's own palette rather than the handoff's fixed
+     hexes: on a light theme the dock is the page inverted — ink as the surface,
+     paper as the type — which is the same ink-on-paper relationship the book
+     itself uses, read the other way round. */
+  --leaf-dock-bg: var(--leaf-ink);
+  --leaf-dock-border: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 14%);
+  --leaf-dock-text: var(--leaf-page);
+  /* Mixed toward the surface until it is quiet but still ~6:1 on it. Day's
+     --leaf-ink-mid is tuned for dark-on-light and would be ~2.3:1 here. */
+  --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 35%);
+  --leaf-dock-track: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 22%);
+  --leaf-dock-hover: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 9%);
   /* Day has the most contrast headroom, so it can take the most dimming before
      body ink on paper falls to 4.5:1. */
   --leaf-dim-max: 0.5;
@@ -350,14 +356,18 @@
   --leaf-hl-sage: rgba(126, 168, 112, 0.30);
   --leaf-hl-sky: rgba(116, 162, 208, 0.30);
   --leaf-hl-rose: rgba(210, 118, 142, 0.30);
-  /* Reader dock — matte black on night, so the dock reads as a surface rather
-     than a light source next to near-black paper. */
-  --leaf-dock-bg: #1c1713;
-  --leaf-dock-border: #302821;
-  --leaf-dock-text: #e4dac5;
-  --leaf-dock-text-muted: #8a7c6b;   /* ~4.5:1 on --leaf-dock-bg */
-  --leaf-dock-track: #302821;
-  --leaf-dock-hover: #241e19;
+  /* Reader dock — night cannot invert: an ink-coloured surface here would be a
+     bone-white bar glowing next to the page. Instead the dock is the page
+     LIFTED a little, so it reads as a solid object resting above the paper.
+     It has to differ from both --leaf-page (the phone's full-bleed reader
+     ground) and --leaf-paper (the desktop mat behind the book) — the handoff's
+     #1c1713 sat within 1% of our page and vanished against it. */
+  --leaf-dock-bg: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 10%);
+  --leaf-dock-border: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 20%);
+  --leaf-dock-text: var(--leaf-ink);
+  --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 40%);
+  --leaf-dock-track: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 25%);
+  --leaf-dock-hover: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 18%);
   /* Night starts dark: there is far less room to dim before ink on paper
      stops clearing AA. */
   --leaf-dim-max: 0.25;

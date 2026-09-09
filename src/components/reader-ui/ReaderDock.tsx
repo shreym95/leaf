@@ -469,62 +469,54 @@ export function ReaderDock({
           `Open reading controls — ${pct}% read` +
           (chapterLabel ? `, ${chapterLabel}` : "")
         }
-        className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-[var(--leaf-space-2)] outline-none [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+        className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-[var(--leaf-space-3)] border px-[var(--leaf-dock-pad-x)] outline-none [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
         style={{
+          ...podSurface,
           bottom: "calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-bottom))",
+          height: "var(--leaf-dock-h)",
           borderRadius: "var(--leaf-dock-radius)",
           opacity: open ? 0 : 1,
         }}
       >
+        {/* ONE surface. The handoff's §1 and §4 both hang on this: the resting
+            pill and the expanded pods are the same solid material, so the dock
+            never looks like a row of loose chips. Every child below is
+            transparent — the button itself is the dock. */}
         <span
           aria-hidden
-          className="max-w-[11ch] truncate border px-[var(--leaf-dock-badge-pad-x)] py-[var(--leaf-space-1)] font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
-          style={{ ...podSurface, borderRadius: "var(--leaf-radius-pill)" }}
+          className="max-w-[11ch] truncate font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
+          style={{ color: "var(--leaf-dock-text-muted)" }}
         >
           {chapterLabel ?? "Reading"}
         </span>
 
         <span
           aria-hidden
-          className="flex items-center border px-[var(--leaf-space-2)]"
+          className="relative overflow-hidden rounded-pill"
           style={{
-            ...podSurface,
             width: "var(--leaf-dock-progress-w)",
-            height: "var(--leaf-dock-h)",
-            borderRadius: "var(--leaf-radius-pill)",
+            height: "var(--leaf-dock-track-h)",
+            background: "var(--leaf-dock-track)",
           }}
         >
           <span
-            className="relative w-full overflow-hidden rounded-pill"
-            style={{
-              height: "var(--leaf-dock-track-h)",
-              background: "var(--leaf-dock-track)",
-            }}
-          >
-            <span
-              className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
-              style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
-            />
-          </span>
+            className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
+            style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
+          />
         </span>
 
         <span
           aria-hidden
-          className="border px-[var(--leaf-dock-badge-pad-x)] py-[var(--leaf-space-1)] font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
-          style={{ ...podSurface, borderRadius: "var(--leaf-radius-pill)" }}
+          className="font-mono tabular-nums [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
+          style={{ color: "var(--leaf-dock-text)" }}
         >
           {pct}%
         </span>
 
         <span
           aria-hidden
-          className="flex items-center justify-center border"
-          style={{
-            ...podSurface,
-            width: "var(--leaf-dock-h)",
-            height: "var(--leaf-dock-h)",
-            borderRadius: "var(--leaf-radius-pill)",
-          }}
+          className="flex flex-none items-center justify-center"
+          style={{ color: "var(--leaf-dock-text-muted)" }}
         >
           <SettingsIcon />
         </span>
