@@ -7,7 +7,7 @@ import { SpreadFrame } from "./SpreadFrame";
 function renderFrame(overrides: Partial<Parameters<typeof SpreadFrame>[0]> = {}) {
   const onPrev = vi.fn();
   const onNext = vi.fn();
-  const onToggleChrome = vi.fn();
+  const onToggleDeck = vi.fn();
   render(
     <SpreadFrame
       viewerRef={createRef<HTMLDivElement>()}
@@ -15,12 +15,12 @@ function renderFrame(overrides: Partial<Parameters<typeof SpreadFrame>[0]> = {})
       loading={false}
       onPrev={onPrev}
       onNext={onNext}
-      onToggleChrome={onToggleChrome}
-      immersive={false}
+      onToggleDeck={onToggleDeck}
+      deckOpen={false}
       {...overrides}
     />,
   );
-  return { onPrev, onNext, onToggleChrome };
+  return { onPrev, onNext, onToggleDeck };
 }
 
 const widthOf = (name: string) => {
@@ -45,7 +45,7 @@ describe("SpreadFrame tap zones", () => {
     renderFrame();
     const prev = Number(widthOf("Previous page"));
     const next = Number(widthOf("Next page"));
-    const centre = Number(widthOf("Hide reading controls"));
+    const centre = Number(widthOf("Show reading controls"));
     expect(prev + centre + next).toBe(100);
     // Forward is the common direction, so it gets the largest share.
     expect(next).toBeGreaterThan(prev);
@@ -53,38 +53,51 @@ describe("SpreadFrame tap zones", () => {
     for (const w of [prev, centre, next]) expect(w).toBeGreaterThanOrEqual(25);
   });
 
-  it("centre tap toggles the chrome, and is touch-only", async () => {
+  it("centre tap opens the deck (not immersive), and is touch-only", async () => {
     const user = userEvent.setup();
-    const { onToggleChrome, onPrev, onNext } = renderFrame();
-    const centre = screen.getByRole("button", { name: "Hide reading controls" });
+    const { onToggleDeck, onPrev, onNext } = renderFrame();
+    const centre = screen.getByRole("button", { name: "Show reading controls" });
     await user.click(centre);
-    expect(onToggleChrome).toHaveBeenCalledTimes(1);
+    expect(onToggleDeck).toHaveBeenCalledTimes(1);
     expect(onPrev).not.toHaveBeenCalled();
     expect(onNext).not.toHaveBeenCalled();
     // Hidden from pointer devices: with a mouse, a click fires after a
-    // drag-select too, so a centre zone would toggle immersive every time a
+    // drag-select too, so a centre zone would toggle the deck every time a
     // reader selected a word to copy.
     expect(centre.className).toContain("lg:hidden");
   });
 
   it("names the centre zone for what the tap will do", () => {
-    renderFrame({ immersive: true });
-    expect(screen.getByRole("button", { name: "Show reading controls" })).toBeTruthy();
+    renderFrame({ deckOpen: true });
+    expect(
+      screen.getByRole("button", { name: "Hide reading controls" }),
+    ).toBeTruthy();
   });
 
   it("keeps the narrow edge zones on pointer devices", () => {
     renderFrame();
     for (const name of ["Previous page", "Next page"]) {
-      expect(screen.getByRole("button", { name }).className).toContain("lg:w-[14%]");
+      expect(screen.getByRole("button", { name }).className).toContain(
+        "lg:w-[14%]",
+      );
     }
   });
 
   it("keeps the tap zones out of the tab sequence but still named", () => {
     renderFrame();
-    for (const name of ["Previous page", "Next page", "Hide reading controls"]) {
+    for (const name of ["Previous page", "Next page", "Show reading controls"]) {
       const el = screen.getByRole("button", { name });
       expect(el.getAttribute("tabindex")).toBe("-1");
       expect(el.getAttribute("aria-hidden")).toBeNull();
     }
+  });
+
+  it("renders the bookmark ribbon slot inside the frame", () => {
+    renderFrame({
+      ribbon: <button type="button">ribbon-under-test</button>,
+    });
+    expect(
+      screen.getByRole("button", { name: "ribbon-under-test" }),
+    ).toBeTruthy();
   });
 });

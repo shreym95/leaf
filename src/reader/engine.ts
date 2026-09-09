@@ -35,6 +35,14 @@ export interface ReaderContentSettings {
   theme: ThemeName;
 }
 
+/** One entry of the book's own table of contents, flattened for the chrome. */
+export interface ReaderTocEntry {
+  /** Spine href (may carry a fragment) — pass straight to `goTo()`. */
+  href: string;
+  /** Display label from the EPUB navigation document, trimmed. */
+  label: string;
+}
+
 export interface ReaderLocation {
   cfi: string;
   /**
@@ -64,6 +72,12 @@ export interface ReaderController {
    *  a bookmark list renders without re-resolving CFIs. `undefined` when the
    *  TOC has no entry for the current section. */
   currentChapterLabel(): string | undefined;
+  /** The EPUB's own table of contents, flattened to `{ href, label }` in
+   *  reading order (nested `subitems` are walked depth-first). `goTo(entry.href)`
+   *  navigates to it. Empty when the EPUB ships no navigation document or it
+   *  cannot be read — a caller must treat that as "no chapter list", never an
+   *  error. Same TOC machinery as `currentChapterLabel()`. */
+  toc(): ReaderTocEntry[];
   relayout(): void; // recompute spread (call on resize; debounced inside)
   applySettings(s: ReaderContentSettings): void; // -> rendition.themes / font / override
   onRelocated(cb: (loc: ReaderLocation) => void): () => void; // returns an unsubscribe fn
@@ -470,6 +484,33 @@ export async function createReader(
     }
   }
 
+  // Flatten the EPUB's navigation document to a plain list, depth-first, so the
+  // chrome can render a chapter menu without knowing epub.js's nested shape.
+  // Same tolerance as `chapterLabelForHref`: an item missing either an href or a
+  // label is skipped rather than rendered blank.
+  function flattenToc(): ReaderTocEntry[] {
+    try {
+      const toc = (book.navigation as { toc?: unknown } | undefined)?.toc;
+      if (!Array.isArray(toc) || toc.length === 0) return [];
+      const out: ReaderTocEntry[] = [];
+      const walk = (items: NavItemish[]): void => {
+        for (const it of items) {
+          const href = typeof it?.href === "string" ? it.href.trim() : "";
+          const label = typeof it?.label === "string" ? it.label.trim() : "";
+          if (href && label) out.push({ href, label });
+          const sub = Array.isArray(it?.subitems)
+            ? (it.subitems as NavItemish[])
+            : undefined;
+          if (sub) walk(sub);
+        }
+      };
+      walk(toc as NavItemish[]);
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   // epub.js applies theme/CSS changes to the iframe but does NOT re-flow the
   // paginated columns — the current page goes blank until the next turn forces
   // a re-layout. Re-`display()` the current CFI to re-flow in place. Coalesced
@@ -619,6 +660,10 @@ export async function createReader(
       } catch {
         return undefined;
       }
+    },
+
+    toc(): ReaderTocEntry[] {
+      return flattenToc();
     },
 
     relayout(): void {

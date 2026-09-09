@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Sheet, SheetContent } from "@/components/primitives";
+import { Sheet, SheetContent, Button } from "@/components/primitives";
 import { THEMES, THEME_IDS } from "@/design/themes";
 import {
   useReaderSettings,
@@ -26,6 +26,9 @@ export interface ReaderSettingsSheetProps {
   onOpenChange: (open: boolean) => void;
   /** Theme needs a dual write (chrome + persisted setting) — ReaderShell owns it. */
   onSetTheme: (theme: ReaderTheme) => void;
+  /** Open the Notes & bookmarks panel. Since the reader dock this is the way in
+   *  — the top bar's Notes button is gone. ReaderShell closes this sheet first. */
+  onOpenNotes: () => void;
 }
 
 /**
@@ -185,6 +188,7 @@ export function ReaderSettingsSheet({
   open,
   onOpenChange,
   onSetTheme,
+  onOpenNotes,
 }: ReaderSettingsSheetProps) {
   const {
     fontFamily,
@@ -258,6 +262,15 @@ export function ReaderSettingsSheet({
               onChange={onSetTheme}
             />
           </Field>
+
+          {/* Notes & bookmarks used to hang off the top bar; since the reader
+              dock this row is the only way into the panel. */}
+          <div className="flex items-center justify-between gap-[var(--leaf-space-3)] border-t border-rule pt-[var(--leaf-space-5)]">
+            <span className={rowLabelClass}>Notes &amp; bookmarks</span>
+            <Button variant="ghost" size="sm" mono onClick={onOpenNotes}>
+              Open
+            </Button>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

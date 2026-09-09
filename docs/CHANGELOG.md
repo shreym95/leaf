@@ -2,6 +2,136 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — reader dock (design iteration 1 §9B, stage 2)
+
+The reader's `ReaderTopBar` + `ReaderBottomBar` chrome is replaced by the
+two-state **dock** from `FRONTEND_HANDOFF.md` §3.
+
+### What shipped
+
+- **State A — resting pill.** One `<button>` in the bottom safe zone: chapter
+  badge · 130px hairline progress · percent badge · settings-hint circle. Its
+  accessible name carries the live percent + chapter; the visuals are
+  `aria-hidden`. Tapping / Enter opens state B.
+- **State B — expanded deck.** Tier 1: `‹` · progress island (chapter title +
+  page ratio) · `›`. Tier 2: sun/moon theme toggle · `A− / A+` font stepper ·
+  `≡` contents popover · `⋯` settings · `✕` close. Closes on `✕`, Esc, a tap
+  outside the deck, or a page turn from outside the deck.
+- **`TocPopover`** — chapter drawer above the `≡` pod, built as a tabbed panel
+  whose tab bar renders only when `TABS.length > 1` (one tab, "Contents", today).
+- **`RibbonBookmark`** — 18×28 tab on the frame's top edge, right-aligned to the
+  text column, wired to `ReaderShell.toggleBookmark`; fill goes `--leaf-rule` →
+  `--leaf-accent` and the name flips when the current CFI is bookmarked.
+- **Top bar** slimmed to `← Library` + `Leaf` wordmark. Book title/author now
+  set `document.title` (the browser tab) instead of painting in the bar.
+- **`src/reader/engine.ts`** gains `toc(): { href, label }[]` — the EPUB
+  navigation flattened depth-first, reusing `chapterLabelForHref`'s machinery.
+  Style-agnostic; the seam rule is untouched.
+
+### Files
+
+- **New:** `ReaderDock.tsx`, `TocPopover.tsx`, `RibbonBookmark.tsx` (+ tests).
+- **Changed:** `ReaderShell.tsx`, `ReaderTopBar.tsx`, `SpreadFrame.tsx`,
+  `useImmersive.ts` (doc only — API unchanged), `reader-ui/index.ts`,
+  `src/reader/engine.ts`, `src/design/tokens.css` (added `--leaf-dock-popover-w`
+  and the `--leaf-ribbon-*` family — geometry only, no colour).
+- **Deleted:** `ReaderBottomBar.tsx` (had no test); `ImmersiveExit.tsx` — see
+  below.
+
+### `ImmersiveExit` did not survive
+
+Its whole job was "there is no way out of immersive on a touch device once every
+bar is hidden". Immersive no longer hides Leaf's chrome (decision 3) — the
+resting pill and top bar stay up — so there is nothing to be trapped in, and the
+browser's own Esc / back-gesture leaves fullscreen (`fullscreenchange` already
+syncs the flag). `useImmersive` keeps its Fullscreen-API logic unchanged and is
+still bound to `F`.
+
+### Deviations from the handoff, and why
+
+1. **Applied over the existing epub.js spread, not the prototype's single
+   column** (REVISED_PLAN §9D1). The dock is chrome; it does not touch the
+   book's pagination or the `content-hook` pipeline.
+2. **Motion tokens, not literal 180–240ms / `cubic-bezier(…)`.** Everything uses
+   `--leaf-dur-ui` (250ms) + `--leaf-ease` (already the handoff's exact curve),
+   so the reduced-motion block at the foot of `tokens.css` zeroes it for free.
+   The handoff's `@keyframes flatSlideUp` / `popoverFade` became plain
+   opacity+transform transitions on a state flip — no keyframes, same effect,
+   reduced-motion-correct.
+3. **Tier 1 gains real `‹` / `›` buttons** the handoff did not draw (decision 2).
+   `SpreadFrame`'s tap zones are `tabIndex=-1`, so deleting the bottom bar
+   without these would drop the only keyboard/AT-reachable page turns. They are
+   in the tab order and do **not** close the deck (so a keyboard user can page
+   with it open); page turns from *outside* the deck do close it.
+4. **Tier 2 has five pods, not four.** The brief adds `⋯ settings` (opens the
+   existing `ReaderSettingsSheet`) since "Aa" left the top bar. Bookmark stays
+   removed from the deck; the ribbon is separate.
+5. **The resting badge shows the truncated current chapter label, not "Ch. 4".**
+   EPUB TOCs are free-text with no reliable ordinal; a synthetic number would be
+   wrong for any book with front matter. Truncated to 11ch with a `title`
+   tooltip; the full label is in the button's accessible name.
+6. **Tier 1's right-hand metric is "Page N of M" (per section) or the percent —
+   never a time estimate.** The WPM model (§4D / §9B req 1) is unbuilt and the
+   brief forbids a fabricated "~14m left".
+7. **The progress track is a static `progressbar`, not the handoff's seekable
+   `slider`.** Drag-to-seek is stage 4 and needs `book.locations` (§9D6). The
+   element is marked `STAGE 4 SEAM` — swapping in `role="slider"` + pointer
+   handlers is a local change; the groove/fill geometry is already a slider's.
+8. **The `≡` popover is a non-modal `role="dialog"` disclosure** (trigger
+   `aria-expanded` + `aria-controls`, focus to the first chapter on open, Esc /
+   outside-tap close, focus back to the trigger) — not a focus-trapped modal.
+9. **No touch entry point to immersive.** The top bar's fullscreen button was
+   removed with the rest of the bar and the centre tap band now drives the deck
+   (decision 4). `F` is the only trigger — a deliberate downgrade of a
+   feature decision 3 already shrank to "hide the browser URL bar". Worth a
+   look in review if a touch affordance is still wanted.
+
+### Decision the brief left to me
+
+- **The centre tap band and the arrow keys close the deck on a page turn; the
+  deck's own `‹` / `›` do not.** "Closes on … a page turn" would otherwise make
+  the keyboard/AT page-turn buttons collapse the deck under the user on every
+  press. `ReaderShell` splits `turn()` (dock arrows) from `turnAndCloseDeck()`
+  (tap zones, arrow keys).
+- **Opening the `⋯` settings sheet collapses the deck.** The deck and Radix both
+  listen for Escape; leaving both open makes one Escape ambiguous.
+- **A TOC jump closes the deck** (it is a navigation, like a page turn) and
+  returns focus to the resting pill.
+- **Font stepper range: 0.9–1.45 rem, step 0.06** (the handoff's numbers).
+
+### Logic ↔ presentation couplings a future redesign must know
+
+- **Theme toggle assumes exactly two registered themes.** It slides between
+  `THEME_IDS[0]` and `THEME_IDS[THEME_IDS.length - 1]` and is registry-driven,
+  but a third theme makes it lossy — it must revert to a picker (the pattern is
+  the `ReaderSettingsSheet` "Theme" segmented control).
+- **The dock font stepper writes a continuous `reader_settings.fontSize`; the
+  settings sheet snaps the same column to S/M/L.** A value set in one shows
+  rounded in the other. Both are the only writers of that column.
+- **`chapterLabel` does double duty:** the resting badge, the progress-island
+  title, and the "current chapter" mark in the TOC popover (matched by label
+  equality against `toc()` entries — both derive from the same EPUB navigation).
+- **`ReaderShell` owns `deckOpen`.** Lifted out of `ReaderDock` because a page
+  turn and the `SpreadFrame` centre-tap band both need to reach it.
+- **`--leaf-reader-progress-w` / `--leaf-reader-progress-h`** are now orphaned
+  (only `ReaderBottomBar` used them). Left in `tokens.css` — harmless, and
+  removing tokens is the stage-3/other-agent hazard the token skeleton was
+  added to avoid.
+
+### Tests
+
++33 tests (331 → 364), +3 files: `ReaderDock.test.tsx`, `TocPopover.test.tsx`,
+`RibbonBookmark.test.tsx`. `SpreadFrame.test.tsx` and `ReaderShell.test.tsx`
+updated for the new structure; `ReaderSettingsSheet.test.tsx` gains the Notes
+row. `ReaderBottomBar` had no test to delete.
+
+### Not verified: `next build` / `next dev`
+
+Both panic in this worktree — Turbopack rejects the symlinked `node_modules`
+("Symlink … points out of the filesystem root"), a pre-existing environment
+issue unrelated to this change. `npm run typecheck`, `npm run lint` and
+`npm test` are all green.
+
 ## Change — two reading themes; sepia retired
 
 Founder call, 2026-09-09: Leaf ships **Day** and **Night**. Sepia was built in

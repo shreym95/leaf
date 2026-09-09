@@ -180,6 +180,18 @@
   --leaf-dock-badge-pad-x: var(--leaf-space-2);
   --leaf-dock-deck-gap: var(--leaf-space-2);
   --leaf-dock-deck-max-w: 620px;
+  --leaf-dock-popover-w: 300px;    /* TOC popover above the contents pod */
+
+  /* --- Ribbon bookmark (design iteration 1, requirement 2) ---------------
+     An 18×28 tab hung from the top edge of the text column. Geometry only;
+     the fill reuses the palette — `--leaf-rule` at rest, `--leaf-accent` once
+     the page on screen is bookmarked. Motion via `--leaf-ease` / `--leaf-dur-ui`
+     like the dock, so reduced-motion governs it for free. */
+  --leaf-ribbon-w: 18px;
+  --leaf-ribbon-h: 28px;
+  --leaf-ribbon-h-active: 42px;
+  --leaf-ribbon-inset: var(--leaf-space-6);
+  --leaf-ribbon-notch: 82%;        /* clip-path apex — matches the prototype */
 
   /* --- Reading brightness (stage 3) ---------------------------------------
      A warm near-black scrim over the whole reader, dimming page and chrome
@@ -234,6 +246,9 @@
     --leaf-reader-frame-shadow: none;
     --leaf-reader-bar-pad-x: var(--leaf-space-4);
     --leaf-reader-bar-pad-y: var(--leaf-space-2);
+    /* Full-bleed: the text runs close to the screen edge, so the ribbon tucks
+       in tighter than it does against a desktop mat. */
+    --leaf-ribbon-inset: var(--leaf-space-4);
   }
 }
 

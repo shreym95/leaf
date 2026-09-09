@@ -8,10 +8,13 @@ export type {
 } from "./ReaderShell";
 
 export { ReaderTopBar } from "./ReaderTopBar";
-export type { ReaderTopBarProps } from "./ReaderTopBar";
 
-export { ReaderBottomBar } from "./ReaderBottomBar";
-export type { ReaderBottomBarProps } from "./ReaderBottomBar";
+export { ReaderDock } from "./ReaderDock";
+export type { ReaderDockProps } from "./ReaderDock";
+export { TocPopover } from "./TocPopover";
+export type { TocPopoverProps } from "./TocPopover";
+export { RibbonBookmark } from "./RibbonBookmark";
+export type { RibbonBookmarkProps } from "./RibbonBookmark";
 
 export { SpreadFrame } from "./SpreadFrame";
 export type { SpreadFrameProps } from "./SpreadFrame";
