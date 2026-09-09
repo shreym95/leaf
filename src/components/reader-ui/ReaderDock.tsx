@@ -59,8 +59,6 @@ export interface ReaderDockProps {
   /** Current chapter title from the EPUB TOC, or null. */
   chapterLabel: string | null;
   /** Page within the current section, if epub.js reports one. */
-  page?: number;
-  pageTotal?: number;
   /** The book's flattened table of contents (`ReaderController.toc()`). */
   toc: ReaderTocEntry[];
   /** Navigate to a TOC entry's href. */
@@ -110,21 +108,21 @@ function ChevronRight() {
 }
 function ContentsIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5" {...svgBase}>
+    <svg aria-hidden viewBox="0 0 24 24" className="h-[var(--leaf-dock-icon)] w-[var(--leaf-dock-icon)]" {...svgBase}>
       <path d="M3 6h18M3 12h18M3 18h18" />
     </svg>
   );
 }
 function CloseIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5" {...svgBase}>
+    <svg aria-hidden viewBox="0 0 24 24" className="h-[var(--leaf-dock-icon)] w-[var(--leaf-dock-icon)]" {...svgBase}>
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );
 }
 function SettingsIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5" {...svgBase}>
+    <svg aria-hidden viewBox="0 0 24 24" className="h-[var(--leaf-dock-icon)] w-[var(--leaf-dock-icon)]" {...svgBase}>
       <path d="M4 7h16M4 17h16" />
       <circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none" />
       <circle cx="15" cy="17" r="2.4" fill="currentColor" stroke="none" />
@@ -136,7 +134,7 @@ function BookmarkIcon({ filled }: { filled: boolean }) {
     <svg
       aria-hidden
       viewBox="0 0 24 24"
-      className="h-3.5 w-3.5"
+      className="h-[var(--leaf-dock-icon)] w-[var(--leaf-dock-icon)]"
       {...svgBase}
       fill={filled ? "currentColor" : "none"}
     >
@@ -146,7 +144,7 @@ function BookmarkIcon({ filled }: { filled: boolean }) {
 }
 function SunIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 24 24" className="h-3 w-3" {...svgBase}>
+    <svg aria-hidden viewBox="0 0 24 24" className="h-[calc(var(--leaf-dock-icon)-2px)] w-[calc(var(--leaf-dock-icon)-2px)]" {...svgBase}>
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
     </svg>
@@ -154,7 +152,7 @@ function SunIcon() {
 }
 function MoonIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 24 24" className="h-3 w-3" {...svgBase}>
+    <svg aria-hidden viewBox="0 0 24 24" className="h-[calc(var(--leaf-dock-icon)-2px)] w-[calc(var(--leaf-dock-icon)-2px)]" {...svgBase}>
       <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
     </svg>
   );
@@ -191,70 +189,6 @@ const podClass =
 
 // ── Sub-components ───────────────────────────────────────────────────────
 
-function ProgressIsland({
-  percent,
-  chapterLabel,
-  page,
-  pageTotal,
-}: {
-  percent: number;
-  chapterLabel: string | null;
-  page?: number;
-  pageTotal?: number;
-}) {
-  const pct = Math.round(clamp(percent, 0, 1) * 100);
-  // "Pg. 4/25", not "Page 4 of 25": this sits in a 620px strip beside the
-  // chapter title, and the long form crowded it out on a phone.
-  const ratio =
-    page != null && pageTotal != null && pageTotal > 0
-      ? `Pg. ${page}/${pageTotal}`
-      : `${pct}%`;
-  const label = formatChapterLabel(chapterLabel);
-
-  return (
-    <div
-      className="flex flex-1 flex-col justify-center gap-[var(--leaf-space-2)] border px-[var(--leaf-space-4)] py-[var(--leaf-space-3)]"
-      style={{ ...podSurface, borderRadius: "var(--leaf-radius-lg)" }}
-    >
-      {/* STAGE 4 SEAM — drag-to-seek attaches here: add role="slider",
-          aria-valuenow and pointer handlers to this element. Static
-          `progressbar` for now (REVISED_PLAN §9D6 — needs book.locations). */}
-      <div
-        role="progressbar"
-        aria-label="Reading progress"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        className="relative w-full overflow-hidden rounded-pill"
-        style={{
-          height: "var(--leaf-dock-track-h)",
-          background: "var(--leaf-dock-track)",
-        }}
-      >
-        <span
-          className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
-          style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
-        />
-      </div>
-
-      <div className="flex items-baseline justify-between gap-[var(--leaf-space-3)]">
-        <span
-          className="truncate font-display [font-size:var(--leaf-text-sm)]"
-          style={{ color: "var(--leaf-dock-text)" }}
-          title={label ?? undefined}
-        >
-          {label ?? "—"}
-        </span>
-        <span
-          className="flex-none font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]"
-          style={{ color: "var(--leaf-dock-text-muted)" }}
-        >
-          {ratio}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function ThemeToggle({
   theme,
@@ -383,8 +317,6 @@ export function ReaderDock({
   onOpenChange,
   percent,
   chapterLabel,
-  page,
-  pageTotal,
   toc,
   onNavigate,
   onPrevPage,
@@ -595,46 +527,32 @@ export function ReaderDock({
             : "translate(-50%, var(--leaf-space-2))",
         }}
       >
-        {/* Tier 1 — page turns + progress island */}
-        <div className="flex items-stretch gap-[var(--leaf-dock-deck-gap)]">
+        {/* ONE row. There is deliberately no progress tier above the pods:
+            it repeated the resting pill's chapter, bar and percent on a second,
+            heavier surface, and reading it as a swap (pill out, island in) is
+            what made the open deck feel bulky (founder, 2026-09-09). Progress
+            lives in the resting pill and nowhere else.
+
+            `‹` and `›` are screen-reader-only below `lg`. They exist for
+            assistive tech and switch access — the page-turn tap zones are
+            `tabIndex={-1}` by design and keyboards already have ←/→ — so
+            hiding them visually on a phone costs nothing and buys the ~90px the
+            row needs to fit at 390px. On desktop there is room, so they show. */}
+        <div className="flex items-center justify-center gap-[var(--leaf-dock-deck-gap)]">
           <button
             type="button"
             onClick={onPrevPage}
             aria-label="Previous page"
-            className={`${podClass} rounded-pill hover:[background:var(--leaf-dock-hover)] active:scale-95`}
+            className={`${podClass} sr-only rounded-pill hover:[background:var(--leaf-dock-hover)] active:scale-95 lg:not-sr-only lg:flex`}
             style={{
               ...podSurface,
               width: "var(--leaf-dock-pod-size)",
-              height: "auto",
+              height: "var(--leaf-dock-pod-size)",
             }}
           >
             <ChevronLeft />
           </button>
 
-          <ProgressIsland
-            percent={percent}
-            chapterLabel={chapterLabel}
-            page={page}
-            pageTotal={pageTotal}
-          />
-
-          <button
-            type="button"
-            onClick={onNextPage}
-            aria-label="Next page"
-            className={`${podClass} rounded-pill hover:[background:var(--leaf-dock-hover)] active:scale-95`}
-            style={{
-              ...podSurface,
-              width: "var(--leaf-dock-pod-size)",
-              height: "auto",
-            }}
-          >
-            <ChevronRight />
-          </button>
-        </div>
-
-        {/* Tier 2 — five pods */}
-        <div className="flex items-center justify-center gap-[var(--leaf-dock-deck-gap)]">
           <ThemeToggle theme={theme} onSetTheme={onSetTheme} />
 
           <FontStepper fontSize={fontSize} onSetFontSize={onSetFontSize} />
@@ -694,6 +612,20 @@ export function ReaderDock({
             }}
           >
             <BookmarkIcon filled={bookmarked} />
+          </button>
+
+          <button
+            type="button"
+            onClick={onNextPage}
+            aria-label="Next page"
+            className={`${podClass} sr-only rounded-pill hover:[background:var(--leaf-dock-hover)] active:scale-95 lg:not-sr-only lg:flex`}
+            style={{
+              ...podSurface,
+              width: "var(--leaf-dock-pod-size)",
+              height: "var(--leaf-dock-pod-size)",
+            }}
+          >
+            <ChevronRight />
           </button>
 
           <button

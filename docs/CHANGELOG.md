@@ -2,6 +2,42 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Change — the open deck is one row (founder, 2026-09-09)
+
+### The progress island is gone
+Opening the deck used to hide the resting pill and raise a second, heavier
+surface above the pods showing the same three things — chapter, progress bar,
+percent. Duplication rendered as a swap, which is why the open state felt bulky.
+Progress now lives in the resting pill and nowhere else; the deck is a single row
+of controls: `[‹] [☼/☾] [A− | A+] [≡] [🔖] [›] [✕]`.
+
+`ProgressIsland` deleted, along with the dock's `page` / `pageTotal` props.
+**Consequence:** stage 4's drag-to-seek no longer has a home in the deck. It will
+need one — most likely by making the resting pill's own track seekable, which is
+arguably where a reader would reach for it anyway.
+
+### `‹` and `›` are screen-reader-only below `lg`
+Seven controls at a 44px touch target do not fit a 390px phone (≈428px of
+controls into 342px of usable width). The page-turn buttons are the ones that
+can go: they exist for assistive tech and switch access, since the tap zones are
+`tabIndex={-1}` by design and keyboards already have ←/→. `sr-only
+lg:not-sr-only` keeps them in the tab order with an accessible name at zero
+visual cost, and shows them on desktop where there is room.
+
+### Touch targets
+`--leaf-dock-pod-size` 32px → **44px**, the floor in both Apple's HIG and
+Material; icons scale from a new `--leaf-dock-icon` (20px) rather than being
+hard-coded `h-3.5`; the theme toggle grows 62×32 → 76×44 and its thumb follows,
+since it is derived from the pod size.
+
+### The reader gained a line
+The dock's lift on a phone was `--leaf-space-7` **plus** the home-indicator safe
+area — about 82px of empty space under a floating dock on a real device.
+Measured on a 390×844 viewport: the text frame ended at y=748 with the dock's top
+edge at y=756, so the gap the eye reads as "margin above the dock" was actually
+the dock sitting high off the bottom. Halved to `--leaf-space-5`: the frame grew
+716px → **740px** and the dock is still clear of the home indicator.
+
 ## Change — fewer controls, one deliberate trigger (founder, 2026-09-09)
 
 A UX pass on the dock. The theme is simplicity: every control that survives has

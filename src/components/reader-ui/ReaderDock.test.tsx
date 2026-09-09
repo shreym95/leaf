@@ -16,8 +16,6 @@ function baseProps(over: Partial<ReaderDockProps> = {}): ReaderDockProps {
     onOpenChange: vi.fn(),
     percent: 0.42,
     chapterLabel: "Chapter 4",
-    page: 3,
-    pageTotal: 12,
     toc: TOC,
     onNavigate: vi.fn(),
     onPrevPage: vi.fn(),
@@ -126,9 +124,13 @@ describe("ReaderDock — pods", () => {
       within(d).getByRole("button", { name: "Previous page" }),
     ).toBeTruthy();
     expect(within(d).getByRole("button", { name: "Next page" })).toBeTruthy();
-    expect(
-      within(d).getByRole("progressbar", { name: "Reading progress" }),
-    ).toHaveAttribute("aria-valuenow", "42");
+  });
+
+  it("shows no progress inside the deck — the resting pill owns it", () => {
+    // The deck used to carry a second surface repeating the pill's chapter,
+    // bar and percent. One row of controls, nothing else (founder, 2026-09-09).
+    renderDock();
+    expect(within(deck()).queryByRole("progressbar")).toBeNull();
   });
 
   it("the ‹ / › page-turn buttons are real, keyboard-reachable, and leave the deck open", async () => {

@@ -180,8 +180,12 @@
      bottom chrome both compete for that band. */
   --leaf-dock-bottom: calc(var(--leaf-space-5) + var(--leaf-safe-bottom));
   --leaf-dock-track-h: 3px;
-  --leaf-dock-pod-size: 32px;      /* circular pods: contents, settings, close */
-  --leaf-dock-theme-w: 62px;       /* theme pod */
+  /* 44px, not 32: that is the touch-target floor in both Apple's HIG and
+     Material, and these are the controls a thumb reaches for one-handed. The
+     icons scale with them (`--leaf-dock-icon`). */
+  --leaf-dock-pod-size: 44px;      /* circular pods: contents, bookmark, close */
+  --leaf-dock-icon: 20px;
+  --leaf-dock-theme-w: 76px;       /* theme pod */
   --leaf-dock-badge-pad-x: var(--leaf-space-2);
   --leaf-dock-deck-gap: var(--leaf-space-2);
   --leaf-dock-deck-max-w: 620px;
@@ -279,7 +283,7 @@
        shared with the home indicator and, in a browser tab, the URL bar. A dock
        tucked against the edge is both hard to hit and easy to mistake for
        browser chrome. */
-    --leaf-dock-bottom: calc(var(--leaf-space-7) + var(--leaf-safe-bottom));
+    --leaf-dock-bottom: calc(var(--leaf-space-5) + var(--leaf-safe-bottom));
     /* Full-bleed: the text runs close to the screen edge, so the ribbon tucks
        in tighter than it does against a desktop mat. */
     --leaf-ribbon-inset: var(--leaf-space-4);

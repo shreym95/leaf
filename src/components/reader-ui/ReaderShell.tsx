@@ -442,8 +442,6 @@ export function ReaderShell({
         onOpenChange={setDeckOpen}
         percent={percent}
         chapterLabel={chapterLabel}
-        page={folio.left}
-        pageTotal={folio.total}
         toc={toc}
         onNavigate={(href) => void controllerRef.current?.goTo(href)}
         onPrevPage={() => turn("prev", "dock-prev")}
