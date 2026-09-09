@@ -419,7 +419,10 @@ export function ReaderShell({
 
   return (
     <>
-      <ReaderTopBar />
+      <ReaderTopBar
+        immersive={immersive}
+        onToggleImmersive={toggleImmersive}
+      />
 
       <SpreadFrame
         viewerRef={viewerRef}

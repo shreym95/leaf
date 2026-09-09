@@ -79,9 +79,14 @@ export default async function LibraryPage({
                   header is already the shelf's heading, and a second label
                   would just repeat it. */}
               {hero && (
-                <h2 className="font-mono font-medium uppercase text-faint [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)]">
-                  All books
-                </h2>
+                <div className="flex items-baseline gap-4 border-b border-rule-soft pb-2">
+                  <h2 className="flex-none font-display text-ink [font-size:var(--leaf-text-lg)]">
+                    All books
+                  </h2>
+                  <span className="ml-auto flex-none font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)]">
+                    {shelf.length} {shelf.length === 1 ? "volume" : "volumes"}
+                  </span>
+                </div>
               )}
               <Shelf books={shelf} />
             </section>

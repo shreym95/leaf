@@ -33,13 +33,15 @@ describe("BookCard", () => {
     expect(screen.getByRole("link")).toHaveAttribute("href", "/reader/b1");
   });
 
-  it("shows title, author and where the book came from", () => {
+  it("shows title and author, and nothing else in the caption", () => {
     render(<BookCard book={makeBook()} />);
     expect(
       screen.getByRole("heading", { name: "Frankenstein" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Mary Shelley")).toBeInTheDocument();
-    expect(screen.getByText("Standard Ebooks")).toBeInTheDocument();
+    // Provenance was dropped from the card: it was a fourth caption line under
+    // every cover and the shelf is meant to be scanned, not read.
+    expect(screen.queryByText("Standard Ebooks")).toBeNull();
   });
 
   it("labels a part-read book with its rounded percent", () => {

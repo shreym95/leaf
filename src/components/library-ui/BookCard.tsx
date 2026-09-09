@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import clsx from "clsx";
-import type { BookSource } from "@/lib/types";
 import type { LibraryBook } from "@/lib/db/books";
 import { BookActions } from "./BookActions";
 
@@ -35,12 +34,6 @@ export interface BookCardProps {
   book: LibraryBook;
 }
 
-const SOURCE_LABEL: Record<BookSource, string> = {
-  standardebooks: "Standard Ebooks",
-  gutenberg: "Project Gutenberg",
-  upload: "Upload",
-};
-
 export function BookCard({ book }: BookCardProps) {
   const initial = book.title.trim().charAt(0).toUpperCase() || "?";
 
@@ -59,14 +52,14 @@ export function BookCard({ book }: BookCardProps) {
 
   return (
     <article className="relative h-full hover:z-10">
-      {/* One wrapper carries the elevation and the hover lift so the card and
-          its actions trigger rise together. */}
+      {/* No card box. A shelf is books standing on a surface, so the only
+          object with edges and elevation is the cover itself — the wrapper
+          carries the lift so the cover and its actions trigger rise together,
+          and nothing else. A bordered, elevated panel around every book made
+          the grid read as a table of UI widgets (founder, 2026-09-09). */}
       <div
         className={clsx(
-          // `h-full` so a two-line title on one card does not leave its
-          // neighbours short — the grid row stretches, the elevation follows.
-          "relative h-full rounded-md",
-          "[box-shadow:var(--leaf-shadow-card)] hover:[box-shadow:var(--leaf-shadow-card-hover)]",
+          "group/card relative h-full",
           "transition [transition-duration:var(--leaf-dur-ui)] [transition-timing-function:var(--leaf-ease)]",
           // The lift is decoration, not information — gated off under
           // prefers-reduced-motion, where nothing about the card depends on it.
@@ -76,8 +69,7 @@ export function BookCard({ book }: BookCardProps) {
         <Link
           href={`/reader/${book.id}`}
           className={clsx(
-            "group flex h-full flex-col gap-3 rounded-md p-3",
-            "transition-colors [transition-duration:var(--leaf-dur-ui)] hover:bg-page",
+            "group flex h-full flex-col gap-[var(--leaf-space-3)] rounded-sm",
             "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]",
           )}
         >
@@ -87,7 +79,7 @@ export function BookCard({ book }: BookCardProps) {
               left pale bands down both sides of every normal cover. Odd-ratio
               covers still letterbox onto the card ground (`bg-page`), reading as
               the book resting on a page rather than a UI artifact. */}
-          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule-soft bg-page">
+          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule-soft bg-page [box-shadow:var(--leaf-shadow-card)] [transition:box-shadow_var(--leaf-dur-ui)_var(--leaf-ease)] group-hover/card:[box-shadow:var(--leaf-shadow-card-hover)]">
             {book.coverUrl ? (
               <Image
                 src={book.coverUrl}
@@ -113,23 +105,23 @@ export function BookCard({ book }: BookCardProps) {
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <h3 className="font-display text-ink [font-size:var(--leaf-text-lg)] [line-height:var(--leaf-leading-tight)]">
+          {/* Tight, small, left-aligned — the cover does the identifying work
+              and the words are a caption under it, not a headline. */}
+          <div className="flex flex-col gap-[var(--leaf-space-1)]">
+            {/* Two lines maximum: in a three-column phone grid a long title
+                ran to four and left the row ragged. The full title is still
+                the link's accessible name. */}
+            <h3 className="line-clamp-2 font-display text-ink [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-tight)]">
               {book.title}
             </h3>
-            <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
+            <p className="font-ui text-ink-mid [font-size:var(--leaf-text-xs)]">
               {book.author}
             </p>
             {/* Where the reader is in the book, as one word. `UNREAD` covers
                 both "never opened" and "opened, no progress" — the distinction
                 the old ribbon drew was noise on a shelf. */}
-            <p className="font-mono uppercase text-faint [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]">
+            <p className="font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)]">
               {stateLabel}
-            </p>
-            {/* Where a book came from is provenance, not something to scan for —
-                smallest type, quietest colour, no tracking. */}
-            <p className="font-ui text-faint [font-size:var(--leaf-text-3xs)]">
-              {SOURCE_LABEL[book.source]}
             </p>
           </div>
         </Link>
@@ -137,7 +129,12 @@ export function BookCard({ book }: BookCardProps) {
         {/* Outside the <Link>: the card is one focusable link, and a button
             nested in an anchor is invalid and unreachable by keyboard. On a
             frosted disc so it holds up over busy cover artwork. */}
-        <div className="absolute right-4 top-4 z-10 rounded-pill bg-page/70 backdrop-blur-md">
+        {/* Quiet on a pointer device until the card is hovered or something
+            inside it takes focus — a disc on every cover was the loudest thing
+            on the shelf. Never `hidden`: it stays in the tab order, and on
+            touch (no hover) it is always visible because there is no other way
+            to reach it. Opacity only, so focus-visible still paints its ring. */}
+        <div className="absolute right-2 top-2 z-10 rounded-pill bg-page/70 backdrop-blur-md [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] lg:opacity-0 lg:group-hover/card:opacity-100 lg:focus-within:opacity-100">
           <BookActions
             bookId={book.id}
             title={book.title}
