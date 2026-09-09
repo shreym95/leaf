@@ -39,15 +39,6 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
     rule: "#8f8358",
     selection: "rgba(138, 43, 30, 0.2)",
   },
-  sepia: {
-    page: "#ede2cb",
-    ink: "#2b2218",
-    inkMid: "#5e503f",
-    faint: "#6a5c48",
-    accent: "#9e472a",
-    rule: "#8f7d55",
-    selection: "rgba(158, 71, 42, 0.22)",
-  },
   night: {
     page: "#1a1611",
     ink: "#e0d5bd",
@@ -79,7 +70,7 @@ export type ContentThemeStyles = Record<string, Record<string, string>>;
 /**
  * Build the epub.js-registerable style object for a theme.
  *
- * @param themeId - a registered Leaf theme id (`"day"` | `"sepia"` | `"night"`).
+ * @param themeId - a registered Leaf theme id (`"day"` | `"night"`).
  */
 export function buildContentTheme(themeId: ThemeId): ContentThemeStyles {
   const p = PALETTES[themeId];

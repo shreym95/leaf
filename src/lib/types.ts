@@ -11,9 +11,10 @@
 // design layer. `src/design/themes.ts` keys its registry off this type, so a new
 // id here is a compile error until every palette exists.
 //
-// Widening this union means widening the CHECK constraints too: see
-// `supabase/migrations/0004_sepia_theme.sql` for the pattern.
-export type ThemeName = "day" | "sepia" | "night";
+// Changing this union means changing the CHECK constraints too: see
+// `supabase/migrations/0006_two_themes.sql` for the pattern (it narrows the set
+// back to {day, night}, and migrates rows before tightening the constraint).
+export type ThemeName = "day" | "night";
 export type BookSource = "standardebooks" | "gutenberg" | "upload";
 export type BookStatus = "reading" | "finished";
 export type FontFamily = "serif" | "sans" | "legible";

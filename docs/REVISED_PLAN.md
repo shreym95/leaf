@@ -21,6 +21,14 @@ This document persists the architectural and design blueprint for **Leaf**, an i
 ## 2. Design Tokens & Theme Architecture
 
 ### A. Three-Tier Theme System (`tokens.css` & `themes.ts`)
+
+> **Superseded 2026-09-09.** Sepia was built, shipped, and then retired: Leaf runs
+> **two** themes, Day and Night (migration `0006_two_themes.sql`, which folds sepia
+> rows to day before narrowing the CHECK constraints). The rest of this section is
+> kept as written — the token architecture and the "palette exists twice" rule it
+> establishes are unchanged, and only the count moved. The knock-on is that the
+> theme control is a two-state toggle, not a segmented picker, which is what §9's
+> reader dock specifies anyway.
 Leaf expands from a binary Day/Night toggle to a 3-tier palette: **Day (Clean Neutral)**, **Sepia (Warm Natural Paper)**, and **Night (Deep Soot / Copper)**.
 
 ```css
@@ -357,7 +365,7 @@ stay inside the swappable layer (`src/design`, `src/components/*-ui`, `src/compo
 | :--- | :--- |
 | **Hero "Currently reading"** | Pinned spotlight above the grid for the single most recently read book: 130px `3/4` cover with a 12px spine crease (`::before` gradient), mono eyebrow, Fraunces title, progress track, `Continue Reading →` pill. |
 | **Shelf grid** | 4 / 3 / 2 columns (desktop / tablet / mobile), 10px spine crease per card, state label per card (`35% READ`, `COMPLETED`, `UNREAD`). |
-| **Header** | Wordmark + 3-way `DAY | SEPIA | NIGHT` segmented picker. |
+| **Header** | Wordmark + `DAY | NIGHT` toggle (the handoff drew three; sepia was retired 2026-09-09). |
 
 Touches `Shelf.tsx` (grid is `auto-fill/minmax` today, spec wants fixed column counts),
 `BookCard.tsx`, and a new `HeroCard.tsx`.
@@ -396,7 +404,9 @@ light/sepia, `#1c1713` night); transitions 180–240ms on `cubic-bezier(0.22, 0.
 
 - All four fonts (`Fraunces`, `EB Garamond`, `Source Sans 3`, `JetBrains Mono`) are loaded in
   `layout.tsx` and bound to token variables. No font work.
-- Three themes (`day` / `sepia` / `night`) exist in `tokens.css` and `themes.ts`.
+- Themes exist in `tokens.css` and `themes.ts`. Note the handoff assumes `day` /
+  `sepia` / `night`; sepia was retired 2026-09-09, so the dock's 2-state sun/moon
+  slider now maps exactly onto what Leaf actually has.
 - `100dvh` + `overflow: hidden` + `env(safe-area-inset-bottom)` match the current reader.
 - No blur on prose is already true.
 

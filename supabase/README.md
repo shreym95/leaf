@@ -88,10 +88,12 @@ that later marks it "applied" after a hand-run is harmless.
 ### Order dependency
 
 If the project is ever rebuilt from scratch, the migrations must run in
-filename order: `0001` → `0002` → `0003` → `0004` → `0005`. `0004` alters CHECK
-constraints created in `0001` and will fail against a database that has not run
-`0001`; `0005` (the `bookmarks` table) references `books` and `auth.users`.
-`supabase db push` against a fresh project handles the ordering itself.
+filename order: `0001` → `0002` → `0003` → `0004` → `0005` → `0006`. `0004`
+alters CHECK constraints created in `0001` and will fail against a database that
+has not run `0001`; `0005` (the `bookmarks` table) references `books` and
+`auth.users`; `0006` narrows the theme set `0004` widened, and moves any `sepia`
+rows to `day` before it tightens the constraint — order matters inside that file
+too. `supabase db push` against a fresh project handles the ordering itself.
 
 `0005_bookmarks.sql` is a hand-apply like the others: Dashboard → SQL Editor →
 paste → Run. Its `create table` is not `if not exists` (same as `0001`), so a

@@ -24,9 +24,15 @@ Three consequences that decide most arguments:
 - **Calm motion.** Long, soft transitions for the theme (600ms); quick, unfussy
   ones for UI (250ms). Nothing bounces, nothing springs.
 
-We ship **one committed aesthetic** with **three themes the reader picks**. There is
+We ship **one committed aesthetic** with **two themes the reader picks**. There is
 no "style variant" system, no `data-aesthetic`, no A/B test. Themes change the
 palette; they never change the layout, type scale, or personality.
+
+Sepia was the third, shipped in Phase 1 and **retired 2026-09-09** (migration
+`0006`). Day and Night are the two the aesthetic actually needs — sepia's warm
+paper sat a shade off Day's and read as a variant of it rather than a choice, and
+a two-state control is a toggle rather than a picker, which is what the reader
+dock wants. Sepia rows fold to Day, not Night: it was a light paper.
 
 ---
 
@@ -109,14 +115,14 @@ missing token in one theme is a failing build, not a visual surprise.
 | `--leaf-selection` | Text-selection wash. |
 | `--leaf-hl-{copper,sage,sky,rose}` | The four highlight washes. |
 
-Three themes, in registry (display) order — **light → dark**:
+Two themes, in registry (display) order — **light → dark**:
 
-| | Day | Sepia | Night |
-|---|---|---|---|
-| page | `#f1ebdc` | `#ede2cb` | `#1a1611` |
-| paper | `#e7dfcc` | `#e4d8be` | `#100d09` |
-| ink | `#26200f` | `#2b2218` | `#e0d5bd` |
-| accent | `#8a2b1e` oxblood | `#9e472a` terracotta | `#c58a52` copper |
+| | Day | Night |
+|---|---|---|
+| page | `#f1ebdc` | `#1a1611` |
+| paper | `#e7dfcc` | `#100d09` |
+| ink | `#26200f` | `#e0d5bd` |
+| accent | `#8a2b1e` oxblood | `#c58a52` copper |
 
 `DEFAULT_THEME` is **`night`**. Themes are driven **only** by the `data-theme`
 attribute — never by `prefers-color-scheme`. A reader who picked Day keeps Day at
@@ -260,8 +266,11 @@ is five files plus a migration, and the compiler will walk you through most of i
 4. **`src/design/content-theme.ts`** — add the `PALETTES` entry (the book iframe
    cannot read your CSS vars).
 5. **`src/design/highlight-theme.ts`** — add the `WASH` entry, four colours.
-6. **`supabase/migrations/000N_<name>.sql`** — widen both CHECK constraints. Pattern
-   to copy: `supabase/migrations/0004_sepia_theme.sql`.
+6. **`supabase/migrations/000N_<name>.sql`** — widen both CHECK constraints
+   (`profiles.default_theme` and `reader_settings.theme`). Pattern to copy:
+   `supabase/migrations/0004_sepia_theme.sql`. **Removing** a theme is the harder
+   direction — see `0006_two_themes.sql`: existing rows must be moved *before* the
+   constraint tightens, or Postgres rejects the whole statement.
 
 Steps 3–5 are `Record<ThemeName, …>`, so `npm run typecheck` fails until each is
 done. Step 2 is covered by a test. **Step 6 is the one nothing catches at build

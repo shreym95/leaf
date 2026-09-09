@@ -11,7 +11,6 @@
    Structure:
      :root                 -> theme-independent scales (type, space, radii, motion)
      [data-theme="day"]    -> one palette
-     [data-theme="sepia"]  -> one palette   (warm paper, light -> dark: between the two)
      [data-theme="night"]  -> one palette   (registry default; set elsewhere)
      :root (elevation)     -> shadows that compose the palette vars above
      :root[data-theme="night"] -> elevation overrides (black shadows vanish on soot)
@@ -164,6 +163,37 @@
   --leaf-reader-bar-pad-y: var(--leaf-space-4);
   --leaf-reader-progress-w: min(420px, 40vw);
   --leaf-reader-progress-h: 3px;
+
+  /* --- Reader dock (design iteration 1, REVISED_PLAN §9 requirement 2) ------
+     Geometry only; the dock's surface colours are per-theme, below. Motion
+     deliberately reuses `--leaf-ease` (already the iteration's exact curve)
+     and `--leaf-dur-ui`, so the reduced-motion block at the foot of this file
+     keeps governing the dock for free. */
+  --leaf-dock-h: 34px;             /* resting pill height */
+  --leaf-dock-radius: 999px;
+  --leaf-dock-pad-x: var(--leaf-space-3);
+  --leaf-dock-gap: var(--leaf-space-2);
+  --leaf-dock-progress-w: 130px;   /* resting pill's hairline progress */
+  --leaf-dock-track-h: 3px;
+  --leaf-dock-pod-size: 32px;      /* circular pods: contents, settings, close */
+  --leaf-dock-theme-w: 62px;       /* theme pod */
+  --leaf-dock-badge-pad-x: var(--leaf-space-2);
+  --leaf-dock-deck-gap: var(--leaf-space-2);
+  --leaf-dock-deck-max-w: 620px;
+
+  /* --- Reading brightness (stage 3) ---------------------------------------
+     A warm near-black scrim over the whole reader, dimming page and chrome
+     together. `--leaf-dim` is the live 0..1 opacity, written by the brightness
+     control; `--leaf-dim-max` is the per-theme ceiling that keeps composited
+     body text at or above 4.5:1 and is NOT a preference — it is a computed
+     a11y floor (see the brightness module's test). */
+  --leaf-dim: 0;
+  --leaf-dim-scrim: #0b0805;       /* warm near-black, not pure #000 */
+
+  /* --- Library shelf (design iteration 1, requirement 1) ------------------- */
+  --leaf-hero-cover-w: 130px;
+  --leaf-hero-crease-w: 12px;      /* hero cover's left spine indent */
+  --leaf-card-crease-w: 10px;      /* shelf card's left spine indent */
 }
 
 /* ---------------------------------------------------------------------------
@@ -231,34 +261,17 @@
   --leaf-hl-sage: rgba(104, 140, 92, 0.28);
   --leaf-hl-sky: rgba(86, 132, 178, 0.28);
   --leaf-hl-rose: rgba(186, 92, 116, 0.28);
-  color-scheme: light;
-}
-
-/* ---------------------------------------------------------------------------
-   Palette — SEPIA (warm natural paper, sits between day and night)
-   ------------------------------------------------------------------------- */
-[data-theme="sepia"] {
-  --leaf-paper: #e4d8be;
-  --leaf-page: #ede2cb;
-  --leaf-edge: #d1c3a5;
-  --leaf-ink: #2b2218;
-  --leaf-ink-mid: #5e503f;
-  /* faint darkened from the plan's #7a6b57 (~4.0:1, failed AA on --leaf-page)
-     to ~5.0:1, matching the treatment day/night already got. */
-  --leaf-faint: #6a5c48;
-  --leaf-accent: #9e472a;
-  /* rule darkened from the plan's #c7b897 (~1.5:1) to ~3.1:1 on --leaf-page,
-     same WCAG 1.4.11 fix applied to day and night; still a hairline. */
-  --leaf-rule: #8f7d55;
-  --leaf-gutter: rgba(43, 34, 24, 0.06);
-  --leaf-focus: #9e472a;
-  --leaf-selection: rgba(158, 71, 42, 0.22);
-  /* Highlight wash — painted into the book iframe behind the text, so these are
-     translucent and must stay light enough to read `--leaf-ink` through. */
-  --leaf-hl-copper: rgba(190, 120, 60, 0.32);
-  --leaf-hl-sage: rgba(104, 140, 92, 0.30);
-  --leaf-hl-sky: rgba(86, 132, 178, 0.30);
-  --leaf-hl-rose: rgba(186, 92, 116, 0.30);
+  /* Reader dock — one solid flat surface shared by the resting pill and the
+     expanded deck (iteration 1 §4: no translucent mismatch between states). */
+  --leaf-dock-bg: #1f1a16;
+  --leaf-dock-border: #352d26;
+  --leaf-dock-text: #f2ece0;
+  --leaf-dock-text-muted: #9c8e7e;   /* ~5.5:1 on --leaf-dock-bg */
+  --leaf-dock-track: #352d26;
+  --leaf-dock-hover: #2a231e;
+  /* Day has the most contrast headroom, so it can take the most dimming before
+     body ink on paper falls to 4.5:1. */
+  --leaf-dim-max: 0.5;
   color-scheme: light;
 }
 
@@ -288,6 +301,17 @@
   --leaf-hl-sage: rgba(126, 168, 112, 0.30);
   --leaf-hl-sky: rgba(116, 162, 208, 0.30);
   --leaf-hl-rose: rgba(210, 118, 142, 0.30);
+  /* Reader dock — matte black on night, so the dock reads as a surface rather
+     than a light source next to near-black paper. */
+  --leaf-dock-bg: #1c1713;
+  --leaf-dock-border: #302821;
+  --leaf-dock-text: #e4dac5;
+  --leaf-dock-text-muted: #8a7c6b;   /* ~4.5:1 on --leaf-dock-bg */
+  --leaf-dock-track: #302821;
+  --leaf-dock-hover: #241e19;
+  /* Night starts dark: there is far less room to dim before ink on paper
+     stops clearing AA. */
+  --leaf-dim-max: 0.25;
   color-scheme: dark;
 }
 
@@ -306,7 +330,7 @@
     0 0 0 4px var(--leaf-focus);
 
   /* Book-card elevation. The two inset edges fake a page block: a lit left edge
-     and a shaded right one. Tuned for the light palettes (day / sepia). */
+     and a shaded right one. Tuned for the light palette (day). */
   --leaf-shadow-card:
     0 2px 4px -1px rgba(0, 0, 0, 0.06),
     0 4px 12px -2px rgba(0, 0, 0, 0.08),

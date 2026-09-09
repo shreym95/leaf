@@ -23,7 +23,6 @@ export const THEMES = {
   // Registry order is display order: light -> dark. The theme picker renders
   // them in this sequence.
   day: { id: "day", label: "Day" },
-  sepia: { id: "sepia", label: "Sepia" },
   night: { id: "night", label: "Night" },
 } as const satisfies Record<ThemeName, ThemeMeta>;
 

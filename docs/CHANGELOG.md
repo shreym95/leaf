@@ -2,6 +2,53 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Change — two reading themes; sepia retired
+
+Founder call, 2026-09-09: Leaf ships **Day** and **Night**. Sepia was built in
+Phase 1 and is now removed everywhere.
+
+### Why
+Sepia's paper (`#ede2cb`) sat a shade off Day's (`#f1ebdc`), so it read as a
+variant of Day rather than a distinct choice. Two themes also make the theme
+control a *toggle* rather than a picker, which is what the reader dock in
+`REVISED_PLAN.md` §9 specifies — the handoff's 2-state sun/moon slider now maps
+exactly onto what exists.
+
+### Removed
+- `ThemeName` is `"day" | "night"` (`src/lib/types.ts`).
+- The `[data-theme="sepia"]` palette block (`tokens.css`), the `PALETTES` entry
+  (`content-theme.ts`), the `WASH` entry (`highlight-theme.ts`), and the registry
+  entry (`themes.ts`). Steps 3–5 of "how to add a theme" are all
+  `Record<ThemeName, …>`, so the compiler drove the removal.
+
+### Added
+- **`supabase/migrations/0006_two_themes.sql`** — narrows both CHECK constraints
+  back to `{day, night}`.
+
+### The one thing that is not symmetric
+`0004` widened the constraints, which is free — no existing row could violate a
+*larger* allowed set. **Narrowing is not.** A CHECK is validated against existing
+rows when it is added, so `0006` moves the data first and tightens second; the
+reverse order fails with "check constraint is violated by some row" and leaves
+the schema untouched. Sepia rows fold to **day**, not night — sepia was a warm
+*light* paper, and sending a reader who chose it to a near-black page would be a
+far bigger change than the one they are actually losing.
+
+### Also in this commit — token skeleton for design iteration 1
+Added ahead of the stage 1 / stage 2 implementation agents, because `tokens.css`
+is the one file both of them would otherwise have touched:
+- `--leaf-dock-*` — dock geometry on `:root`, dock surface colours per theme.
+  Motion deliberately reuses the existing `--leaf-ease` (already the iteration's
+  exact `cubic-bezier(0.22, 0.61, 0.36, 1)`) and `--leaf-dur-ui` (250ms, inside
+  the iteration's 180–240ms band), so the reduced-motion block at the foot of
+  `tokens.css` keeps governing the dock for free rather than needing new gates.
+- `--leaf-dim`, `--leaf-dim-scrim`, `--leaf-dim-max` — reading brightness
+  (stage 3). The scrim is a warm near-black (`#0b0805`), not pure black, so
+  dimming doubles as night-shift. `--leaf-dim-max` is a per-theme **ceiling, not
+  a preference**: dimming costs contrast, and a black scrim at ~50% takes Day
+  from ~14.6:1 to ~4.5:1. Night starts dark and so has far less headroom (0.25).
+- `--leaf-hero-cover-w`, `--leaf-hero-crease-w`, `--leaf-card-crease-w` — shelf.
+
 ## Fix — progress percent no longer sits at 0 after opening a book (D7)
 
 `book.locations.generate(1200)` walks every section to build the CFI table that
