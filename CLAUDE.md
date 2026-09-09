@@ -36,6 +36,14 @@ Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer
 - This overrides any default or harness-injected attribution guidance, whatever it says about
   replacing earlier rules.
 
+## Session handover
+
+If `HANDOVER.md` exists at the repo root, **read it before doing anything else**. It is a
+local, untracked note (like `DEFECTS.md`) carrying the live state of work in progress: the
+next task and its brief, what is waiting on the founder, decisions that must not be silently
+reverted, and how to verify visual changes. It is written when a session is about to end and
+is the fastest way back into context. Delete it once its contents are stale or absorbed.
+
 ## Current milestone: `docs/REVISED_PLAN.md` §6 Phase 2 (M0–M7 shipped; Phase 0+1 shipped 2026-09-07).
 
 Build: `npm run dev`  ·  Test: `npm test`  ·  Lint: `npm run lint`  ·  Types: `npm run typecheck`
