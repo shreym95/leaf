@@ -37,7 +37,18 @@ export interface ReaderContentSettings {
 
 export interface ReaderLocation {
   cfi: string;
-  percent: number; // 0..1 via book.locations (0 until locations are ready)
+  /**
+   * 0..1 through the book. Exact once the locations table is loaded; before
+   * that it is a spine-position estimate (see `estimated`), never a raw 0 —
+   * an honest 0% on open read as a broken progress bar (DEFECTS.md D7).
+   */
+  percent: number;
+  /**
+   * True while `percent` is the estimate rather than a `book.locations`
+   * reading. Only ever true on a book's first open on this device, and only
+   * until the table finishes generating. `cfi` is exact either way.
+   */
+  estimated?: boolean;
   displayedPage?: number; // rendition.currentLocation().start.displayed.page
   totalPages?: number;
 }
@@ -82,12 +93,20 @@ export interface ReaderController {
 // Wired in `attach()` BEFORE the first `rendition.display()` so chapter one
 // renders through it; refreshed on every settings change.
 import { registerContentPipeline } from "./content-hook";
+import {
+  readCachedLocations,
+  writeCachedLocations,
+} from "./locations-cache";
 
 // All book-content styling (fonts, size, spacing, margins, Day/Night) is owned
 // by the content pipeline (`./content-hook`) — it injects one authoritative
 // `<style>` per chapter. The engine just tells it to refresh and re-flows.
 
 const SPREAD_MIN_WIDTH = 1024; // ≥ this → two-page spread, else single page
+
+// Granularity of the locations table. Part of the cache key: change it and
+// every stored table is correctly ignored rather than silently misread.
+const LOCATION_CHARS = 1200;
 
 /**
  * Remove accumulated sub-pixel scroll drift before a forward turn.
@@ -204,6 +223,47 @@ function sectionIndexOf(rendition: unknown): number | undefined {
   }
 }
 
+/**
+ * A rough 0..1 position from the spine alone, for the window before the
+ * locations table exists (DEFECTS.md D7).
+ *
+ * It weights every section equally, so it is not the real percentage — a long
+ * chapter advances it too slowly and a short one too fast. What it is, is
+ * monotonic, instant, and never a flat 0 on chapter twelve. The exact value
+ * replaces it as soon as `book.locations` is ready, which on a cached book is
+ * before the first page paints.
+ *
+ * Returns `undefined` when the spine length is unknown — the caller then keeps
+ * the old behaviour of reporting 0.
+ */
+export function estimateProgress(
+  sectionIndex: number | undefined,
+  sectionCount: number,
+  page?: number,
+  totalPages?: number,
+): number | undefined {
+  if (!Number.isFinite(sectionCount) || sectionCount <= 0) return undefined;
+  if (typeof sectionIndex !== "number" || !Number.isFinite(sectionIndex)) {
+    return undefined;
+  }
+  const index = Math.min(Math.max(sectionIndex, 0), sectionCount - 1);
+
+  // How far into the current section we are, when epub.js knows. `page` is
+  // 1-based, so page 1 of 10 is the start of the section, not a tenth in.
+  let within = 0;
+  if (
+    typeof page === "number" &&
+    typeof totalPages === "number" &&
+    Number.isFinite(page) &&
+    Number.isFinite(totalPages) &&
+    totalPages > 1
+  ) {
+    within = Math.min(Math.max((page - 1) / (totalPages - 1), 0), 1);
+  }
+
+  return Math.min(Math.max((index + within) / sectionCount, 0), 1);
+}
+
 function spreadFor(width: number): "always" | "none" {
   return width >= SPREAD_MIN_WIDTH ? "always" : "none";
 }
@@ -234,6 +294,12 @@ export interface ReaderEngineOptions {
   /** Build the debug probe (`./debug`). Off by default — a normal reader never
    *  pays for it, and nothing about pagination changes when it is on. */
   debug?: boolean;
+  /**
+   * The library row id for this book. Used only as the locations-cache key
+   * (DEFECTS.md D7). Omitted — as in a test or a one-off render — the reader
+   * behaves exactly as before, generating the table on every open.
+   */
+  bookId?: string;
 }
 
 export async function createReader(
@@ -316,24 +382,46 @@ export async function createReader(
   // epub.js `relocated` payload is loosely typed across versions; read defensively.
   function handleRelocated(raw: unknown): void {
     const loc = raw as {
-      start?: { cfi?: string; displayed?: { page?: number; total?: number } };
+      start?: {
+        cfi?: string;
+        index?: number;
+        displayed?: { page?: number; total?: number };
+      };
       cfi?: string;
     };
     const cfi = loc?.start?.cfi ?? loc?.cfi;
     if (!cfi) return;
     lastKnownCfi = cfi;
 
+    const page = loc?.start?.displayed?.page;
+    const totalPages = loc?.start?.displayed?.total;
+
     let percent = 0;
+    let estimated = false;
     if (locationsReady) {
       const p = book.locations.percentageFromCfi(cfi);
       percent = Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
+    } else {
+      // Locations are still generating (first open of this book on this
+      // device). Report the spine estimate rather than 0 — see D7.
+      const est = estimateProgress(
+        loc?.start?.index,
+        sectionCount,
+        page,
+        totalPages,
+      );
+      if (est !== undefined) {
+        percent = est;
+        estimated = true;
+      }
     }
 
     emit({
       cfi,
       percent,
-      displayedPage: loc?.start?.displayed?.page,
-      totalPages: loc?.start?.displayed?.total,
+      estimated,
+      displayedPage: page,
+      totalPages,
     });
   }
 
@@ -435,16 +523,48 @@ export async function createReader(
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
 
+      // A locations table cached from an earlier open makes `percent` exact
+      // from the very first `relocated` event: no generate pass, no estimate
+      // window, no 0% (DEFECTS.md D7). `load()` is synchronous, so this has to
+      // happen before the first display, not after it.
+      const cachedLocations = options?.bookId
+        ? readCachedLocations(options.bookId, LOCATION_CHARS)
+        : undefined;
+      if (cachedLocations) {
+        try {
+          book.locations.load(cachedLocations);
+          // A truncated table parses fine but leaves `total` at -1, which would
+          // make every percentage NaN. Only trust a non-empty one.
+          locationsReady = book.locations.length() > 0;
+        } catch {
+          locationsReady = false;
+        }
+      }
+
       // The content pipeline (registered above) styles chapter one on its first
       // render — no pre-display theming needed here.
       await rendition.display();
 
-      // Resolve `attach` now; let locations finish in the background and start
-      // emitting real `percent` once ready (SPEC §8). Until then `percent` is 0.
+      if (locationsReady) return;
+
+      // Cache miss. Resolve `attach` now and let locations finish in the
+      // background (SPEC §8); until they do, `percent` is the spine estimate.
       void book.locations
-        .generate(1200)
+        .generate(LOCATION_CHARS)
         .then(() => {
           locationsReady = true;
+          if (options?.bookId) {
+            try {
+              writeCachedLocations(
+                options.bookId,
+                LOCATION_CHARS,
+                book.locations.save(),
+              );
+            } catch {
+              // Caching is an optimisation; failing to store must not stop the
+              // reader from using the table it just built.
+            }
+          }
           try {
             const here = rendition?.currentLocation() as unknown;
             if (here && typeof here === "object" && "start" in here) {

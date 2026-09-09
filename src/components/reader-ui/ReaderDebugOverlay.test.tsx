@@ -131,9 +131,11 @@ describe("ReaderShell — the debug readout is opt-in only", () => {
     expect(screen.queryByRole("button", { name: /reader debug readout/i })).toBeNull();
     // The engine must not be asked for instrumentation either — an unasked-for
     // reader pays nothing for this build.
-    expect(createReader).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-      debug: false,
-    });
+    expect(createReader).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ debug: false }),
+    );
   });
 
   it("renders the readout and arms the probe when debug is requested", async () => {
@@ -142,9 +144,11 @@ describe("ReaderShell — the debug readout is opt-in only", () => {
     await ready();
 
     expect(await screen.findByRole("region", { name: OVERLAY })).toBeInTheDocument();
-    expect(createReader).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-      debug: true,
-    });
+    expect(createReader).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ debug: true }),
+    );
   });
 });
 

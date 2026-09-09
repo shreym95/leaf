@@ -173,7 +173,12 @@ export function ReaderShell({
         const bytes = await res.arrayBuffer();
         if (cancelled) return;
 
-        const controller = await createReader(bytes, initialSettings, { debug });
+        // `bookId` keys the locations cache so progress is exact on reopen
+        // instead of climbing from 0 while the table regenerates (D7).
+        const controller = await createReader(bytes, initialSettings, {
+          debug,
+          bookId,
+        });
         if (cancelled || !viewerRef.current) {
           controller.destroy();
           return;

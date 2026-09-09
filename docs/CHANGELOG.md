@@ -2,6 +2,60 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — progress percent no longer sits at 0 after opening a book (D7)
+
+`book.locations.generate(1200)` walks every section to build the CFI table that
+`percentageFromCfi` needs. It ran on every open, in the background, and percent
+was honestly 0 until it finished — seconds on a full-length EPUB, which reads as
+a broken progress bar. Founder's ask was "pre-load, then open".
+
+Two changes, because neither alone covers both the first open and the rest.
+
+### Added
+- **`src/reader/locations-cache.ts`** — the generated table cached in
+  `localStorage` as `leaf:locations:v1:<bookId>:<chars>`, loaded synchronously on
+  the next open. Every open after the first has an exact percent before the first
+  page paints.
+- **`estimateProgress()`** (`src/reader/engine.ts`, exported for test) — a
+  spine-position estimate, `(sectionIndex + pageFractionWithinSection) / sectionCount`,
+  used only while the table is still generating.
+- **`ReaderEngineOptions.bookId`** — keys the cache. Passed from `ReaderShell`.
+  Omitted (tests, one-off renders), the engine behaves exactly as before.
+- **`ReaderLocation.estimated`** — true while `percent` is the estimate rather
+  than a locations reading. `cfi` is exact either way.
+- `src/reader/locations-cache.test.ts` — 14 tests: round-trip, per-book and
+  per-granularity keying, truncated entry, storage that throws, quota eviction,
+  and the estimate's bounds.
+
+### Decisions
+- **`localStorage`, not a `books.locations` column.** The table is derived, not
+  state; per-device is fine; and a book's bytes never change after upload (a
+  re-upload mints a new row and a new `bookId`), so the id alone is a sound key.
+  That avoids a migration and a server round-trip, and `localStorage` is
+  synchronous — a cache hit is ready *before* the first `relocated` event, where
+  an IndexedDB read would land a tick late and still flash a 0. Phase 3 moves
+  book bytes into IndexedDB (`REVISED_PLAN.md` §5); the table belongs beside them
+  then, and `locations-cache.ts` is the only file that changes.
+- **The estimate weights every section equally**, so it is not the real
+  percentage — a long chapter advances it too slowly. It is monotonic, instant,
+  and never a flat 0 on chapter twelve, which is the whole complaint. The exact
+  value replaces it as soon as the table is ready.
+- **A truncated cache entry is treated as a miss.** `locations.load()` accepts it
+  happily and leaves `total` at -1, which makes every percentage NaN — worse than
+  no cache. Read validates the JSON array delimiters and `length() > 0`.
+- **Quota errors evict other books' tables and retry once**, so the book being
+  read now is the one that stays cached.
+
+### Logic/presentation coupling (for the redesign)
+- None. `locations-cache.ts` is pure logic; the only UI-visible change is that
+  `percent` arrives non-zero sooner. A future dock with a drag-to-seek track
+  (`REVISED_PLAN.md` §9) depends on the same `book.locations`, so it inherits
+  this for free.
+
+### Known gap
+- The very first open of a book still generates the table in the background. The
+  estimate hides it; nothing removes the work.
+
 ## Docs — design iteration 1 filed (library shelf + reader dock)
 
 Founder handed over a redesign on 2026-09-09: a spec plus two runnable
