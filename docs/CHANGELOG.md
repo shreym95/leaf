@@ -2,6 +2,44 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — jump-back, and the top bar hides in fullscreen
+
+### `ReturnChip` — the reader's only undo
+Every non-linear move is destructive: tap a chapter in the contents or a
+bookmark, and the place you were holding is gone. Print does not have this
+problem — your thumb stays in the page. Kindle's answer is Page Flip, which pins
+the page you left; this is the same idea reduced to one control.
+
+Jumping through the contents popover or a bookmark now records where you were
+and paints a chip offering the way back, named for the chapter you left
+("Back to Ch. 4"). It clears when used, or after **eight page turns** — not on a
+timer, because a reader who jumps to check something often reads a page or two
+there and a timeout would pull the rope away exactly when it is still wanted.
+
+**Why this and not the drag-to-seek track.** Every mainstream reader ships a
+seekable track, but none ships a *bare* one: Kindle pins the page, Libby marks
+the timeline with chapters and bookmarks, and there are patents specifically on
+scrubber-undo. The undo is the load-bearing half. Leaf already had two
+destructive jumps in the UI with no way back, and a 168px track over a 400-page
+book resolves to ~2.4 pages per pixel — you cannot aim it anyway. So: ship the
+safety net, leave the scrubber unbuilt, and revisit only if the want shows up in
+real reading. Recorded here so the decision is not re-litigated from scratch.
+
+- `formatChapterLabel` moved out of `ReaderDock` into `chapter-label.ts` — the
+  chip and the dock both name a chapter to the reader.
+
+### The top bar hides in fullscreen
+Regression from the stage-2 decision that immersive keeps only its Fullscreen
+half: the bar stopped hiding, so entering fullscreen reclaimed the browser's
+chrome and then spent the space straight back on our own header (founder:
+"extra space at the top … in fullscreen"). Measured at 390×844 it was 32px of bar
+plus 8px of padding.
+
+It now renders `null` while `immersive && !deckOpen` — `display: none` rather
+than opacity, since the point is to return the height to the page. Opening the
+deck brings it back, so the fullscreen toggle and the way to the library are
+never unreachable, and the resting dock stays visible throughout.
+
 ## Change — the open deck is one row (founder, 2026-09-09)
 
 ### The progress island is gone

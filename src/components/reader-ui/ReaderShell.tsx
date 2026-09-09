@@ -28,6 +28,8 @@ import {
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
+import { ReturnChip } from "./ReturnChip";
+import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
 import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
 import { useImmersive } from "./useImmersive";
@@ -329,12 +331,24 @@ export function ReaderShell({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  const [returnTo, setReturnTo] = useState<{
+    cfi: string;
+    label: string | null;
+  } | null>(null);
+  // Turns since the jump. The chip is not on a timer: a reader who jumps to
+  // check something often reads a page or two there, and a timeout would pull
+  // the rope away exactly when it is still wanted. Eight turns is "you are
+  // reading here now, not visiting".
+  const turnsSinceJump = useRef(0);
+
   // ── Page turn — instant (epub.js swaps content itself) ────────────────
   // `source` names the control that fired it; the engine only records it in the
   // debug turn log (DEFECTS.md D2) and ignores it otherwise.
   const turn = useCallback((dir: "next" | "prev", source: string) => {
     const controller = controllerRef.current;
     if (!controller) return;
+    turnsSinceJump.current += 1;
+    if (turnsSinceJump.current > 8) setReturnTo(null);
     void (dir === "next" ? controller.next(source) : controller.prev(source));
   }, []);
 
@@ -348,6 +362,32 @@ export function ReaderShell({
     },
     [turn],
   );
+
+  // ── Jump-back ─────────────────────────────────────────────────────────
+  // Every non-linear move is destructive: tap a chapter or a bookmark and the
+  // place you were holding is gone. Print does not have this problem — your
+  // thumb stays in the page — and Kindle's Page Flip solves it by pinning the
+  // page you left. This is that, reduced to one control: remember where the
+  // jump started, offer a chip back, and clear it once the reader has clearly
+  // moved on.
+  const jumpTo = useCallback(
+    (target: string) => {
+      const from = hereRef.current.cfi;
+      if (from) {
+        setReturnTo({ cfi: from, label: formatChapterLabel(chapterLabel) });
+        turnsSinceJump.current = 0;
+      }
+      void controllerRef.current?.goTo(target);
+    },
+    [chapterLabel],
+  );
+
+  const returnFromJump = useCallback(() => {
+    const back = returnTo;
+    if (!back) return;
+    setReturnTo(null);
+    void controllerRef.current?.goTo(back.cfi);
+  }, [returnTo]);
 
   // ── Bookmark / un-bookmark the page on screen ─────────────────────────
   // Placeholder control (see NotesPanel header). Matches the current page by
@@ -415,6 +455,10 @@ export function ReaderShell({
     <>
       <ReaderTopBar
         immersive={immersive}
+        // Fullscreen gives the page the browser's chrome; keeping ours would
+        // hand the space straight back. Opening the deck brings it back, so the
+        // fullscreen toggle and the way to the library are never unreachable.
+        hidden={immersive && !deckOpen}
         onToggleImmersive={toggleImmersive}
       />
 
@@ -427,6 +471,10 @@ export function ReaderShell({
         onPrev={() => turnAndCloseDeck("prev", "tap-prev")}
         onNext={() => turnAndCloseDeck("next", "tap-next")}
       >
+        {returnTo && (
+          <ReturnChip label={returnTo.label} onReturn={returnFromJump} />
+        )}
+
         {load.state === "error" && (
           <p
             role="alert"
@@ -443,7 +491,7 @@ export function ReaderShell({
         percent={percent}
         chapterLabel={chapterLabel}
         toc={toc}
-        onNavigate={(href) => void controllerRef.current?.goTo(href)}
+        onNavigate={(href) => jumpTo(href)}
         onPrevPage={() => turn("prev", "dock-prev")}
         onNextPage={() => turn("next", "dock-next")}
         theme={settings.theme}
@@ -463,7 +511,7 @@ export function ReaderShell({
         }))}
         onGoToBookmark={(cfi) => {
           setDeckOpen(false);
-          void controllerRef.current?.goTo(cfi);
+          jumpTo(cfi);
         }}
         onRemoveBookmark={(id) => void bookmarksRef.current?.remove(id)}
       />

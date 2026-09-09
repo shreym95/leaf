@@ -13,7 +13,13 @@ import Link from "next/link";
  * settings sheet. It no longer hides: the dock is small enough to leave the
  * chrome up, and immersive mode is now Fullscreen-only.
  *
- * It does carry the fullscreen toggle. Immersive is Fullscreen-only now, and
+ * It hides in fullscreen and comes back when the deck opens. Fullscreen exists
+ * to reclaim the browser's own chrome, and leaving Leaf's bar behind spends the
+ * space straight back — the reader asked for the page, not for our header. The
+ * resting dock stays visible throughout, so the deck (and with it this bar, and
+ * the way back to the library) is always one tap away.
+ *
+ * It carries the fullscreen toggle. Immersive is Fullscreen-only now, and
  * its job — removing the browser's URL bar and toolbars, 56–90px that no dock
  * design can reclaim — matters most on a phone, which has no `F` key. Without a
  * control here there would be no touch way into it at all.
@@ -24,6 +30,8 @@ import Link from "next/link";
 export interface ReaderTopBarProps {
   /** Whether the document is currently fullscreen (best-effort — see useImmersive). */
   immersive: boolean;
+  /** Hide the bar entirely, giving its height back to the page. */
+  hidden: boolean;
   onToggleImmersive: () => void;
 }
 
@@ -36,8 +44,13 @@ const controlClass =
 
 export function ReaderTopBar({
   immersive,
+  hidden,
   onToggleImmersive,
 }: ReaderTopBarProps) {
+  // `display: none`, not opacity: the point is to give the height back to the
+  // page, and a merely-invisible bar still occupies the flow.
+  if (hidden) return null;
+
   return (
     <header
       className="z-30 flex flex-none items-center justify-between [padding-block:var(--leaf-reader-bar-pad-y)] [padding-inline:var(--leaf-reader-bar-pad-x)]"

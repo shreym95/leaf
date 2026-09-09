@@ -18,9 +18,9 @@ const h = vi.hoisted(() => ({
   prev: vi.fn(async () => {}),
   attach: vi.fn(async () => {}),
   goTo: vi.fn(async () => {}),
-  currentChapterLabel: vi.fn(() => undefined),
+  currentChapterLabel: vi.fn((): string | undefined => undefined),
   toc: vi.fn(() => [] as { href: string; label: string }[]),
-  onRelocated: vi.fn(() => () => {}),
+  onRelocated: vi.fn((_cb: (loc: unknown) => void) => () => {}),
   restore: vi.fn(async () => true),
   stop: vi.fn(),
 }));
@@ -202,6 +202,71 @@ describe("ReaderShell — settings reach the engine", () => {
     await user.click(screen.getByRole("button", { name: "Chapter 2" }));
 
     expect(h.goTo).toHaveBeenCalledWith("ch2.html");
+  });
+
+  it("offers a way back after a jump, and takes it", async () => {
+    // Every non-linear move is destructive; this is the only undo in the
+    // reader, and it is what makes chapter/bookmark navigation safe to ship.
+    h.toc.mockReturnValue([{ href: "ch2.html", label: "Chapter 2" }]);
+    h.currentChapterLabel.mockReturnValue("4");
+    let emit: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await act(async () => {
+      emit?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.34 });
+    });
+
+    // No jump yet — nothing to go back to.
+    expect(screen.queryByRole("button", { name: /^Return to/ })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("button", { name: "Chapter 2" }));
+
+    // A bare TOC ordinal is shown as "Ch. 4", not a hanging number.
+    const back = await screen.findByRole("button", { name: "Return to Ch. 4" });
+    h.goTo.mockClear();
+    await user.click(back);
+
+    expect(h.goTo).toHaveBeenCalledWith("epubcfi(/6/8!/4/2)");
+    expect(screen.queryByRole("button", { name: /^Return to/ })).toBeNull();
+  });
+
+  it("clears the way back once the reader has settled in", async () => {
+    // Not a timer: someone who jumps to check something often reads a page or
+    // two there, and a timeout would pull the rope away while it is wanted.
+    h.toc.mockReturnValue([{ href: "ch2.html", label: "Chapter 2" }]);
+    let emit: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await act(async () => {
+      emit?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.34 });
+    });
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("button", { name: "Chapter 2" }));
+    expect(await screen.findByRole("button", { name: /^Return to/ })).toBeTruthy();
+
+    for (let i = 0; i < 9; i++) {
+      await user.keyboard("{ArrowRight}");
+    }
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /^Return to/ })).toBeNull(),
+    );
   });
 
   it("keeps the bookmark list reachable from the contents popover", async () => {
