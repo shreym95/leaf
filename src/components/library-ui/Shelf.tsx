@@ -3,8 +3,11 @@ import { BookCard } from "./BookCard";
 
 /**
  * Shelf — responsive grid of BookCards. Presentational only; no logic beyond
- * mapping. Layout via CSS grid auto-fill/minmax so cards reflow at every width;
- * gap from Tailwind's spacing scale.
+ * mapping. Fixed column counts (design iteration 1, REVISED_PLAN §9A): 2 on
+ * mobile, 3 from the tablet breakpoint, 4 on desktop — replacing the old
+ * `auto-fill/minmax`, which drifted between 3 and 5 columns depending on the
+ * viewport. The hero book, when there is one, is removed upstream
+ * (`splitHeroBook`) so it never appears here as well.
  */
 
 export interface ShelfProps {
@@ -13,7 +16,7 @@ export interface ShelfProps {
 
 export function Shelf({ books }: ShelfProps) {
   return (
-    <ul className="grid list-none grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-6 p-0">
+    <ul className="grid list-none grid-cols-2 gap-6 p-0 sm:grid-cols-3 lg:grid-cols-4">
       {books.map((book) => (
         <li key={book.id}>
           <BookCard book={book} />

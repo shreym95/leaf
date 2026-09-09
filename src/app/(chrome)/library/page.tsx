@@ -1,6 +1,12 @@
 import { requireUser } from "@/lib/auth";
 import { listBooks, countArchivedBooks } from "@/lib/db";
-import { AddBooksBar, EmptyState, Shelf } from "@/components/library-ui";
+import {
+  AddBooksBar,
+  EmptyState,
+  HeroCard,
+  Shelf,
+  splitHeroBook,
+} from "@/components/library-ui";
 import Link from "next/link";
 import { ScreenView } from "@/components/analytics/ScreenView";
 
@@ -19,6 +25,11 @@ export default async function LibraryPage({
     listBooks(user.id, { archived: showHidden }),
     countArchivedBooks(user.id),
   ]);
+
+  // The "Continue reading" spotlight is the single most recently read book,
+  // lifted out of the grid so it never shows twice. Never in the hidden view,
+  // and none at all until some book has been opened.
+  const { hero, shelf } = splitHeroBook(books, { enabled: !showHidden });
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-10">
@@ -55,7 +66,8 @@ export default async function LibraryPage({
       ) : (
         <>
           <AddBooksBar />
-          <Shelf books={books} />
+          {hero && <HeroCard book={hero} />}
+          {shelf.length > 0 && <Shelf books={shelf} />}
         </>
       )}
 

@@ -42,35 +42,31 @@ describe("BookCard", () => {
     expect(screen.getByText("Standard Ebooks")).toBeInTheDocument();
   });
 
-  it("shows progress as a meter, not a status label", () => {
-    // "Reading" was true of almost every book and told the reader nothing.
+  it("labels a part-read book with its rounded percent", () => {
     render(<BookCard book={makeBook({ percent: 0.42 })} />);
-    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
-    expect(meter).toHaveAttribute("aria-valuenow", "42");
-    // Screen readers announce the same words the old text carried.
-    expect(meter).toHaveAttribute("aria-valuetext", "42%");
-    expect(screen.queryByText(/^Reading$/)).toBeNull();
+    expect(screen.getByText("42% READ")).toBeInTheDocument();
   });
 
-  it("announces an unopened book as not started", () => {
+  it("labels an unopened book UNREAD", () => {
     render(<BookCard book={makeBook({ percent: null })} />);
-    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
-    expect(meter).toHaveAttribute("aria-valuenow", "0");
-    expect(meter).toHaveAttribute("aria-valuetext", "Not started");
+    expect(screen.getByText("UNREAD")).toBeInTheDocument();
   });
 
-  it("calls a finished book finished, and clamps out-of-range progress", () => {
+  it("labels a book opened but at zero progress UNREAD too", () => {
+    // 0% and "never opened" are different in the data, but on the shelf they
+    // are the same state — you have not read any of it.
+    render(<BookCard book={makeBook({ percent: 0 })} />);
+    expect(screen.getByText("UNREAD")).toBeInTheDocument();
+  });
+
+  it("labels a finished book COMPLETED", () => {
+    render(<BookCard book={makeBook({ percent: 1 })} />);
+    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
+  });
+
+  it("clamps out-of-range progress to COMPLETED", () => {
     render(<BookCard book={makeBook({ percent: 1.5 })} />);
-    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
-    expect(meter).toHaveAttribute("aria-valuenow", "100");
-    expect(meter).toHaveAttribute("aria-valuetext", "Finished");
-  });
-
-  it("gives the progress meter a bounded range for assistive tech", () => {
-    render(<BookCard book={makeBook({ percent: 0.42 })} />);
-    const meter = screen.getByRole("progressbar", { name: "Reading progress" });
-    expect(meter).toHaveAttribute("aria-valuemin", "0");
-    expect(meter).toHaveAttribute("aria-valuemax", "100");
+    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
   it("without a cover, renders the title initial and no image", () => {

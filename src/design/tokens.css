@@ -194,6 +194,17 @@
   --leaf-hero-cover-w: 130px;
   --leaf-hero-crease-w: 12px;      /* hero cover's left spine indent */
   --leaf-card-crease-w: 10px;      /* shelf card's left spine indent */
+  /* The crease itself — a soft dark gradient down the binding edge, painted
+     over the cover art. Width is set per surface by the two *-crease-w tokens
+     above. Theme-independent on purpose: it reads as a shadow into the fold on
+     any cover and in either palette, which is what the iteration-1 prototype
+     committed to (one gradient, all themes). */
+  --leaf-crease: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.35) 0%,
+    rgba(0, 0, 0, 0.1) 55%,
+    transparent 100%
+  );
 }
 
 /* ---------------------------------------------------------------------------

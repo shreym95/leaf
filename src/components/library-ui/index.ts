@@ -1,6 +1,9 @@
 export { Shelf } from "./Shelf";
 export type { ShelfProps } from "./Shelf";
 
+export { HeroCard, splitHeroBook } from "./HeroCard";
+export type { HeroCardProps } from "./HeroCard";
+
 export { BookCard } from "./BookCard";
 export type { BookCardProps } from "./BookCard";
 
