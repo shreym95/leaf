@@ -21,11 +21,14 @@ export interface SpreadFrameProps {
   folioRight?: number;
   onPrev: () => void;
   onNext: () => void;
-  /** Touch-only centre tap: show/hide the reader chrome. */
-  onToggleChrome: () => void;
-  /** Whether the chrome is currently hidden — only used to name the centre tap
+  /** Touch-only centre tap: open / close the reader dock's expanded deck. */
+  onToggleDeck: () => void;
+  /** Whether the deck is currently open — only used to name the centre tap
    *  zone for assistive tech. */
-  immersive: boolean;
+  deckOpen: boolean;
+  /** The ribbon bookmark — rendered inside the frame so it aligns to the text
+   *  column. Optional so the component is still trivially testable. */
+  ribbon?: ReactNode;
   children?: ReactNode;
 }
 
@@ -41,8 +44,9 @@ export function SpreadFrame({
   folioRight,
   onPrev,
   onNext,
-  onToggleChrome,
-  immersive,
+  onToggleDeck,
+  deckOpen,
+  ribbon,
   children,
 }: SpreadFrameProps) {
   return (
@@ -111,12 +115,12 @@ export function SpreadFrame({
             middle 72% of the screen inert — a thumb landing mid-screen did
             nothing, which read as "the tap didn't register". Touch therefore
             gets e-reader-conventional zones (30% back / 45% forward) with the
-            remaining centre band toggling the chrome, so no part of the page
-            is dead.
+            remaining centre band opening / closing the dock deck, so no part of
+            the page is dead.
 
             The centre band is touch-only (`lg:hidden`). With a mouse, a click
             fires after a drag-select too, so a centre click zone would toggle
-            immersive every time a reader selected a word to copy. Pointer
+            the deck every time a reader selected a word to copy. Pointer
             devices keep the narrow 14% edges and an inert middle. */}
         <button
           type="button"
@@ -127,9 +131,9 @@ export function SpreadFrame({
         />
         <button
           type="button"
-          aria-label={immersive ? "Show reading controls" : "Hide reading controls"}
+          aria-label={deckOpen ? "Hide reading controls" : "Show reading controls"}
           tabIndex={-1}
-          onClick={onToggleChrome}
+          onClick={onToggleDeck}
           className="absolute inset-y-0 left-[30%] z-[7] w-[25%] cursor-pointer lg:hidden"
         />
         <button
@@ -140,9 +144,13 @@ export function SpreadFrame({
           className="absolute inset-y-0 right-0 z-[7] w-[45%] cursor-pointer lg:w-[14%]"
         />
 
+        {/* Bookmark ribbon — hung from the frame's top edge, right-aligned to
+            the text column (its inset is a token that tightens full-bleed). */}
+        {ribbon}
+
         {/* Folios are a framed-page affordance: with the mat gone below `lg`
             they land on top of the prose, so they only appear alongside the
-            frame. Progress lives in the bottom bar regardless. */}
+            frame. Progress lives in the dock regardless. */}
         {folioLeft != null && (
           <span className={`${folioClass} left-8 hidden lg:block`}>
             {folioLeft}

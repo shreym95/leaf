@@ -236,6 +236,40 @@ describe("wiring", () => {
     }
   });
 
+  it("toc() flattens the EPUB navigation depth-first, trimming labels", async () => {
+    book.navigation.toc = [
+      { href: "text/cover.html", label: "  Cover  " },
+      {
+        href: "text/part0001.html#top",
+        label: "Chapter 1",
+        subitems: [
+          { href: "text/part0001.html#s2", label: "  Section 1.2  " },
+          { href: "", label: "no href — skipped" },
+          { href: "text/part0001.html#s3", label: "" },
+        ],
+      },
+      { href: "text/part0002.html", label: "Chapter 2" },
+    ];
+    try {
+      const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+      await reader.attach(document.createElement("div"));
+      expect(reader.toc()).toEqual([
+        { href: "text/cover.html", label: "Cover" },
+        { href: "text/part0001.html#top", label: "Chapter 1" },
+        { href: "text/part0001.html#s2", label: "Section 1.2" },
+        { href: "text/part0002.html", label: "Chapter 2" },
+      ]);
+    } finally {
+      book.navigation.toc = [];
+    }
+  });
+
+  it("toc() is an empty array when the EPUB has no navigation", async () => {
+    const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+    await reader.attach(document.createElement("div"));
+    expect(reader.toc()).toEqual([]);
+  });
+
   it("percent stays 0 until locations.generate resolves, then reflects book.locations", async () => {
     let resolveGen: (v: unknown[]) => void = () => {};
     book.locations.generate.mockImplementationOnce(

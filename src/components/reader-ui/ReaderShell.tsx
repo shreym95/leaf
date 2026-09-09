@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { createReader, type ReaderController } from "@/reader/engine";
+import {
+  createReader,
+  type ReaderController,
+  type ReaderTocEntry,
+} from "@/reader/engine";
 import { trackPosition, type PositionTracker } from "@/reader/position";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import {
@@ -23,11 +27,11 @@ import {
 } from "@/reader/bookmarks";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
-import { ReaderBottomBar } from "./ReaderBottomBar";
+import { ReaderDock } from "./ReaderDock";
+import { RibbonBookmark } from "./RibbonBookmark";
 import { SpreadFrame } from "./SpreadFrame";
 import { ReaderSettingsSheet } from "./ReaderSettingsSheet";
 import { NotesPanel } from "./NotesPanel";
-import { ImmersiveExit } from "./ImmersiveExit";
 import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
 import { useImmersive } from "./useImmersive";
 
@@ -84,12 +88,25 @@ export function ReaderShell({
   // screen reader hears "N% read" roughly once per several pages, not on every
   // page turn (SPEC §3.6 screen-reader sanity: announce, don't chatter).
   const [announcedPct, setAnnouncedPct] = useState<number | null>(null);
-  const [folio, setFolio] = useState<{ left?: number; right?: number }>({});
-  // Immersive also drives the browser's own chrome away via the Fullscreen API
-  // (best-effort — see useImmersive).
+  const [folio, setFolio] = useState<{
+    left?: number;
+    right?: number;
+    total?: number;
+  }>({});
+  // The current chapter title (EPUB TOC) + the book's flattened TOC — both feed
+  // the dock. `toc` is read once the book is open; `chapterLabel` refreshes on
+  // every relocation.
+  const [chapterLabel, setChapterLabel] = useState<string | null>(null);
+  const [toc, setToc] = useState<ReaderTocEntry[]>([]);
+  // Immersive is now Fullscreen-only — it drives the browser's own chrome away
+  // (best-effort) and no longer hides Leaf's bars (see useImmersive). Bound to
+  // `F`; the `[immersive]` effect below still asks epub.js to re-measure.
   const { immersive, exit: exitImmersive, toggle: toggleImmersive } =
     useImmersive();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The reader dock's expanded deck. Lifted here because a page turn and the
+  // SpreadFrame centre-tap band both close/toggle it.
+  const [deckOpen, setDeckOpen] = useState(false);
 
   // ── Highlights ────────────────────────────────────────────────────────
   const highlightsRef = useRef<HighlightManager | null>(null);
@@ -144,6 +161,16 @@ export function ReaderShell({
     trackScreen("reader");
   }, []);
 
+  // ── Book identity lives in the browser tab now, not in a reader top bar
+  //    (design iteration 1 slimmed the bar to Library + wordmark). ──────────
+  useEffect(() => {
+    const previous = document.title;
+    document.title = [title, author].filter(Boolean).join(" — ") || "Leaf";
+    return () => {
+      document.title = previous;
+    };
+  }, [title, author]);
+
   // ── Theme is single-source: the reader-settings store. The toggle writes
   //    only the store; this effect propagates it to the app chrome
   //    (`<html data-theme>`) and, via the [settings] effect below, to the book. ─
@@ -197,7 +224,9 @@ export function ReaderShell({
             left: loc.displayedPage,
             right:
               loc.displayedPage != null ? loc.displayedPage + 1 : undefined,
+            total: loc.totalPages,
           });
+          setChapterLabel(controller.currentChapterLabel() ?? null);
           const p = Math.round(loc.percent * 100);
           setAnnouncedPct((prev) =>
             prev === null || Math.abs(p - prev) >= 5 ? p : prev,
@@ -213,6 +242,14 @@ export function ReaderShell({
         const tracker = trackPosition(controller, bookId);
         trackerRef.current = tracker;
         await tracker.restore();
+
+        // The book is open — read its table of contents for the dock's `≡`
+        // popover. Style-agnostic data from the engine; empty when the EPUB
+        // ships no navigation document.
+        if (!cancelled) {
+          setToc(controller.toc());
+          setChapterLabel(controller.currentChapterLabel() ?? null);
+        }
 
         // Highlights: the manager is style-agnostic, so the concrete wash comes
         // from the design layer here. `themeRef` keeps the closure reading the
@@ -301,6 +338,17 @@ export function ReaderShell({
     void (dir === "next" ? controller.next(source) : controller.prev(source));
   }, []);
 
+  // A page turn from OUTSIDE the deck (tap zones, arrow keys) collapses it —
+  // "closes on … a page turn". The deck's own `‹` / `›` call `turn` directly so
+  // a keyboard user can page through with the deck up (decision 2).
+  const turnAndCloseDeck = useCallback(
+    (dir: "next" | "prev", source: string) => {
+      turn(dir, source);
+      setDeckOpen(false);
+    },
+    [turn],
+  );
+
   // ── Bookmark / un-bookmark the page on screen ─────────────────────────
   // Placeholder control (see NotesPanel header). Matches the current page by
   // exact start-CFI — good enough for a plain toggle; a redesign can make the
@@ -339,17 +387,19 @@ export function ReaderShell({
       const key = e.key.toLowerCase();
 
       if (e.key === "Escape") {
-        if (settingsOpen) return; // Radix closes the sheet itself
+        if (settingsOpen || notesOpen) return; // Radix closes the sheet itself
+        if (deckOpen) return; // ReaderDock owns Esc while the deck is open
         if (immersive) exitImmersive();
         return;
       }
 
-      if (settingsOpen) return; // don't drive the book while the sheet is open
+      // Don't drive the book while a sheet is open.
+      if (settingsOpen || notesOpen) return;
 
       if (e.key === "ArrowRight") {
-        turn("next", "key-right");
+        turnAndCloseDeck("next", "key-right");
       } else if (e.key === "ArrowLeft") {
-        turn("prev", "key-left");
+        turnAndCloseDeck("prev", "key-left");
       } else if (key === "f") {
         toggleImmersive();
       }
@@ -357,19 +407,19 @@ export function ReaderShell({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [turn, immersive, settingsOpen, exitImmersive, toggleImmersive]);
+  }, [
+    turnAndCloseDeck,
+    immersive,
+    settingsOpen,
+    notesOpen,
+    deckOpen,
+    exitImmersive,
+    toggleImmersive,
+  ]);
 
   return (
     <>
-      <ReaderTopBar
-        title={title}
-        author={author}
-        hidden={immersive}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenNotes={() => setNotesOpen(true)}
-        onEnterImmersive={toggleImmersive}
-        highlightCount={highlights.length}
-      />
+      <ReaderTopBar />
 
       <SpreadFrame
         viewerRef={viewerRef}
@@ -377,10 +427,17 @@ export function ReaderShell({
         loading={load.state === "loading"}
         folioLeft={folio.left}
         folioRight={folio.right}
-        onPrev={() => turn("prev", "tap-prev")}
-        onNext={() => turn("next", "tap-next")}
-        onToggleChrome={toggleImmersive}
-        immersive={immersive}
+        onPrev={() => turnAndCloseDeck("prev", "tap-prev")}
+        onNext={() => turnAndCloseDeck("next", "tap-next")}
+        onToggleDeck={() => setDeckOpen((o) => !o)}
+        deckOpen={deckOpen}
+        ribbon={
+          <RibbonBookmark
+            active={here.cfi != null && bookmarks.some((b) => b.cfi === here.cfi)}
+            disabled={!here.cfi}
+            onToggle={toggleBookmark}
+          />
+        }
       >
         {load.state === "error" && (
           <p
@@ -392,25 +449,37 @@ export function ReaderShell({
         )}
       </SpreadFrame>
 
-      <ReaderBottomBar
+      <ReaderDock
+        open={deckOpen}
+        onOpenChange={setDeckOpen}
         percent={percent}
-        hidden={immersive}
-        onPrev={() => turn("prev", "bar-prev")}
-        onNext={() => turn("next", "bar-next")}
-      />
-
-      {/* Keyed so entering immersive remounts it: the control starts visible,
-          then fades on its own. */}
-      <ImmersiveExit
-        key={immersive ? "immersive" : "windowed"}
-        visible={immersive}
-        onExit={exitImmersive}
+        chapterLabel={chapterLabel}
+        page={folio.left}
+        pageTotal={folio.total}
+        toc={toc}
+        onNavigate={(href) => void controllerRef.current?.goTo(href)}
+        onPrevPage={() => turn("prev", "dock-prev")}
+        onNextPage={() => turn("next", "dock-next")}
+        theme={settings.theme}
+        onSetTheme={setReaderTheme}
+        fontSize={settings.fontSize}
+        onSetFontSize={(size) => useReaderSettings.getState().setFontSize(size)}
+        onOpenSettings={() => {
+          // Collapse the deck as the sheet takes over — one Escape target at a
+          // time (the deck and Radix both listen for it).
+          setDeckOpen(false);
+          setSettingsOpen(true);
+        }}
       />
 
       <ReaderSettingsSheet
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         onSetTheme={setReaderTheme}
+        onOpenNotes={() => {
+          setSettingsOpen(false);
+          setNotesOpen(true);
+        }}
       />
 
 

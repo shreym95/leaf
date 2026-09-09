@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReaderShell } from "./ReaderShell";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   attach: vi.fn(async () => {}),
   goTo: vi.fn(async () => {}),
   currentChapterLabel: vi.fn(() => undefined),
+  toc: vi.fn(() => [] as { href: string; label: string }[]),
   onRelocated: vi.fn(() => () => {}),
   restore: vi.fn(async () => true),
   stop: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("@/reader/engine", () => ({
     prev: h.prev,
     goTo: h.goTo,
     currentChapterLabel: h.currentChapterLabel,
+    toc: h.toc,
     relayout: h.relayout,
     applySettings: h.applySettings,
     onRelocated: h.onRelocated,
@@ -60,6 +62,10 @@ const INITIAL = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks wipes call history but not implementations — reset the ones
+  // individual tests override.
+  h.toc.mockReturnValue([]);
+  h.currentChapterLabel.mockReturnValue(undefined);
   useReaderSettings.setState({ ...READER_SETTINGS_DEFAULTS });
   vi.stubGlobal(
     "fetch",
@@ -126,12 +132,14 @@ describe("ReaderShell — settings reach the engine", () => {
     }
   });
 
-  it("drives the engine from the settings sheet's size control", async () => {
+  it("drives the engine from the settings sheet, reached via the dock", async () => {
     const user = userEvent.setup();
     renderShell();
     await ready();
 
-    await user.click(screen.getByRole("button", { name: /reading settings|Aa/i }));
+    // Open the dock, then its `⋯` settings pod → the shared settings sheet.
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Reading settings" }));
     h.applySettings.mockClear();
     await user.click(screen.getByRole("radio", { name: "L" }));
 
@@ -140,6 +148,71 @@ describe("ReaderShell — settings reach the engine", () => {
       const last = h.applySettings.mock.lastCall?.[0] as { fontSize: number };
       expect(last.fontSize).toBeGreaterThan(1.06);
     });
+  });
+
+  it("opens the deck from the resting pill and closes it on a page turn", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    const deck = screen.getByRole("region", { name: "Reading controls" });
+    expect(deck).not.toHaveAttribute("inert");
+
+    // The deck's own `‹` / `›` turn the page but leave the deck up.
+    await user.click(within(deck).getByRole("button", { name: "Next page" }));
+    expect(h.next).toHaveBeenCalledTimes(1);
+    expect(deck).not.toHaveAttribute("inert");
+
+    // A page turn from the keyboard (outside the deck) closes it.
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => expect(deck).toHaveAttribute("inert"));
+    expect(h.next).toHaveBeenCalledTimes(2);
+  });
+
+  it("toggles the theme from the dock through the registry", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    // Registry order is [day, night]; INITIAL theme is night → switch reads on.
+    const toggle = screen.getByRole("switch", { name: /night theme/i });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await user.click(toggle);
+    expect(useReaderSettings.getState().theme).toBe("day");
+    expect(
+      screen.getByRole("switch", { name: /night theme/i }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("routes the dock's contents popover through the engine's goTo", async () => {
+    h.toc.mockReturnValue([
+      { href: "ch1.html", label: "Letter 1" },
+      { href: "ch2.html", label: "Chapter 2" },
+    ]);
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("button", { name: "Chapter 2" }));
+
+    expect(h.goTo).toHaveBeenCalledWith("ch2.html");
+  });
+
+  it("keeps the bookmark list reachable via the settings sheet's Notes row", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Reading settings" }));
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.getByText(/Bookmarks \(/)).toBeTruthy();
   });
 
   it("seeds the engine with the server-provided settings", async () => {

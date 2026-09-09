@@ -21,7 +21,12 @@ beforeEach(() => {
 
 function open() {
   render(
-    <ReaderSettingsSheet open onOpenChange={() => {}} onSetTheme={() => {}} />,
+    <ReaderSettingsSheet
+      open
+      onOpenChange={() => {}}
+      onSetTheme={() => {}}
+      onOpenNotes={() => {}}
+    />,
   );
 }
 
@@ -87,5 +92,23 @@ describe("ReaderSettingsSheet — text size", () => {
 
     await user.click(screen.getByRole("radio", { name: "Wide" }));
     expect(useReaderSettings.getState().margins).toBe("wide");
+  });
+
+  it("has a Notes & bookmarks row that calls onOpenNotes", async () => {
+    // The top bar's Notes button is gone since the reader dock — this row is
+    // the only way into the panel.
+    const user = userEvent.setup();
+    const onOpenNotes = vi.fn();
+    render(
+      <ReaderSettingsSheet
+        open
+        onOpenChange={() => {}}
+        onSetTheme={() => {}}
+        onOpenNotes={onOpenNotes}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    expect(onOpenNotes).toHaveBeenCalledTimes(1);
   });
 });
