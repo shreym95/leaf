@@ -12,15 +12,16 @@ import { BookActions } from "./BookActions";
  * focus ring. `BookActions` is a sibling of that link, never inside it — a
  * button nested in an anchor is invalid and unreachable by keyboard.
  *
- * Tactile treatment (REVISED_PLAN §3), all built from tokens:
- *   - a spine crease inset along the cover's binding edge
- *     (`--leaf-shadow-spine`), always visible so touch users perceive it too;
+ * Tactile treatment (REVISED_PLAN §3 / §9A), all built from tokens:
+ *   - a spine crease down the cover's binding edge — the `--leaf-crease`
+ *     gradient at `--leaf-card-crease-w` (10px), always visible so touch users
+ *     perceive it too;
  *   - a resting elevation (`--leaf-shadow-card`) that expands on hover
  *     (`--leaf-shadow-card-hover`) with a small lift, the lift suppressed
  *     under `prefers-reduced-motion`;
- *   - an integrated progress meter along the foot of the cover, replacing the
- *     old flat percentage text — still announced to screen readers via the
- *     progressbar's `aria-valuetext`;
+ *   - a state label — `UNREAD` / `NN% READ` / `COMPLETED` — as plain words
+ *     under the author. Design iteration 1 dropped the fill ribbon that used to
+ *     sit on the cover: it duplicated what the label says and sat over the art;
  *   - the actions trigger on a frosted disc so it never clashes with busy
  *     cover artwork;
  *   - the cover shown whole (`object-contain`) in a fixed 2:3 footprint, any
@@ -43,14 +44,18 @@ const SOURCE_LABEL: Record<BookSource, string> = {
 export function BookCard({ book }: BookCardProps) {
   const initial = book.title.trim().charAt(0).toUpperCase() || "?";
 
-  // Progress, not a status label: "Reading" was true of nearly every book and
-  // said nothing. A percentage says where you actually are.
+  // One state word, not a bar: where you are in a book reads fine as text on a
+  // shelf, and it does not sit over the cover art (design iteration 1, §9A).
   const pct =
     book.percent == null
       ? null
       : Math.min(100, Math.max(0, Math.round(book.percent * 100)));
-  const progressLabel =
-    pct == null ? "Not started" : pct >= 100 ? "Finished" : `${pct}%`;
+  const stateLabel =
+    pct == null || pct === 0
+      ? "UNREAD"
+      : pct >= 100
+        ? "COMPLETED"
+        : `${pct}% READ`;
 
   return (
     <article className="relative hover:z-10">
@@ -80,7 +85,7 @@ export function BookCard({ book }: BookCardProps) {
               left pale bands down both sides of every normal cover. Odd-ratio
               covers still letterbox onto the card ground (`bg-page`), reading as
               the book resting on a page rather than a UI artifact. */}
-          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule bg-page [box-shadow:var(--leaf-shadow-spine)]">
+          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule bg-page">
             {book.coverUrl ? (
               <Image
                 src={book.coverUrl}
@@ -98,24 +103,12 @@ export function BookCard({ book }: BookCardProps) {
               </span>
             )}
 
-            {/* Progress ribbon along the foot of the cover. A sighted reader
-                reads position from the fill; a screen-reader user gets the
-                same words the old text carried via `aria-valuetext`. */}
-            <div
-              role="progressbar"
-              aria-label="Reading progress"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={pct ?? 0}
-              aria-valuetext={progressLabel}
-              className="absolute inset-x-0 bottom-0 h-[var(--leaf-space-1)] bg-page/80 backdrop-blur-sm"
-            >
-              <span
-                aria-hidden
-                className="block h-full [background:var(--leaf-accent)] [transition:width_var(--leaf-dur-ui)_var(--leaf-ease-inout)]"
-                style={{ width: `${pct ?? 0}%` }}
-              />
-            </div>
+            {/* Spine crease — a soft shadow down the binding edge, painted over
+                the cover art. Decorative; the same gradient the hero uses. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 left-0 w-[var(--leaf-card-crease-w)] [background-image:var(--leaf-crease)]"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
@@ -124,6 +117,12 @@ export function BookCard({ book }: BookCardProps) {
             </h3>
             <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
               {book.author}
+            </p>
+            {/* Where the reader is in the book, as one word. `UNREAD` covers
+                both "never opened" and "opened, no progress" — the distinction
+                the old ribbon drew was noise on a shelf. */}
+            <p className="font-mono uppercase text-faint [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]">
+              {stateLabel}
             </p>
             {/* Where a book came from is provenance, not something to scan for —
                 smallest type, quietest colour, no tracking. */}

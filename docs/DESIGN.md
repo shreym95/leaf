@@ -317,21 +317,40 @@ Also: `npm run lint` (the layer seam) and `npm run typecheck`.
 ## 11. Book covers on the shelf
 
 The shelf (`src/components/library-ui/BookCard.tsx`) lays covers out on a grid of
-**fixed 2:3 cards** so the rows stay even. Real covers do not oblige — Standard
-Ebooks runs tall 1:1.6 plates, Gutenberg scans are all over the place, uploads
-are whatever the publisher shipped.
+**fixed 2:3 cards** so the rows stay even (2 columns on mobile, 3 from the tablet
+breakpoint, 4 on desktop — `Shelf.tsx`). The "Continue reading" hero
+(`HeroCard.tsx`) lays one cover the same way, at a fixed width
+(`--leaf-hero-cover-w`, 130px). Real covers do not oblige — Standard Ebooks runs
+tall 1:1.6 plates, Gutenberg scans are all over the place, uploads are whatever
+the publisher shipped.
 
-**The rule: show the whole cover, never crop it.** The cover image is
-`object-contain` inside the 2:3 footprint. A cover whose ratio differs from 2:3
-is letterboxed, and **the letterbox is the card ground (`bg-page`)** — the same
-warm surface the no-cover fallback initial sits on. It reads as the book resting
-on a page. It is never a black bar, never a blurred-cover fill, and the cover is
-never cropped to fill the card (`object-cover` was the old behaviour and the bug
-behind DEFECTS D3 — every non-3:4 cover lost its edges; the footprint was then 3:4, which letterboxed the 2:3 ratio nearly every real cover uses).
+**The rule: show the whole cover, never crop it — on the shelf and in the hero
+alike.** The cover image is `object-contain` inside the 2:3 footprint. A cover
+whose ratio differs from 2:3 is letterboxed, and **the letterbox is the card
+ground (`bg-page`)** — the same warm surface the no-cover fallback initial sits
+on. It reads as the book resting on a page. It is never a black bar, never a
+blurred-cover fill, and the cover is never cropped to fill the card
+(`object-cover` was the old behaviour and the bug behind DEFECTS D3 — every
+non-3:4 cover lost its edges; the footprint was then 3:4, which letterboxed the
+2:3 ratio nearly every real cover uses).
 
-The spine crease (`--leaf-shadow-spine`), card elevation and progress ribbon all
-sit on the 2:3 container, so they frame the card footprint consistently whatever
-the cover's own proportions.
+The spine crease is a soft dark gradient (`--leaf-crease`) down the binding edge,
+its width set per surface: `--leaf-hero-crease-w` (12px) on the hero,
+`--leaf-card-crease-w` (10px) on a shelf card. It sits on the 2:3 container with
+the card elevation, so both frame the footprint consistently whatever the
+cover's own proportions. (`--leaf-crease` is theme-independent — a dark shadow
+into the fold reads on any cover in either palette. `--leaf-shadow-spine`, the
+earlier box-shadow crease, is no longer used.)
+
+**Progress is words, not a bar.** A shelf card carries one state label —
+`UNREAD` (percent null *or* 0), `NN% READ`, or `COMPLETED` (100%). The hero,
+which is always a book in progress, gets the fuller treatment: a progress track
+plus its percent. An earlier build (Phase 1) ran a fill ribbon along the foot of
+every cover; design iteration 1 replaced it with the label — the ribbon
+duplicated what the label says and sat over the cover art. **Not shown, and
+deliberately:** a chapter label and a time-remaining estimate. `reading_state`
+stores neither, the shelf will not open an EPUB to derive a chapter, and there
+is no words-per-minute model to derive a time from (REVISED_PLAN §9A).
 
 ---
 

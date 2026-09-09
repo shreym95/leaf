@@ -2,6 +2,73 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Phase 2 — library shelf: "Continue reading" hero + fixed-column grid
+
+Design iteration 1, requirement 1 (`REVISED_PLAN.md` §9A, stage 1). The library
+gains a spotlight for the book you last had open, and the shelf grid stops
+drifting between column counts.
+
+### Added
+- **`HeroCard.tsx`** — the "Continue reading" spotlight, pinned above the grid:
+  mono-uppercase eyebrow, Fraunces title, author, a progress track with its
+  percent, and a `Continue Reading →` link to `/reader/<id>`. Cover on the left
+  with the 12px spine crease. Presentational; the only interactive element is
+  the CTA link, so the card itself has no hover state.
+- **`splitHeroBook(books, { enabled })`** (exported from `HeroCard.tsx`) — picks
+  the hero (most recent `lastReadAt`) and returns the rest for the grid with the
+  hero removed, so it never renders twice. `enabled: false` for the `?hidden=1`
+  view; no hero at all until some book has been opened.
+- **`--leaf-crease`** (`tokens.css`) — the spine-crease gradient, theme-
+  independent, width set per surface by the existing `--leaf-hero-crease-w` /
+  `--leaf-card-crease-w`.
+
+### Changed
+- **`Shelf.tsx`** — fixed columns (`grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`)
+  replacing `auto-fill/minmax(10rem,1fr)`, which rendered anywhere from 3 to 5
+  columns depending on width. `loading.tsx`'s skeleton grid matches.
+- **`BookCard.tsx`** — the on-cover progress ribbon is gone; a card now carries
+  a plain state label under the author: `UNREAD` (percent null *or* 0),
+  `NN% READ`, `COMPLETED` (100%). The crease is now the `--leaf-crease` gradient
+  at `--leaf-card-crease-w`, not `--leaf-shadow-spine`.
+- **`library/page.tsx`** — composes `splitHeroBook`; renders `<HeroCard>` then
+  `<Shelf>` with the hero-less list. Hidden view unchanged.
+- **`DESIGN.md` §11** — rewritten for the gradient crease, the state label vs.
+  the retired ribbon, and the hero cover following the same 2:3 `object-contain`
+  rule.
+
+### Decisions the brief left open
+- **Hero cover ratio.** The handoff drew `3/4`; used 2:3 `object-contain` like
+  `BookCard` (DEFECTS D3 — cropping covers was the bug). Deliberate deviation,
+  per the task.
+- **No hero hover-lift.** The prototype lifts the whole hero card on hover; kept
+  it static because only the CTA is interactive and a lifting non-link reads as
+  clickable. Cards keep their lift — they *are* links.
+- **Hero eyebrow colour.** Prototype CSS says `--leaf-accent` (the handoff prose
+  says `ink-mid`); matched the prototype and the existing library-page eyebrow.
+- **Progress fill vs. track** on the hero is `--leaf-accent` on `--leaf-rule`
+  (~2.7:1, under 1.4.11's 3:1). Accepted because the percent is also printed as
+  text beside the bar and mirrored in `aria-valuenow` — value is never carried
+  by the fill alone. This is the prototype's own choice.
+- **Selection lives in the component layer** (`splitHeroBook`), not `@/lib` — it
+  is view composition, tied to the hero presentation, and needs a plain unit
+  test rather than a page render.
+- **`loading.tsx`** was updated though it is outside the brief's file list — its
+  whole job is to mirror `page.tsx`'s shape, so a stale grid would defeat it. No
+  hero skeleton (it is conditional; would flash for readers with no history).
+
+### Logic/presentation coupling (for the redesign)
+- **`splitHeroBook` reads `LibraryBook.lastReadAt` and `.id`.** "Most recently
+  read" is computed explicitly here, *not* inherited from `listBooks`' sort, so
+  a query change cannot silently move the hero — but the two now encode the same
+  rule in two places. If the shelf order changes, check this too.
+- **`UNREAD` folds "never opened" (`percent: null`) and "opened, 0%"
+  (`percent: 0`) together.** `reading_state` still distinguishes them; the shelf
+  no longer does. A future "recently added" treatment that needs the difference
+  must go back to the raw field.
+- **`--leaf-shadow-spine` is now unused** (kept in `tokens.css`, with its night
+  override, as documentation). Safe to delete when someone next touches that
+  block.
+
 ## Change — two reading themes; sepia retired
 
 Founder call, 2026-09-09: Leaf ships **Day** and **Night**. Sepia was built in
