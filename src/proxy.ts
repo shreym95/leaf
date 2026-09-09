@@ -9,10 +9,20 @@
 //
 // /login, /auth/*, /styleguide and the root redirect stay public.
 
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { IS_DEMO } from "@/lib/demo/flag";
 
 export async function proxy(request: NextRequest) {
+  // Demo mode has no Supabase and no session, so `updateSession` would bounce
+  // every protected route to /login — including /library and /reader/*, which
+  // are the two routes demo mode exists to serve (docs/DESIGN-LOCAL.md). Skip
+  // it entirely; `requireUser` returns the fixture user from here on.
+  //
+  // Safe in production by construction: `IS_DEMO` is false whenever Supabase is
+  // configured and `LEAF_DEMO` is unset, which is exactly the deployed state.
+  // See `src/lib/demo/flag.ts` and its test.
+  if (IS_DEMO) return NextResponse.next();
   return updateSession(request);
 }
 

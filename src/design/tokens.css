@@ -191,7 +191,7 @@
   --leaf-dim-scrim: #0b0805;       /* warm near-black, not pure #000 */
 
   /* --- Library shelf (design iteration 1, requirement 1) ------------------- */
-  --leaf-hero-cover-w: 130px;
+  --leaf-hero-cover-w: 130px;   /* narrowed under 640px, see below */
   --leaf-hero-crease-w: 12px;      /* hero cover's left spine indent */
   --leaf-card-crease-w: 10px;      /* shelf card's left spine indent */
   /* The crease itself — a soft dark gradient down the binding edge, painted
@@ -205,6 +205,19 @@
     rgba(0, 0, 0, 0.1) 55%,
     transparent 100%
   );
+}
+
+/* ---------------------------------------------------------------------------
+   Library shelf on a phone.
+   The "Continue reading" spotlight is a row at every width, so the cover's
+   width is what decides its height. At 130px (195px tall) plus a title, author,
+   progress and CTA, the spotlight took roughly three quarters of a phone screen
+   and pushed the shelf below the fold. 92px lands it near a fifth.
+   ------------------------------------------------------------------------- */
+@media (max-width: 639px) {
+  :root {
+    --leaf-hero-cover-w: 92px;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -263,6 +276,14 @@
   /* rule darkened from #cabf9f (~1.5:1, short of WCAG 1.4.11's 3:1 for a
      non-text boundary) to ~3.2:1 on --leaf-page; still a single hairline. */
   --leaf-rule: #8f8358;
+  /* Decorative container edge — NOT a functional boundary. `--leaf-rule` is
+     darkened to ~3.2:1 because WCAG 1.4.11 governs boundaries that carry
+     meaning (a separator, a field edge). A cover's outline carries none: it is
+     there so the artwork does not bleed into the page. At 3:1 a box of it reads
+     as a hard frame; this is the whisper the fine-press reference actually
+     wants. Never use it for anything a reader must perceive to understand the
+     page. */
+  --leaf-rule-soft: #cfc3a2;
   --leaf-gutter: rgba(0, 0, 0, 0.05);
   --leaf-focus: #8a2b1e;
   --leaf-selection: rgba(138, 43, 30, 0.2);
@@ -303,6 +324,8 @@
   /* rule lightened from #3a3020 (~1.4:1, short of WCAG 1.4.11's 3:1) to ~3.1:1
      on --leaf-page; still a single hairline, not a heavy border. */
   --leaf-rule: #706449;
+  /* Decorative container edge — see the note in the day palette. */
+  --leaf-rule-soft: #3a3226;
   --leaf-gutter: rgba(0, 0, 0, 0.25);
   --leaf-focus: #c58a52;
   --leaf-selection: rgba(197, 138, 82, 0.24);

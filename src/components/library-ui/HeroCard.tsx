@@ -13,6 +13,16 @@ import type { LibraryBook } from "@/lib/db/books";
  * lift or react to hover, because nothing about it is clickable except that
  * link.
  *
+ * Not a card. It sits on the page ground with a single hairline beneath it,
+ * because a bordered panel reads as a UI widget rather than a spread, and
+ * `--leaf-rule` is a 3:1 hairline (WCAG 1.4.11) — strong enough that a full box
+ * of it dominates the page.
+ *
+ * The layout is a row at EVERY width, not stacked on a phone. Stacked, with a
+ * 130px cover, the spotlight ate roughly three quarters of a phone screen and
+ * buried the shelf; as a row with a 92px cover (`--leaf-hero-cover-w`, narrowed
+ * under 640px) it lands near a fifth.
+ *
  * Cover treatment matches the shelf card (`docs/DESIGN.md` §11): a fixed 2:3
  * footprint, `object-contain` so the whole cover shows, any letterbox falling
  * on the card ground (`bg-page`) rather than a crop or a bar — and the same
@@ -72,13 +82,16 @@ export function HeroCard({ book }: HeroCardProps) {
     <section
       aria-label="Continue reading"
       className={clsx(
-        "relative flex flex-col items-center gap-5 rounded-md border border-rule bg-page p-6",
-        "[box-shadow:var(--leaf-shadow-card)]",
-        "sm:flex-row sm:gap-6",
+        // No card, no box. A bordered panel on a page ground reads as a UI
+        // widget; the fine-press reference is a spread with a rule under the
+        // masthead. So: the paper ground, and one hairline separating the
+        // spotlight from the shelf beneath it.
+        "relative flex flex-row items-center gap-4 border-b border-rule pb-6",
+        "sm:gap-6",
       )}
     >
       {/* Cover — fixed 2:3, whole cover shown, letterbox on the card ground. */}
-      <div className="relative aspect-[2/3] w-[var(--leaf-hero-cover-w)] shrink-0 overflow-hidden rounded-sm border border-rule bg-page">
+      <div className="relative aspect-[2/3] w-[var(--leaf-hero-cover-w)] shrink-0 overflow-hidden rounded-sm border border-rule-soft bg-page [box-shadow:var(--leaf-shadow-card)]">
         {book.coverUrl ? (
           <Image
             src={book.coverUrl}
@@ -103,23 +116,28 @@ export function HeroCard({ book }: HeroCardProps) {
         />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:gap-3">
         <p className="font-mono font-medium uppercase text-accent [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)]">
           Continue reading
         </p>
 
-        <h2 className="font-display text-ink [font-size:var(--leaf-text-2xl)] [line-height:var(--leaf-leading-tight)]">
+        {/* Clamped to two lines: a long series title ("1 The Hidden Oracle —
+            The Trials of Apollo") otherwise runs to three or four on a phone
+            and pushes the hero past half the screen. */}
+        <h2 className="line-clamp-2 font-display text-ink [font-size:var(--leaf-text-xl)] [line-height:var(--leaf-leading-tight)] sm:[font-size:var(--leaf-text-2xl)]">
           {book.title}
         </h2>
 
-        <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)]">
+        <p className="truncate font-ui text-ink-mid [font-size:var(--leaf-text-sm)] sm:[font-size:var(--leaf-text-base)]">
           {book.author}
         </p>
 
         {/* Progress track + percent. Time-remaining and a chapter label are
             deliberately absent — neither is stored, and the shelf will not open
             an EPUB to derive them (REVISED_PLAN §9A). */}
-        <div className="flex items-center gap-3">
+        {/* Capped: on a wide window an unbounded track ran the full column
+            and read as a loading bar rather than a book's progress. */}
+        <div className="flex max-w-[26rem] items-center gap-3">
           <div
             role="progressbar"
             aria-label="Reading progress"
@@ -141,8 +159,14 @@ export function HeroCard({ book }: HeroCardProps) {
         </div>
 
         <Button asChild variant="primary" className="mt-1 self-start">
-          <Link href={`/reader/${book.id}`}>
-            Continue Reading
+          {/* Short visible label, full name for assistive tech: on a phone
+              "Continue Reading →" wrapped the button, and "Continue" alone
+              would be ambiguous read out of its region. */}
+          <Link
+            href={`/reader/${book.id}`}
+            aria-label={`Continue reading ${book.title}`}
+          >
+            Continue
             <span aria-hidden>&rarr;</span>
           </Link>
         </Button>

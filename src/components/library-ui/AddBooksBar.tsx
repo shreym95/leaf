@@ -62,12 +62,16 @@ export function AddBooksBar() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={() => setSheetOpen(true)}>
+      {/* `sm` deliberately: these sit in the library header now, beside the
+          title, not in a row of their own. At the default `md` they were the
+          heaviest thing on a phone screen and pushed the books below the fold. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => setSheetOpen(true)}>
           Find a book
         </Button>
 
         <Button
+          size="sm"
           variant="ghost"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}

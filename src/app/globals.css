@@ -18,6 +18,7 @@
   --color-faint: var(--leaf-faint);
   --color-accent: var(--leaf-accent);
   --color-rule: var(--leaf-rule);
+  --color-rule-soft: var(--leaf-rule-soft);
   --color-focus: var(--leaf-focus);
 
   /* Font families */

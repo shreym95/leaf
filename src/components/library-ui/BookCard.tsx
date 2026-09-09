@@ -58,12 +58,14 @@ export function BookCard({ book }: BookCardProps) {
         : `${pct}% READ`;
 
   return (
-    <article className="relative hover:z-10">
+    <article className="relative h-full hover:z-10">
       {/* One wrapper carries the elevation and the hover lift so the card and
           its actions trigger rise together. */}
       <div
         className={clsx(
-          "relative rounded-md",
+          // `h-full` so a two-line title on one card does not leave its
+          // neighbours short — the grid row stretches, the elevation follows.
+          "relative h-full rounded-md",
           "[box-shadow:var(--leaf-shadow-card)] hover:[box-shadow:var(--leaf-shadow-card-hover)]",
           "transition [transition-duration:var(--leaf-dur-ui)] [transition-timing-function:var(--leaf-ease)]",
           // The lift is decoration, not information — gated off under
@@ -74,7 +76,7 @@ export function BookCard({ book }: BookCardProps) {
         <Link
           href={`/reader/${book.id}`}
           className={clsx(
-            "group flex flex-col gap-3 rounded-md p-3",
+            "group flex h-full flex-col gap-3 rounded-md p-3",
             "transition-colors [transition-duration:var(--leaf-dur-ui)] hover:bg-page",
             "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]",
           )}
@@ -85,7 +87,7 @@ export function BookCard({ book }: BookCardProps) {
               left pale bands down both sides of every normal cover. Odd-ratio
               covers still letterbox onto the card ground (`bg-page`), reading as
               the book resting on a page rather than a UI artifact. */}
-          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule bg-page">
+          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-sm border border-rule-soft bg-page">
             {book.coverUrl ? (
               <Image
                 src={book.coverUrl}

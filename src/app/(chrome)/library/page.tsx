@@ -32,17 +32,24 @@ export default async function LibraryPage({
   const { hero, shelf } = splitHeroBook(books, { enabled: !showHidden });
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-6 sm:py-10">
       <ScreenView name="library" />
-      <header className="flex flex-col gap-2">
-        <p className="font-mono font-medium uppercase text-accent [letter-spacing:var(--leaf-tracking-eyebrow)] [font-size:var(--leaf-text-2xs)]">
+      {/* One compact line, not three stacked blocks. The old header spent an
+          eyebrow, a `text-3xl` count and a separate button row on saying
+          "library" — which the reader already knows — and pushed the books
+          themselves below the fold on a phone. Title and actions now share a
+          row and wrap only when they must. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <h1 className="font-mono font-medium uppercase text-accent [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)]">
           {showHidden ? "Hidden books" : "Your library"}
-        </p>
-        {books.length > 0 && (
-          <h1 className="font-display text-ink [font-size:var(--leaf-text-3xl)]">
-            {books.length} {books.length === 1 ? "book" : "books"}
-          </h1>
-        )}
+          {books.length > 0 && (
+            <span className="text-faint">
+              {" · "}
+              {books.length} {books.length === 1 ? "book" : "books"}
+            </span>
+          )}
+        </h1>
+        {!showHidden && books.length > 0 && <AddBooksBar />}
       </header>
 
       {showHidden ? (
@@ -65,9 +72,20 @@ export default async function LibraryPage({
         <EmptyState />
       ) : (
         <>
-          <AddBooksBar />
           {hero && <HeroCard book={hero} />}
-          {shelf.length > 0 && <Shelf books={shelf} />}
+          {shelf.length > 0 && (
+            <section className="flex flex-col gap-4">
+              {/* Only when a spotlight is above it — without one the page
+                  header is already the shelf's heading, and a second label
+                  would just repeat it. */}
+              {hero && (
+                <h2 className="font-mono font-medium uppercase text-faint [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)]">
+                  All books
+                </h2>
+              )}
+              <Shelf books={shelf} />
+            </section>
+          )}
         </>
       )}
 
