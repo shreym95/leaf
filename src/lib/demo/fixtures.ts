@@ -32,8 +32,14 @@ interface DemoSpec {
   title: string;
   author: string;
   source: BookSource;
-  /** Filename in `public/bundled/` — set only for the books that actually open. */
+  /** Filename in `public/bundled/` (or `public/demo/`, see `fileDir`) — set
+   *  only for the books that actually open. */
   file?: string;
+  /** Directory under `public/` holding `file`. Defaults to `bundled`; the one
+   *  exception is the synthetic chapter-image-heading fixture, whose EPUB
+   *  lives in `public/demo/` next to the other hand-built synthetic fixtures
+   *  used for manual chapter-head verification. */
+  fileDir?: "bundled" | "demo";
   /** Filename under `public/demo/covers/` — omit for the title-initial fallback. */
   cover?: string;
   /** 0–1, or omitted for "never opened". */
@@ -49,6 +55,15 @@ const SPECS: DemoSpec[] = [
   { id: "frankenstein", title: "Frankenstein", author: "Mary Shelley", source: "standardebooks", file: "frankenstein.epub", cover: "frankenstein.jpg", percent: 0.34, lastReadDaysAgo: 1 },
   { id: "wizard-of-oz", title: "The Wonderful Wizard of Oz", author: "L. Frank Baum", source: "standardebooks", file: "wizard-of-oz.epub", cover: "wizard-of-oz.jpg", percent: 0.08, lastReadDaysAgo: 4 },
   { id: "time-machine", title: "The Time Machine", author: "H. G. Wells", source: "standardebooks", file: "time-machine.epub", cover: "time-machine.jpg", percent: 1, lastReadDaysAgo: 18 },
+
+  // ── A fourth that opens: the chapter-head-from-TOC shape ────────────
+  // Synthetic, licence-clean fixture (public-domain Frankenstein prose)
+  // reproducing a real founder book's shape: every chapter's <h1> is only an
+  // <img> (the chapter number as a JPEG), so the normalizer finds no text and
+  // falls back to "§" — the real numbering lives only in the EPUB's own TOC,
+  // as bare numbers ("1", "2", "3"). Covers `content-hook.ts`'s TOC-fallback
+  // path end-to-end in the actual reader, not just in a unit test.
+  { id: "chapter-image-heading", title: "Frankenstein (Chapter-Image Fixture)", author: "Mary Shelley", source: "gutenberg", file: "chapter-image-heading.epub", fileDir: "demo", percent: 0, lastReadDaysAgo: 30 },
 
   // ── Metadata-only, with a cover ─────────────────────────────────────
   { id: "middlemarch", title: "Middlemarch", author: "George Eliot", source: "standardebooks", cover: "middlemarch.png", percent: 0.61, lastReadDaysAgo: 2 },
@@ -88,7 +103,7 @@ function toLibraryBook(spec: DemoSpec, index: number): LibraryBook {
     author: spec.author,
     source: spec.source,
     source_ref: null,
-    storage_path: spec.file ? `bundled/${spec.file}` : null,
+    storage_path: spec.file ? `${spec.fileDir ?? "bundled"}/${spec.file}` : null,
     cover_path: spec.cover ? `demo/covers/${spec.cover}` : null,
     cover_url: null,
     archived_at: spec.archived ? new Date(NOW - 90 * DAY_MS).toISOString() : null,

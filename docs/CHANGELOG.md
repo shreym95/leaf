@@ -2,6 +2,57 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — chapter head recovered from the EPUB's own TOC when the markup has none (Claude, 2026-09-11)
+
+The previous fix (below) hid the "§" fallback — correct on its own, but it
+turned out a real founder book has every chapter's `<h1>` containing only an
+`<img>` (the chapter number is a JPEG). `normalizeChapterDom` finds no text
+there, so it fell back to "§", which the CSS then hid — the chapter opened
+with **no head at all**, straight into the drop cap. That book's real chapter
+numbering lives only in the EPUB's TOC, as bare numbers ("1", "2", "3"…).
+
+- **`src/reader/content-hook.ts`** — a new step, 1c, runs after
+  `normalizeChapterDom` and before the fine-press stylesheet + the `"expand"`
+  re-measure (same placement as `appendChapterEndOrnament`, for the same
+  reason: it can add DOM at the top of the chapter, and epub.js must re-measure
+  before the restore that follows depends on the answer — DEFECTS D2/D5). It
+  runs *after* the fleuron placement specifically, so the ornament's
+  unstructured-chapter threshold keeps reading the raw "§" text and its
+  behaviour for genuinely unstructured (Calibre/Gutenberg) chapters is
+  unchanged. `hasUsableChapterHead()` decides whether the TOC lookup is even
+  needed, by reading the `chapter-ordinal--fallback` class `normalize.ts`
+  already tags the "§" node with (added in `0960ae4`) — no string comparison.
+- **Not in the normalizer.** `normalize.ts` stays pure and section-local
+  (SPEC §7): it parses one chapter document and has no way to reach the book's
+  navigation, and must not gain one — that would tie a "port the Python
+  prototype" module to epub.js. The lookup belongs where the book object
+  already lives: the reader layer.
+- **`src/reader/navigation.ts`** (new) — `chapterLabelForHref` /
+  `flattenToc`, lifted out of `src/reader/engine.ts` (which used them for
+  bookmark titles and the chapter menu) so `content-hook.ts` can reuse the
+  exact same TOC walk/flatten/href-tolerance instead of a second
+  implementation. Both callers stay in `src/reader`, so this is a same-layer
+  split, not a new seam. `engine.ts` re-exports `ReaderTocEntry` from there so
+  existing importers (`@/reader/engine`) keep resolving.
+- **Rendering rule** — a bare ordinal recovered from the TOC ("1", "IV") is a
+  hanging number with no referent, so it renders as "Chapter 1"; a real title
+  ("The Cyclone") is used verbatim, never prefixed — that would invent
+  structure the book did not have. No TOC entry either: render nothing, same
+  as today (silence beats "§").
+- **`CHAPTER_LABEL_WORD`** (new, `src/design/content-theme.ts`) — the word
+  "Chapter" is presentation text, so it crosses the design bridge the same way
+  `CHAPTER_END_ORNAMENT` already does; `content-hook.ts` never hard-codes it.
+- **A licence-clean fixture** — `public/demo/chapter-image-heading.epub`
+  (synthetic, public-domain Frankenstein prose) reproduces the founder book's
+  shape: image-only `<h1>`s, bare-numeral TOC labels. Registered in
+  `src/lib/demo/fixtures.ts` as a fourth openable demo book (the other three
+  open from `public/bundled/`; this one, like the app's two other synthetic
+  demo EPUBs, lives in `public/demo/`, so `DemoSpec` gained a `fileDir` field).
+- **Tests** — four new cases in `content-hook.test.ts` covering all four
+  paths: image-only `<h1>` + numeric TOC label -> "Chapter 1"; image-only
+  `<h1>` + titled TOC label -> that title; a real in-document heading ->
+  untouched, no lookup; no heading and no TOC entry -> nothing rendered.
+
 ## Fix — chapter opening: centred, larger title, quiet ordinal, no bare "§" (Claude, 2026-09-11)
 
 The chapter-head markup (`.chapter-head` / `.chapter-ordinal` / `.chapter-title`,
