@@ -2,6 +2,15 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — the danger zone is the last thing on the settings page
+
+Adding the Reading section put "Delete account" in the MIDDLE of `/settings`,
+with two more sections below it. An irreversible action should not be something a
+reader scrolls past on the way to a preference.
+
+`DangerZone` is now exported separately from `AccountSection` and rendered last by
+the page, so section order is: Account → Reading → Library → Danger zone.
+
 ## Feature — typeface, line spacing and margins move to `/settings` as a Reading section (Claude, 2026-09-11)
 
 Three reader preferences — typeface, line spacing, margins — lost their home when

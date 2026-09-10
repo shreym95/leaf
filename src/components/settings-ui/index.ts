@@ -1,4 +1,4 @@
-export { AccountSection } from "./AccountSection";
+export { AccountSection, DangerZone } from "./AccountSection";
 export { DeleteAccountDialog } from "./DeleteAccountDialog";
 export { CoverBackfill } from "./CoverBackfill";
 export { ReadingSection } from "./ReadingSection";

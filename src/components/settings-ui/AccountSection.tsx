@@ -69,7 +69,19 @@ export function AccountSection({
         </p>
       </section>
 
-      {/* Danger zone ------------------------------------------------- */}
+    </div>
+  );
+}
+
+/**
+ * DangerZone — account deletion, exported separately so the settings page can
+ * render it LAST. It used to sit inside `AccountSection`, which put an
+ * irreversible action above the Reading and Library sections once those were
+ * added; a destructive control should be the final thing on a settings page,
+ * not something a reader scrolls past on the way to a preference.
+ */
+export function DangerZone() {
+  return (
       <section className="flex flex-col gap-3 rounded-md border border-rule p-5">
         <SectionHeading>Danger zone</SectionHeading>
         <p className="max-w-prose font-ui text-ink-mid [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)]">
@@ -81,6 +93,5 @@ export function AccountSection({
           <DeleteAccountDialog />
         </div>
       </section>
-    </div>
   );
 }

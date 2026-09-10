@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getProfile, getReaderSettings } from "@/lib/db";
 import { settingsFromRow } from "@/store/reader-settings";
-import { AccountSection, CoverBackfill, ReadingSection } from "@/components/settings-ui";
+import {
+  AccountSection,
+  CoverBackfill,
+  DangerZone,
+  ReadingSection,
+} from "@/components/settings-ui";
 import { ScreenView } from "@/components/analytics/ScreenView";
 
 /* Auth-gated + per-user data: never prerender (`requireUser` reads cookies,
@@ -54,6 +59,10 @@ export default async function SettingsPage() {
         </h2>
         <CoverBackfill />
       </section>
+
+      {/* Last on the page, always: an irreversible action should not sit above
+          settings a reader is scrolling towards. */}
+      <DangerZone />
     </main>
   );
 }
