@@ -19,8 +19,6 @@ export type { TocPopoverProps } from "./TocPopover";
 export { SpreadFrame } from "./SpreadFrame";
 export type { SpreadFrameProps } from "./SpreadFrame";
 
-export { ReaderSettingsSheet } from "./ReaderSettingsSheet";
-export type { ReaderSettingsSheetProps } from "./ReaderSettingsSheet";
 export { NotesPanel } from "./NotesPanel";
 
 // Temporary on-device instrumentation for DEFECTS.md D2. `debugRequested` is
