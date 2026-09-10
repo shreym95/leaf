@@ -83,6 +83,9 @@ const eslintConfig = defineConfig([
     // Local, gitignored browser harness for reproducing device-only defects
     // (see DEFECTS.md). Node scripts, not shipped code.
     ".harness/**",
+    // Local, gitignored screenshot scripts + output for visually verifying a
+    // change (copied from ~/.cache/leaf-harness). Node scripts, not shipped code.
+    ".local-shots/**",
   ]),
 ]);
 

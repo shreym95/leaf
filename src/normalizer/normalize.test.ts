@@ -128,6 +128,10 @@ describe("normalizeChapterDom", () => {
     normalizeChapterDom(doc, META);
 
     expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("Chapter V");
+    // A real ordinal must never carry the "§" fallback's suppression class.
+    expect(
+      doc.querySelector(".chapter-ordinal")?.classList.contains("chapter-ordinal--fallback"),
+    ).toBe(false);
     expect(doc.querySelector(".chapter-title")).toBeNull();
     expect(doc.querySelector("h2")).toBeNull();
 
@@ -168,6 +172,11 @@ describe("normalizeChapterDom", () => {
     const article = doc.querySelector("article.chapter");
     expect(article).not.toBeNull();
     expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("§");
+    // Marked as the graceful fallback so the design layer can hide it — a
+    // bare "§" is never a real chapter number (see content-theme.test.ts).
+    expect(
+      doc.querySelector(".chapter-ordinal")?.classList.contains("chapter-ordinal--fallback"),
+    ).toBe(true);
     expect(doc.querySelector(".chapter-title")).toBeNull();
 
     const paras = article!.querySelectorAll(":scope > p");

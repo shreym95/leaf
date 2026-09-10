@@ -222,9 +222,9 @@ export function normalizeChapterDom(
   const header = make("header");
   header.setAttribute("class", "chapter-head");
 
-  const addOrdinal = (text: string): void => {
+  const addOrdinal = (text: string, extraClass?: string): void => {
     const p = make("p");
-    p.setAttribute("class", "chapter-ordinal");
+    p.setAttribute("class", extraClass ? `chapter-ordinal ${extraClass}` : "chapter-ordinal");
     p.textContent = text;
     header.appendChild(p);
   };
@@ -236,7 +236,11 @@ export function normalizeChapterDom(
     h1.textContent = title;
     header.appendChild(h1);
   }
-  if (!ordinal && !title) addOrdinal("§"); // graceful fallback
+  // Graceful fallback: no ordinal AND no title found at all. Kept in the DOM
+  // (content-hook.ts's fleuron suppression reads this node's text) but marked
+  // with a second class so the design layer can hide it — a bare "§" above a
+  // chapter is worse than no ordinal line (it is never a real chapter number).
+  if (!ordinal && !title) addOrdinal("§", "chapter-ordinal--fallback");
 
   // Classify + de-publish the body paragraphs.
   const paras = Array.from(el.querySelectorAll("p"));
