@@ -42,7 +42,7 @@ describe("demo fixtures", () => {
     expect([...readDates].sort((a, b) => b.localeCompare(a))).toEqual(readDates);
   });
 
-  it("exposes exactly four openable EPUBs, served from /bundled/ or /demo/", () => {
+  it("exposes exactly four openable EPUBs, all served from /bundled/", () => {
     const openable = demoListBooks().filter((b) => b.storage_path);
     expect(openable.map((b) => b.id).sort()).toEqual([
       "chapter-image-heading",
@@ -50,18 +50,14 @@ describe("demo fixtures", () => {
       "time-machine",
       "wizard-of-oz",
     ]);
+    // One directory, no exceptions: `public/bundled/` is where an openable demo
+    // EPUB lives, whether it is a full Standard Ebooks download or a synthetic
+    // fixture. `public/demo/` holds cover images only.
     for (const b of openable) {
       expect(demoBookFileUrl(b.storage_path as string)).toMatch(
-        /^\/(bundled|demo)\/[a-z-]+\.epub$/,
+        /^\/bundled\/[a-z-]+\.epub$/,
       );
     }
-    // The chapter-head-from-TOC fixture specifically lives under /demo/, next
-    // to the app's other hand-built synthetic EPUBs — not /bundled/ with the
-    // three full-size Standard Ebooks downloads.
-    const fixture = openable.find((b) => b.id === "chapter-image-heading");
-    expect(demoBookFileUrl(fixture?.storage_path as string)).toBe(
-      "/demo/chapter-image-heading.epub",
-    );
   });
 
   it("returns a plain Book (no shelf-only fields) from demoGetBook, or null", () => {

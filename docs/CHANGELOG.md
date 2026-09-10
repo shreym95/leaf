@@ -42,12 +42,16 @@ numbering lives only in the EPUB's TOC, as bare numbers ("1", "2", "3"…).
 - **`CHAPTER_LABEL_WORD`** (new, `src/design/content-theme.ts`) — the word
   "Chapter" is presentation text, so it crosses the design bridge the same way
   `CHAPTER_END_ORNAMENT` already does; `content-hook.ts` never hard-codes it.
-- **A licence-clean fixture** — `public/demo/chapter-image-heading.epub`
+- **A licence-clean fixture** — `public/bundled/chapter-image-heading.epub`
   (synthetic, public-domain Frankenstein prose) reproduces the founder book's
   shape: image-only `<h1>`s, bare-numeral TOC labels. Registered in
-  `src/lib/demo/fixtures.ts` as a fourth openable demo book (the other three
-  open from `public/bundled/`; this one, like the app's two other synthetic
-  demo EPUBs, lives in `public/demo/`, so `DemoSpec` gained a `fileDir` field).
+  `src/lib/demo/fixtures.ts` as a fourth openable demo book, in the same
+  directory as the other three: **`public/bundled/` is where an openable demo
+  EPUB lives, with no exceptions, and `public/demo/` holds cover images only.**
+  Two stray EPUBs had been dropped into `public/demo/` earlier in the session on
+  the mistaken belief that demo mode could not open a book; nothing ever
+  referenced them and they are deleted. They were also what led this fixture to
+  be filed there first, behind a `DemoSpec.fileDir` field — both removed.
 - **Tests** — four new cases in `content-hook.test.ts` covering all four
   paths: image-only `<h1>` + numeric TOC label -> "Chapter 1"; image-only
   `<h1>` + titled TOC label -> that title; a real in-document heading ->
