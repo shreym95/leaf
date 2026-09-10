@@ -105,43 +105,57 @@ export function buildContentTheme(themeId: ThemeId): ContentThemeStyles {
       widows: "2",
     },
 
-    // Chapter title (from an <hgroup> title, per the normalizer).
+    // Chapter title (from an <hgroup> title, per the normalizer). Large,
+    // bold and centred — the dominant element of a chapter opening.
     h1: {
       "font-family": DISPLAY_FONT,
-      "font-weight": "400",
-      "font-size": "1.9rem",
-      "line-height": "1.2",
+      "font-weight": "700",
+      "font-size": "2.5rem",
+      "line-height": "1.15",
       color: p.ink,
-      "text-align": "left",
+      "text-align": "center",
       "text-indent": "0",
-      margin: "0 0 1.5rem",
+      margin: "0",
     },
 
-    // Chapter header block — left-aligned, with air before the first paragraph.
+    // Chapter header block — centred, with generous air above (the top of a
+    // chapter's opening page) and below (before the first paragraph).
     ".chapter-head": {
-      "text-align": "left",
+      "text-align": "center",
       "text-indent": "0",
-      margin: "0 0 2.4rem",
+      margin: "3rem 0 3rem",
     },
 
-    // Ordinal eyebrow (e.g. "I", "V") above the title.
+    // Ordinal eyebrow (e.g. "Chapter I", "V") above the title: small, quiet,
+    // regular weight, sentence case — a caption, not a shout. Plain (not
+    // uppercase/wide-tracked) so it reads as the ordinal text itself
+    // ("Chapter V"), not a stylised label.
     ".chapter-ordinal": {
       display: "block",
       "font-family": DISPLAY_FONT,
-      "font-size": "0.74rem",
-      "font-weight": "500",
-      "letter-spacing": "0.34em",
-      "text-transform": "uppercase",
+      "font-size": "0.9rem",
+      "font-weight": "400",
       color: p.accent,
       "text-indent": "0",
-      margin: "0 0 0.75rem",
+      margin: "0 0 0.85rem",
     },
 
     ".chapter-title": {
       "font-family": DISPLAY_FONT,
-      "font-weight": "400",
+      "font-weight": "700",
       color: p.ink,
+      "text-align": "center",
       "text-indent": "0",
+    },
+
+    // The normalizer's last-resort "§" ordinal (no heading of any kind found —
+    // an unstructured Calibre export) is never a meaningful chapter number.
+    // It still carries the base `.chapter-ordinal` class (and its DOM node is
+    // kept — the fleuron-suppression logic in content-hook.ts reads its text),
+    // but this second class hides it: a lone "§" above a chapter is worse than
+    // no ordinal line at all.
+    ".chapter-ordinal--fallback": {
+      display: "none",
     },
 
     // First paragraph: no indent, drop cap + small-caps lede.

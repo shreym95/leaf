@@ -190,6 +190,11 @@ describe("registerContentPipeline", () => {
 
     expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("§");
     expect(doc.querySelector("p.chapter-end")).toBeNull();
+    // The "§" is kept in the DOM (the fleuron check above reads it) but the
+    // injected stylesheet must hide it — a bare "§" is never a real ordinal.
+    expect(doc.querySelector(".chapter-ordinal")?.classList.contains("chapter-ordinal--fallback")).toBe(true);
+    const css = doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
+    expect(css).toContain(".chapter-ordinal--fallback{display:none}");
   });
 
   it("keeps front matter clean — a short titled section (part divider) gets no fleuron", () => {

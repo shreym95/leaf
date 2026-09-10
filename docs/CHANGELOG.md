@@ -2,6 +2,61 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — chapter opening: centred, larger title, quiet ordinal, no bare "§" (Claude, 2026-09-11)
+
+The chapter-head markup (`.chapter-head` / `.chapter-ordinal` / `.chapter-title`,
+built by `normalizeChapterDom` in `src/normalizer/normalize.ts`) already existed
+and was correct; only its look in `src/design/content-theme.ts` was off the
+founder's reference (a small centred "Chapter 1" eyebrow, a large bold centred
+title wrapping to two lines, generous air, then the drop cap). Styled there and
+nowhere else because of the two-documents problem (`DESIGN.md` §3): the book's
+prose renders inside an epub.js iframe with no access to the host's CSS, so
+every content rule lives in this one file.
+
+- **`.chapter-head`** — `text-align: left` → `center`; margin `0 0 2.4rem` →
+  `3rem 0 3rem`, giving air above the ordinal (top of the chapter's opening
+  page) and before the first paragraph, not just below the title.
+- **`h1` / `.chapter-title`** — font-size `1.9rem` → `2.5rem` (was ~1.8x body
+  text, now ~2.4x), font-weight `400` → `700`, `text-align: left` → `center`,
+  tighter `line-height` (`1.2` → `1.15`) so a wrapped two-line title reads as
+  one block. `.chapter-title` also gained its own `text-align: center` so it
+  holds even if `h1`'s rule is ever split from it.
+- **`.chapter-ordinal`** — dropped `text-transform: uppercase` and the
+  `0.34em` letter-spacing (an eyebrow-caption treatment that fought the
+  reference's plain "Chapter 1"), `font-weight` `500` → `400`, `font-size`
+  `0.74rem` → `0.9rem` so it registers as a real line instead of nearly
+  disappearing. **Colour is unchanged (`accent`)** — kept intentionally:
+  `content-theme.test.ts` and the fleuron (`.chapter-end`) both key off the
+  ordinal's colour to stay in the same accent family, and Leaf's own fine-press
+  identity (not the reference's) owns that choice.
+- **No small-caps changes** — the title never had a `font-variant: small-caps`
+  rule (only `.para.first::first-line`, the body lede, does), so there was
+  nothing to drop for the larger centred title.
+
+### The "§" fallback (never render a bare ordinal that isn't one)
+`normalizeChapterDom` falls back to a literal `"§"` ordinal when a chapter has
+neither a heading nor a title at all (unstructured Calibre exports — see the
+tiering comment at the top of `normalize.ts`). That fallback node is real
+DOM (kept, so `content-hook.ts`'s fleuron-suppression logic, which reads its
+text, still works — see `MIN_UNSTRUCTURED_CHAPTER_TEXT`), but it is never a
+real chapter number, and a lone "§" above a chapter reads worse than no
+ordinal line. `normalizeChapterDom` now tags that one node with a second
+class, `chapter-ordinal--fallback`; `content-theme.ts` adds one rule,
+`.chapter-ordinal--fallback { display: none }`, to hide it. Pure CSS + a class
+name — no new DOM nodes, so pagination re-measurement (`content-hook.ts`'s
+`"expand"` emit, DEFECTS D2/D5) is unaffected.
+
+### Verification
+`content-theme.test.ts` and `normalize.test.ts` / `content-hook.test.ts` gained
+assertions for: centred head/title, the title's larger bold scale, the
+generous head margins, the quiet ordinal, and the fallback-hiding rule (plus a
+DOM-level check that a real ordinal never carries `chapter-ordinal--fallback`
+and the "§" one always does). Visually verified at 390×844 against the
+founder's reference by driving `registerContentPipeline` (unmodified) over
+jsdom documents and rendering the resulting normalized + styled HTML in system
+Chrome — the demo server on :4400 turned out to be rooted in a different
+checkout mid-edit, so it could not be used for this change.
+
 ## Change — Day is the warm paper (founder, 2026-09-10)
 
 Day's palette is now the one that shipped as `sepia` before `0006` retired it.

@@ -63,6 +63,43 @@ describe("buildContentTheme palettes match tokens.css", () => {
   }
 });
 
+describe("chapter opening (centred hierarchy)", () => {
+  it("centres the chapter head, ordinal and title", () => {
+    const styles = buildContentTheme(DEFAULT_THEME);
+    expect(styles[".chapter-head"]["text-align"]).toBe("center");
+    expect(styles[".chapter-title"]["text-align"]).toBe("center");
+    expect(styles.h1["text-align"]).toBe("center");
+  });
+
+  it("gives the title a noticeably larger, bolder scale than body text", () => {
+    const styles = buildContentTheme(DEFAULT_THEME);
+    const bodyFontRem = parseFloat(styles.body["font-size"]);
+    const titleFontRem = parseFloat(styles.h1["font-size"]);
+    expect(titleFontRem).toBeGreaterThan(bodyFontRem * 1.8);
+    expect(Number(styles.h1["font-weight"])).toBeGreaterThanOrEqual(700);
+  });
+
+  it("gives the chapter head generous air above the ordinal and before the first paragraph", () => {
+    const styles = buildContentTheme(DEFAULT_THEME);
+    const [top, , bottom] = styles[".chapter-head"].margin.split(/\s+/);
+    expect(parseFloat(top)).toBeGreaterThanOrEqual(2);
+    expect(parseFloat(bottom)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps the ordinal small, regular-weight and quiet relative to the title", () => {
+    const styles = buildContentTheme(DEFAULT_THEME);
+    const ordinalFontRem = parseFloat(styles[".chapter-ordinal"]["font-size"]);
+    const titleFontRem = parseFloat(styles.h1["font-size"]);
+    expect(ordinalFontRem).toBeLessThan(titleFontRem / 2);
+    expect(Number(styles[".chapter-ordinal"]["font-weight"])).toBeLessThanOrEqual(400);
+  });
+
+  it("hides the normalizer's unstructured '§' fallback — never a real ordinal", () => {
+    const styles = buildContentTheme(DEFAULT_THEME);
+    expect(styles[".chapter-ordinal--fallback"].display).toBe("none");
+  });
+});
+
 describe("chapter-end fleuron (Phase 2)", () => {
   it("is a single glyph, swappable in one line", () => {
     // The founder may restyle this — the whole contract is that it's one
