@@ -440,15 +440,23 @@ function applyTocHeadFallback(
   const fallback = header.querySelector(".chapter-ordinal--fallback");
 
   if (BARE_ORDINAL.test(label)) {
-    if (fallback) {
-      fallback.textContent = `${CHAPTER_LABEL_WORD} ${label}`;
-      fallback.setAttribute("class", "chapter-ordinal");
-    } else {
-      const p = doc.createElementNS(XHTML_NS, "p");
-      p.setAttribute("class", "chapter-ordinal");
-      p.textContent = `${CHAPTER_LABEL_WORD} ${label}`;
-      header.appendChild(p);
+    // "Chapter 12" is the WHOLE head for these books — their TOC carries only a
+    // number and their markup carries nothing — so it takes the title
+    // treatment, not the small quiet ordinal one. The ordinal style is a
+    // caption sized to sit ABOVE a title; with no title under it, it reads as a
+    // stranded label floating in the head's air. A large numeral on a chapter's
+    // opening page is also what a printed novel without chapter titles does.
+    //
+    // An `h1` rather than a `p`: it is genuinely this section's heading, and
+    // the document outline should say so.
+    fallback?.remove();
+    let h1 = header.querySelector(".chapter-title") as HTMLElement | null;
+    if (!h1) {
+      h1 = doc.createElementNS(XHTML_NS, "h1") as HTMLElement;
+      h1.setAttribute("class", "chapter-title");
+      header.appendChild(h1);
     }
+    h1.textContent = `${CHAPTER_LABEL_WORD} ${label}`;
     return;
   }
 

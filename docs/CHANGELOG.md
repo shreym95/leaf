@@ -2,6 +2,21 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — a title-less chapter's number is the head, at head size
+
+The TOC fallback shipped the recovered label as `.chapter-ordinal` — the small,
+quiet, accent-coloured caption. That is correct **above a title**, and wrong when
+it is the only thing there: books whose TOC carries just a number have no title
+under it, so "Chapter 12" sat alone as a stranded label inside the head's 3rem of
+air (founder, on the real book).
+
+A bare-numeral label now takes the **title** treatment instead — an `h1.chapter-title`,
+so the document outline agrees that it is this section's heading. A printed novel
+without chapter titles opens the same way: the numeral, large, and nothing else.
+
+Unchanged: a book with both an ordinal and a title still gets the small ordinal
+above a large title, and a book with a real in-document heading is never touched.
+
 ## Fix — chapter head recovered from the EPUB's own TOC when the markup has none (Claude, 2026-09-11)
 
 The previous fix (below) hid the "§" fallback — correct on its own, but it

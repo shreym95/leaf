@@ -447,12 +447,14 @@ describe("registerContentPipeline", () => {
 
       handlers[0]({ document: doc, sectionIndex: 0 }, rendition);
 
-      const ordinal = doc.querySelector(".chapter-ordinal");
-      expect(ordinal?.textContent).toBe(`${CHAPTER_LABEL_WORD} 1`);
-      expect(ordinal?.classList.contains("chapter-ordinal--fallback")).toBe(
-        false,
-      );
-      expect(doc.querySelector(".chapter-title")).toBeNull();
+      // Title treatment, not the small ordinal one: with no title beneath it,
+      // "Chapter 1" IS the head, and the ordinal style is a caption sized to
+      // sit above a title. It is an `h1` so the document outline agrees.
+      const title = doc.querySelector(".chapter-title");
+      expect(title?.tagName.toLowerCase()).toBe("h1");
+      expect(title?.textContent).toBe(`${CHAPTER_LABEL_WORD} 1`);
+      // The hidden "§" fallback is gone, not merely restyled.
+      expect(doc.querySelector(".chapter-ordinal")).toBeNull();
     });
 
     it("image-only <h1> + a titled TOC label -> that title, verbatim", () => {
