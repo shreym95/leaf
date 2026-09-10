@@ -2,6 +2,52 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — typeface, line spacing and margins move to `/settings` as a Reading section (Claude, 2026-09-11)
+
+Three reader preferences — typeface, line spacing, margins — lost their home when
+the reader's `⋯` settings pod was removed, and were frozen at whatever value they
+held. They do not go back into the reader; they move to `/settings`.
+
+- **The organising principle is touch frequency, not category.** Font size and
+  theme are changed mid-book, repeatedly, so they stay exactly where they are —
+  the reader dock. Typeface, line spacing and margins are chosen once, at setup,
+  and never revisited — that makes them a `/settings` concern, not a reading
+  concern, regardless of the fact that all five used to live in one sheet
+  together.
+- **Line spacing and margins collapse into one 3-stop Density control**
+  (Compact / Standard / Spacious), because nobody thinks "1.7 leading" — they
+  think "denser" or "airier," and the two values are only meaningful read
+  together. This is the same move Kindle's redesigned `Aa` menu made, replacing
+  loose sliders with named presets. There is deliberately no "Custom" stop —
+  once the two values move only as a pair, there is no way left to reach one
+  off this list. A stored pair that matches none of the three presets (written
+  by the retired continuous sheet) selects **none** rather than silently
+  snapping to Standard; the first click on any preset adopts it outright.
+- **Atkinson Hyperlegible is labelled as a low-vision / dyslexia-friendly
+  option, not a third font flavour.** Serif and Sans are taste; Legible is an
+  accessibility aid, and burying that framing inside a plain three-item font
+  list would have been worse than leaving it out. The label is exposed as an
+  accessible description (`aria-describedby`), not folded into the option's
+  name.
+- **`ReadingSection`** (new, `src/components/settings-ui/`) renders both
+  controls plus a live preview — a short paragraph of public-domain prose
+  styled with the current typeface and density, reusing the `--leaf-font-reader-*`
+  tokens and the stored `lineSpacing` number. It is explicitly documented as an
+  approximation: the real prose renders inside the epub.js `<iframe>`, a
+  separate document styled by `content-theme.ts` that cannot see this page's
+  custom properties (`docs/DESIGN.md` §3) — the preview does not import that
+  builder.
+- **Seeding** — `/settings` is a server component with no reader-settings seed
+  of its own. It now calls `getReaderSettings(user.id)` /
+  `settingsFromRow(...)` exactly like the reader route does for `ReaderShell`,
+  and hands the result to `ReadingSection` as `initialSettings`, which hydrates
+  `useReaderSettings` on mount. No new persistence: still `setFontFamily` /
+  `setLineSpacing` / `setMargins` on the existing store.
+- **Cleanup** — `ReaderSettingsSheet` (and its test) is deleted; nothing
+  referenced it since the dock replaced it. `AccountSection`'s "Reading
+  settings" pointer text is corrected to describe the new split instead of
+  claiming all five settings live in the reader's `Aa` menu.
+
 ## Fix — a title-less chapter's number is the head, at head size
 
 The TOC fallback shipped the recovered label as `.chapter-ordinal` — the small,

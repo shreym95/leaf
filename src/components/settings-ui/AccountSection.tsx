@@ -49,10 +49,11 @@ export function AccountSection({
       <section className="flex flex-col gap-2">
         <SectionHeading>Reading settings</SectionHeading>
         <p className="max-w-prose font-ui text-ink-mid [font-size:var(--leaf-text-sm)] [line-height:var(--leaf-leading-body)]">
-          Font, text size, line spacing, margins, and theme live in the reader
-          itself — open any book and use the <span className="text-ink">Aa</span>{" "}
-          menu. Your choices are saved to your account and follow you across
-          devices.
+          Text size and theme are for mid-read tweaks — they stay in the
+          reader itself, under the <span className="text-ink">Aa</span> menu.
+          Typeface, line spacing, and margins are set up once, so they live
+          below, in Reading. Every choice is saved to your account and
+          follows you across devices.
         </p>
       </section>
 
