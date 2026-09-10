@@ -70,6 +70,17 @@ const DISPLAY_FONT = '"Fraunces", Georgia, serif';
  */
 export const CHAPTER_END_ORNAMENT = "❦";
 
+/**
+ * The word prefixed onto a bare ordinal recovered from the EPUB's own table of
+ * contents when a chapter's own markup has no usable heading at all — e.g. its
+ * `<h1>` is only an image (the chapter number as a JPEG) — so the nav doc's
+ * "1" becomes "Chapter 1" rather than a hanging number with no referent.
+ * `src/reader/content-hook.ts` imports this the same way it imports
+ * `CHAPTER_END_ORNAMENT`: presentation text crosses the design bridge, the
+ * reader logic layer never hard-codes a word.
+ */
+export const CHAPTER_LABEL_WORD = "Chapter";
+
 export type ContentThemeStyles = Record<string, Record<string, string>>;
 
 /**

@@ -10,7 +10,7 @@ import {
   registerContentPipeline,
   type ReaderContentSettings,
 } from "./content-hook";
-import { CHAPTER_END_ORNAMENT } from "@/design/content-theme";
+import { CHAPTER_END_ORNAMENT, CHAPTER_LABEL_WORD } from "@/design/content-theme";
 import { DEFAULT_THEME, THEME_IDS } from "@/design/themes";
 
 const OZ = `<?xml version="1.0" encoding="utf-8"?>
@@ -38,7 +38,16 @@ const DAY: ReaderContentSettings = {
 
 type Handler = (a: unknown, b?: unknown) => void;
 
-function makeRendition() {
+/** Optional TOC/spine wiring for the chapter-head-from-TOC tests — every
+ *  other test leaves this off and gets the plain book from before. */
+interface RenditionOptions {
+  /** `book.navigation.toc`, epub.js's own nested shape. */
+  navigationToc?: unknown[];
+  /** `book.spine.get(i).href` for each section index this test cares about. */
+  spineHrefs?: Record<number, string>;
+}
+
+function makeRendition(options?: RenditionOptions) {
   const handlers: Handler[] = [];
   const doc = new DOMParser().parseFromString(OZ, "application/xml");
   const contents = { document: doc, sectionIndex: 0 };
@@ -51,6 +60,8 @@ function makeRendition() {
     font: vi.fn(),
     fontSize: vi.fn(),
   };
+
+  const spineHrefs = options?.spineHrefs ?? {};
 
   const rendition = {
     themes,
@@ -65,10 +76,17 @@ function makeRendition() {
     },
     getContents: () => [contents],
     book: {
+      navigation: options?.navigationToc
+        ? { toc: options.navigationToc }
+        : undefined,
       packaging: {
         metadata: { title: "The Wonderful Wizard of Oz", creator: "L. Frank Baum" },
       },
-      spine: { length: 24 },
+      spine: {
+        length: 24,
+        get: (i: number) =>
+          spineHrefs[i] !== undefined ? { href: spineHrefs[i] } : undefined,
+      },
     },
   };
 
@@ -396,6 +414,97 @@ describe("registerContentPipeline", () => {
     ).not.toThrow();
     expect(messy.querySelector(".chapter-ordinal")?.textContent).toBe("§");
     expect(messy.querySelector('style[id="leaf-content-pipeline"]')).not.toBeNull();
+  });
+
+  describe("chapter head recovered from the EPUB's own TOC", () => {
+    // The shape of a real book seen in production: every chapter's <h1>
+    // contains only an <img> (the chapter number is a JPEG), so the
+    // normalizer finds no text and falls back to "§". The real numbering
+    // lives only in the EPUB's nav document, as bare numbers.
+    function imageHeadingDoc(n: number): Document {
+      return new DOMParser().parseFromString(
+        `<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <head><title>chapter</title></head>
+  <body epub:type="bodymatter">
+    <section epub:type="chapter">
+      <h1><img src="images/${n}.jpg" alt=""/></h1>
+      <p>${PROSE}</p>
+    </section>
+  </body>
+</html>`,
+        "application/xml",
+      );
+    }
+
+    it('image-only <h1> + a bare numeral TOC label -> "Chapter 1"', () => {
+      const doc = imageHeadingDoc(1);
+      const { rendition, handlers } = makeRendition({
+        navigationToc: [{ href: "chapter-1.xhtml", label: "1" }],
+        spineHrefs: { 0: "chapter-1.xhtml" },
+      });
+      registerContentPipeline(rendition, () => DAY);
+
+      handlers[0]({ document: doc, sectionIndex: 0 }, rendition);
+
+      const ordinal = doc.querySelector(".chapter-ordinal");
+      expect(ordinal?.textContent).toBe(`${CHAPTER_LABEL_WORD} 1`);
+      expect(ordinal?.classList.contains("chapter-ordinal--fallback")).toBe(
+        false,
+      );
+      expect(doc.querySelector(".chapter-title")).toBeNull();
+    });
+
+    it("image-only <h1> + a titled TOC label -> that title, verbatim", () => {
+      const doc = imageHeadingDoc(2);
+      const { rendition, handlers } = makeRendition({
+        navigationToc: [{ href: "chapter-2.xhtml", label: "The Cyclone" }],
+        spineHrefs: { 1: "chapter-2.xhtml" },
+      });
+      registerContentPipeline(rendition, () => DAY);
+
+      handlers[0]({ document: doc, sectionIndex: 1 }, rendition);
+
+      expect(doc.querySelector(".chapter-title")?.textContent).toBe(
+        "The Cyclone",
+      );
+      // Never prefixed with "Chapter", and no leftover "§" line.
+      expect(doc.querySelector(".chapter-ordinal")).toBeNull();
+    });
+
+    it("a real in-document heading is untouched — no TOC lookup applied", () => {
+      // Default fixture (OZ) already has a real ordinal + title from its own
+      // <hgroup>. A TOC entry for the same href must be ignored.
+      const { rendition, handlers, doc } = makeRendition({
+        navigationToc: [
+          { href: "chapter-1.xhtml", label: "This label must never be used" },
+        ],
+        spineHrefs: { 0: "chapter-1.xhtml" },
+      });
+      registerContentPipeline(rendition, () => DAY);
+
+      handlers[0]({ document: doc, sectionIndex: 0 }, rendition);
+
+      expect(doc.querySelector(".chapter-ordinal")?.textContent).toBe("I");
+      expect(doc.querySelector(".chapter-title")?.textContent).toBe(
+        "The Cyclone",
+      );
+    });
+
+    it('no heading and no TOC entry either -> renders nothing (silence beats "§")', () => {
+      const doc = imageHeadingDoc(3);
+      const { rendition, handlers } = makeRendition(); // no navigation at all
+      registerContentPipeline(rendition, () => DAY);
+
+      handlers[0]({ document: doc, sectionIndex: 2 }, rendition);
+
+      const ordinal = doc.querySelector(".chapter-ordinal");
+      expect(ordinal?.textContent).toBe("§");
+      expect(ordinal?.classList.contains("chapter-ordinal--fallback")).toBe(
+        true,
+      );
+      expect(doc.querySelector(".chapter-title")).toBeNull();
+    });
   });
 
   it("paints every registered theme distinctly, not just day and night", () => {

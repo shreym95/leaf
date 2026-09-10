@@ -15,6 +15,9 @@
 import type { Book, Rendition } from "epubjs";
 import type { ThemeName } from "@/lib/types";
 import { createDebugProbe, type ReaderDebugProbe } from "./debug";
+import { chapterLabelForHref, flattenToc } from "./navigation";
+export type { ReaderTocEntry } from "./navigation";
+import type { ReaderTocEntry } from "./navigation";
 
 // Re-exported so the reader chrome imports one module, not two.
 export type {
@@ -33,14 +36,6 @@ export interface ReaderContentSettings {
   margins: "narrow" | "normal" | "wide";
   /** The persisted theme union — widening it must not need an edit here. */
   theme: ThemeName;
-}
-
-/** One entry of the book's own table of contents, flattened for the chrome. */
-export interface ReaderTocEntry {
-  /** Spine href (may carry a fragment) — pass straight to `goTo()`. */
-  href: string;
-  /** Display label from the EPUB navigation document, trimmed. */
-  label: string;
 }
 
 export interface ReaderLocation {
@@ -450,66 +445,11 @@ export async function createReader(
     }
   }
 
-  // Best-effort: walk the EPUB's own TOC for the entry whose href matches the
-  // given spine href (fragments and leading `./` stripped from both sides), and
-  // return its label. Used to denormalise a chapter title onto a bookmark at
-  // save time — never load-bearing, so any miss returns undefined.
-  type NavItemish = { href?: string; label?: string; subitems?: unknown[] };
-  function chapterLabelForHref(href: string | undefined): string | undefined {
-    if (!href) return undefined;
-    try {
-      const toc = (book.navigation as { toc?: unknown } | undefined)?.toc;
-      if (!Array.isArray(toc) || toc.length === 0) return undefined;
-      const bare = (s: string) => s.split("#")[0].replace(/^\.?\//, "");
-      const want = bare(href);
-      const walk = (items: NavItemish[]): string | undefined => {
-        for (const it of items) {
-          if (typeof it?.href === "string" && bare(it.href) === want) {
-            const label = typeof it.label === "string" ? it.label.trim() : "";
-            if (label) return label;
-          }
-          const sub = Array.isArray(it?.subitems)
-            ? (it.subitems as NavItemish[])
-            : undefined;
-          if (sub) {
-            const nested = walk(sub);
-            if (nested) return nested;
-          }
-        }
-        return undefined;
-      };
-      return walk(toc as NavItemish[]);
-    } catch {
-      return undefined;
-    }
-  }
-
-  // Flatten the EPUB's navigation document to a plain list, depth-first, so the
-  // chrome can render a chapter menu without knowing epub.js's nested shape.
-  // Same tolerance as `chapterLabelForHref`: an item missing either an href or a
-  // label is skipped rather than rendered blank.
-  function flattenToc(): ReaderTocEntry[] {
-    try {
-      const toc = (book.navigation as { toc?: unknown } | undefined)?.toc;
-      if (!Array.isArray(toc) || toc.length === 0) return [];
-      const out: ReaderTocEntry[] = [];
-      const walk = (items: NavItemish[]): void => {
-        for (const it of items) {
-          const href = typeof it?.href === "string" ? it.href.trim() : "";
-          const label = typeof it?.label === "string" ? it.label.trim() : "";
-          if (href && label) out.push({ href, label });
-          const sub = Array.isArray(it?.subitems)
-            ? (it.subitems as NavItemish[])
-            : undefined;
-          if (sub) walk(sub);
-        }
-      };
-      walk(toc as NavItemish[]);
-      return out;
-    } catch {
-      return [];
-    }
-  }
+  // Best-effort denormalisation of a chapter title onto a bookmark at save
+  // time (`currentChapterLabel()` below) and the chapter menu (`toc()`
+  // below) — both just call through to `./navigation`, which does the actual
+  // TOC walk/flatten (shared with `content-hook.ts`, which needs the same
+  // lookup for a chapter whose own markup has no usable heading).
 
   // epub.js applies theme/CSS changes to the iframe but does NOT re-flow the
   // paginated columns — the current page goes blank until the next turn forces
@@ -656,14 +596,14 @@ export async function createReader(
         const here = rendition?.currentLocation() as
           | { start?: { href?: string } }
           | undefined;
-        return chapterLabelForHref(here?.start?.href);
+        return chapterLabelForHref(book, here?.start?.href);
       } catch {
         return undefined;
       }
     },
 
     toc(): ReaderTocEntry[] {
-      return flattenToc();
+      return flattenToc(book);
     },
 
     relayout(): void {

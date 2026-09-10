@@ -1,15 +1,22 @@
 // Content pipeline — wires the normalizer + the fine-press stylesheet into
-// epub.js. LOGIC layer, with ONE sanctioned exception to the design seam: it
-// imports `buildContentTheme` from `src/design/content-theme.ts`. That module is
-// a plain data builder (selector -> declaration map) explicitly designated as
-// the bridge for feeding epub.js `rendition.themes` — it is data, not
-// presentation code, and lives in the design layer so a UI overhaul touches it
-// there. The ESLint seam rule carries a matching per-file exception.
+// epub.js. LOGIC layer, with sanctioned exceptions to the design seam: it
+// imports `buildContentTheme` and `CHAPTER_END_ORNAMENT` from
+// `src/design/content-theme.ts`. Those are a plain data builder (selector ->
+// declaration map) and a bare glyph/word constant — data and presentation
+// TEXT, not presentation code — explicitly designated as the bridge for
+// feeding epub.js `rendition.themes` and for the odd bit of chapter-head copy
+// this module has to render itself (see step 1c). Lives in the design layer
+// so a UI overhaul touches it there. The ESLint seam rule carries a matching
+// per-file exception. `CHAPTER_LABEL_WORD` (step 1c) crosses the same bridge.
 //
 // What this does, per rendered chapter (SPEC §7, §8):
 //   1. `normalizeChapterDom` rewrites the chapter DOM to `<article class="chapter">`
 //      (ordinal eyebrow, Fraunces title, first-paragraph drop-cap/lede target),
 //      resetting publisher attributes. Tiered + never fatal.
+//   1c. If that left no usable heading (e.g. the chapter's own `<h1>` is only
+//      an image), recover a label from the EPUB's own TOC instead — see
+//      `applyTocHeadFallback`. The normalizer itself cannot do this: it is
+//      pure and section-local, with no access to the book's navigation.
 //   2. Injects a single `<style id="leaf-content-pipeline">` into the chapter
 //      document carrying the fine-press rules (from `buildContentTheme`), the
 //      live reading settings (font / size / spacing / measure), and a hard
@@ -25,10 +32,12 @@ import type { Rendition } from "epubjs";
 import {
   buildContentTheme,
   CHAPTER_END_ORNAMENT,
+  CHAPTER_LABEL_WORD,
   type ContentThemeStyles,
 } from "@/design/content-theme";
 import { DEFAULT_THEME, isThemeId, type ThemeId } from "@/design/themes";
 import { normalizeChapterDom } from "@/normalizer";
+import { chapterLabelForHref, type NavigationBookLike } from "./navigation";
 
 // The engine owns this type; re-exported here so existing importers of
 // `@/reader/content-hook` keep resolving. Type-only import — no runtime cycle.
@@ -341,6 +350,119 @@ function appendChapterEndOrnament(doc: Document, nonChapter: boolean): void {
   article.appendChild(p);
 }
 
+/** A bare ordinal recovered from the TOC — a lone number or roman numeral with
+ *  no referent of its own ("1", "IV", "12"), as opposed to a real title
+ *  ("The Cyclone"). Mirrors the ordinal-shape test `normalize.ts` uses on a
+ *  chapter's own heading text, duplicated here rather than imported: that
+ *  module stays pure and section-local (SPEC §7) and has no reason to export a
+ *  helper aimed at TOC labels. */
+const BARE_ORDINAL = /^(?:[0-9]+|[IVXLC]+)$/;
+
+/**
+ * True once a normalized chapter head carries something worth showing: a real
+ * title, or an ordinal that is not the last-resort "§" fallback.
+ * `normalize.ts` tags that one node with `chapter-ordinal--fallback` (added in
+ * `0960ae4` alongside the CSS rule that hides it) — read that marker rather
+ * than re-deciding by comparing strings.
+ */
+function hasUsableChapterHead(article: Element): boolean {
+  if (article.querySelector(".chapter-title")) return true;
+  const ordinal = article.querySelector(".chapter-ordinal");
+  return !!ordinal && !ordinal.classList.contains("chapter-ordinal--fallback");
+}
+
+/** This section's spine href, so its TOC entry can be found. Same defensive
+ *  `rendition.book` reach as `bookMeta()` below. */
+function spineHrefFor(
+  rendition: Rendition,
+  sectionIndex: number | undefined,
+): string | undefined {
+  if (typeof sectionIndex !== "number") return undefined;
+  try {
+    const book = (
+      rendition as unknown as {
+        book?: {
+          spine?: { get?: (i: number) => { href?: string } | undefined };
+        };
+      }
+    ).book;
+    const get = book?.spine?.get;
+    return typeof get === "function"
+      ? get.call(book?.spine, sectionIndex)?.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * When a chapter's own markup yields no usable heading — a real book seen in
+ * the wild has every `<h1>` as only a JPEG chapter-number image, so
+ * `normalizeChapterDom` finds text nowhere and falls back to "§" — recover a
+ * label from the EPUB's own navigation document instead (its TOC carries the
+ * real numbering as bare text: "1", "2", "3"…). Same TOC walk as
+ * `chapterLabelForHref` in `./engine`, shared via `./navigation` rather than
+ * re-implemented here.
+ *
+ * A bare ordinal ("1", "IV") is a hanging number with no referent, so it
+ * renders as "Chapter 1" (`CHAPTER_LABEL_WORD` crosses the design bridge for
+ * that word, same as `CHAPTER_END_ORNAMENT`). A real title is used verbatim —
+ * never prefixed, that would invent structure the book did not have. No TOC
+ * entry either: leave the (CSS-hidden) "§" fallback exactly as it renders
+ * today — silence beats "§".
+ *
+ * Must run AFTER `appendChapterEndOrnament`: that function keys its own
+ * unstructured-chapter threshold (`MIN_UNSTRUCTURED_CHAPTER_TEXT`) off the RAW
+ * "§" ordinal text, and resolving the label first would make an image-headed
+ * chapter with a numeric TOC entry read as "structured" there too — a
+ * behaviour change outside this fix's scope. Must still run BEFORE the
+ * `injectStylesheet` + `remeasure` calls in the pipeline below, same as the
+ * ornament: it adds DOM at the top of the chapter (DEFECTS D2/D5).
+ *
+ * Not in the normalizer: that module is pure and section-local, with no
+ * access to the book's navigation, and must not gain any (SPEC §7).
+ */
+function applyTocHeadFallback(
+  doc: Document,
+  rendition: Rendition,
+  sectionIndex: number | undefined,
+): void {
+  const article = doc.querySelector("article.chapter");
+  if (!article || hasUsableChapterHead(article)) return;
+
+  const href = spineHrefFor(rendition, sectionIndex);
+  const book = (rendition as unknown as { book?: NavigationBookLike }).book;
+  const label = chapterLabelForHref(book, href);
+  if (!label) return;
+
+  const header = article.querySelector("header.chapter-head");
+  if (!header) return;
+  const fallback = header.querySelector(".chapter-ordinal--fallback");
+
+  if (BARE_ORDINAL.test(label)) {
+    if (fallback) {
+      fallback.textContent = `${CHAPTER_LABEL_WORD} ${label}`;
+      fallback.setAttribute("class", "chapter-ordinal");
+    } else {
+      const p = doc.createElementNS(XHTML_NS, "p");
+      p.setAttribute("class", "chapter-ordinal");
+      p.textContent = `${CHAPTER_LABEL_WORD} ${label}`;
+      header.appendChild(p);
+    }
+    return;
+  }
+
+  // A real title, not a bare number — verbatim, no ordinal line.
+  fallback?.remove();
+  let h1 = header.querySelector(".chapter-title") as HTMLElement | null;
+  if (!h1) {
+    h1 = doc.createElementNS(XHTML_NS, "h1") as HTMLElement;
+    h1.setAttribute("class", "chapter-title");
+    header.appendChild(h1);
+  }
+  h1.textContent = label;
+}
+
 /** The shape of an epub.js `Contents` we actually use. */
 interface ContentsLike {
   document?: Document;
@@ -484,6 +606,16 @@ export function registerContentPipeline(
       } catch {
         /* the ornament is cosmetic — never let it break a render */
       }
+    }
+
+    // 1c. This chapter's own markup gave no usable heading (e.g. an
+    //     image-only `<h1>`) — recover the label from the EPUB's own TOC.
+    //     Before the stylesheet + re-measure, same reason as 1b: it can add a
+    //     DOM node at the top of the chapter (DEFECTS D2 / D5).
+    try {
+      applyTocHeadFallback(doc, rendition, holder?.sectionIndex);
+    } catch {
+      /* best-effort — never block a render on the TOC lookup */
     }
 
     // 2. Fine-press + live-settings stylesheet into the chapter document.

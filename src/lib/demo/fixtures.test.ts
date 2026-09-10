@@ -42,18 +42,26 @@ describe("demo fixtures", () => {
     expect([...readDates].sort((a, b) => b.localeCompare(a))).toEqual(readDates);
   });
 
-  it("exposes exactly the three bundled EPUBs as openable, served from /bundled/", () => {
+  it("exposes exactly four openable EPUBs, served from /bundled/ or /demo/", () => {
     const openable = demoListBooks().filter((b) => b.storage_path);
     expect(openable.map((b) => b.id).sort()).toEqual([
+      "chapter-image-heading",
       "frankenstein",
       "time-machine",
       "wizard-of-oz",
     ]);
     for (const b of openable) {
       expect(demoBookFileUrl(b.storage_path as string)).toMatch(
-        /^\/bundled\/[a-z-]+\.epub$/,
+        /^\/(bundled|demo)\/[a-z-]+\.epub$/,
       );
     }
+    // The chapter-head-from-TOC fixture specifically lives under /demo/, next
+    // to the app's other hand-built synthetic EPUBs — not /bundled/ with the
+    // three full-size Standard Ebooks downloads.
+    const fixture = openable.find((b) => b.id === "chapter-image-heading");
+    expect(demoBookFileUrl(fixture?.storage_path as string)).toBe(
+      "/demo/chapter-image-heading.epub",
+    );
   });
 
   it("returns a plain Book (no shelf-only fields) from demoGetBook, or null", () => {
