@@ -2,6 +2,42 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Change — Day is the warm paper (founder, 2026-09-10)
+
+Day's palette is now the one that shipped as `sepia` before `0006` retired it.
+The **id stays `day`** — it names the role (the light option), not the hue — so
+both CHECK constraints still accept it and no migration moved.
+
+| | was | now |
+|---|---|---|
+| `--leaf-page` | `#f1ebdc` | `#ede2cb` |
+| `--leaf-paper` | `#e7dfcc` | `#e4d8be` |
+| `--leaf-ink` | `#26200f` | `#2b2218` |
+| `--leaf-accent` | `#8a2b1e` oxblood | `#9e472a` terracotta |
+
+### What moved on its own
+**The dock.** Its day colours are `var(--leaf-ink)` and `color-mix` off page/ink,
+so the palette swap re-coloured it with no edit — the payoff of composing it from
+the theme instead of the handoff's fixed hexes (see `DESIGN.md` §11b).
+
+### What did not, and had to be done by hand
+- **`content-theme.ts` PALETTES.day.** The book renders in an iframe that cannot
+  read the host's custom properties, so every palette value exists twice
+  (`DESIGN.md` §3). Changing one side only would have turned the chrome warm and
+  left the page cool — the exact failure that rule exists to prevent.
+- **`highlight-theme.ts` WASH.day** — the washes go a touch stronger (0.30 → 0.32
+  copper, 0.28 → 0.30 the rest). Warmer paper swallows a pale wash.
+- **`--leaf-dim-max` 0.5 → 0.45.** Warm paper has less contrast headroom before a
+  dimming scrim (stage 3) takes body text below 4.5:1.
+- **`--leaf-rule-soft` `#cfc3a2` → `#cdbf9c`**, keeping the same whisper against
+  the warmer page.
+- **`content-hook.test.ts` asserted `#f1ebdc` literally.** Updated, with a comment
+  saying why it is hard-coded: the file is in `src/reader`, which the seam rule
+  forbids from importing `@/design`.
+
+`tokens.test.ts` asserts contrast per theme and stayed green, so AA and 1.4.11
+still hold — these values were AA-tuned when sepia first shipped.
+
 ## Feature — jump-back, and the top bar hides in fullscreen
 
 ### `ReturnChip` — the reader's only undo

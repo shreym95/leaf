@@ -30,10 +30,12 @@ export const HIGHLIGHT_LABELS: Record<HighlightColorName, string> = {
 
 const WASH: Record<ThemeId, Record<HighlightColorName, string>> = {
   day: {
-    copper: "rgba(190, 120, 60, 0.30)",
-    sage: "rgba(104, 140, 92, 0.28)",
-    sky: "rgba(86, 132, 178, 0.28)",
-    rose: "rgba(186, 92, 116, 0.28)",
+    // A touch stronger than the old cooler Day: the warmer paper swallows a pale
+    // wash, but these stay translucent enough to read `--leaf-ink` through.
+    copper: "rgba(190, 120, 60, 0.32)",
+    sage: "rgba(104, 140, 92, 0.30)",
+    sky: "rgba(86, 132, 178, 0.30)",
+    rose: "rgba(186, 92, 116, 0.30)",
   },
   night: {
     copper: "rgba(197, 138, 82, 0.34)",

@@ -31,13 +31,18 @@ interface ContentPalette {
 
 const PALETTES: Record<ThemeId, ContentPalette> = {
   day: {
-    page: "#f1ebdc",
-    ink: "#26200f",
-    inkMid: "#5c5237",
-    faint: "#6a5f45",
-    accent: "#8a2b1e",
-    rule: "#8f8358",
-    selection: "rgba(138, 43, 30, 0.2)",
+    // Warm laid paper — these must stay byte-identical to the `[data-theme="day"]`
+    // block in tokens.css. The book renders in an iframe that cannot read the
+    // host's custom properties, so every palette value exists twice; a change
+    // here without the matching one there turns the chrome one colour and leaves
+    // the page another (docs/DESIGN.md §3).
+    page: "#ede2cb",
+    ink: "#2b2218",
+    inkMid: "#5e503f",
+    faint: "#6a5c48",
+    accent: "#9e472a",
+    rule: "#8f7d55",
+    selection: "rgba(158, 71, 42, 0.22)",
   },
   night: {
     page: "#1a1611",

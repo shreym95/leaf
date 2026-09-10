@@ -294,51 +294,56 @@
    Palette — DAY
    ------------------------------------------------------------------------- */
 [data-theme="day"] {
-  --leaf-paper: #e7dfcc;
-  --leaf-page: #f1ebdc;
-  --leaf-edge: #d8ccae;
-  --leaf-ink: #26200f;
-  --leaf-ink-mid: #5c5237;
-  /* faint darkened from the prototype's #8a7d5e (~3.1:1, failed AA) to ~4.8:1 */
-  --leaf-faint: #6a5f45;
-  --leaf-accent: #8a2b1e;
-  /* rule darkened from #cabf9f (~1.5:1, short of WCAG 1.4.11's 3:1 for a
-     non-text boundary) to ~3.2:1 on --leaf-page; still a single hairline. */
-  --leaf-rule: #8f8358;
+  /* Warm laid paper. This started life as the separate `sepia` theme and became
+     Day itself on 2026-09-10: the two light palettes sat a shade apart and read
+     as variants of each other rather than a choice, and the warmer one is the
+     fine-press reference. The id stays `day` — it names the role (the light
+     option), not the hue — so no CHECK constraint and no migration moved. */
+  --leaf-paper: #e4d8be;
+  --leaf-page: #ede2cb;
+  --leaf-edge: #d1c3a5;
+  --leaf-ink: #2b2218;
+  --leaf-ink-mid: #5e503f;
+  /* ~5.0:1 on --leaf-page — raised from the plan's #7a6b57, which failed AA. */
+  --leaf-faint: #6a5c48;
+  --leaf-accent: #9e472a;
+  /* ~3.1:1 on --leaf-page, meeting WCAG 1.4.11 for a non-text boundary; still a
+     single hairline, not a border. */
+  --leaf-rule: #8f7d55;
   /* Decorative container edge — NOT a functional boundary. `--leaf-rule` is
-     darkened to ~3.2:1 because WCAG 1.4.11 governs boundaries that carry
-     meaning (a separator, a field edge). A cover's outline carries none: it is
-     there so the artwork does not bleed into the page. At 3:1 a box of it reads
-     as a hard frame; this is the whisper the fine-press reference actually
-     wants. Never use it for anything a reader must perceive to understand the
-     page. */
-  --leaf-rule-soft: #cfc3a2;
-  --leaf-gutter: rgba(0, 0, 0, 0.05);
-  --leaf-focus: #8a2b1e;
-  --leaf-selection: rgba(138, 43, 30, 0.2);
+     darkened to meet 1.4.11 because that governs boundaries carrying meaning (a
+     separator, a field edge). A cover's outline carries none: it is there so the
+     artwork does not bleed into the page. At 3:1 a box of it reads as a hard
+     frame; this is the whisper the fine-press reference wants. Never use it for
+     anything a reader must perceive to understand the page. */
+  --leaf-rule-soft: #cdbf9c;
+  --leaf-gutter: rgba(43, 34, 24, 0.06);
+  --leaf-focus: #9e472a;
+  --leaf-selection: rgba(158, 71, 42, 0.22);
   /* Highlight wash — painted into the book iframe behind the text, so these are
-     translucent and must stay light enough to read `--leaf-ink` through. */
-  --leaf-hl-copper: rgba(190, 120, 60, 0.30);
-  --leaf-hl-sage: rgba(104, 140, 92, 0.28);
-  --leaf-hl-sky: rgba(86, 132, 178, 0.28);
-  --leaf-hl-rose: rgba(186, 92, 116, 0.28);
+     translucent and must stay light enough to read `--leaf-ink` through. A
+     touch stronger than the old cooler Day: warmer paper swallows a pale wash. */
+  --leaf-hl-copper: rgba(190, 120, 60, 0.32);
+  --leaf-hl-sage: rgba(104, 140, 92, 0.30);
+  --leaf-hl-sky: rgba(86, 132, 178, 0.30);
+  --leaf-hl-rose: rgba(186, 92, 116, 0.30);
   /* Reader dock — ONE solid surface shared by the resting pill and the expanded
      deck (iteration 1 §1/§4: no translucent mismatch between states).
-     Composed from this theme's own palette rather than the handoff's fixed
-     hexes: on a light theme the dock is the page inverted — ink as the surface,
-     paper as the type — which is the same ink-on-paper relationship the book
-     itself uses, read the other way round. */
+     Composed from this theme's own palette rather than fixed hexes: on a light
+     theme the dock is the page inverted — ink as the surface, paper as the type
+     — the same ink-on-paper relationship the book uses, read the other way
+     round. It therefore follows a palette change for free. */
   --leaf-dock-bg: var(--leaf-ink);
   --leaf-dock-border: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 14%);
   --leaf-dock-text: var(--leaf-page);
-  /* Mixed toward the surface until it is quiet but still ~6:1 on it. Day's
-     --leaf-ink-mid is tuned for dark-on-light and would be ~2.3:1 here. */
+  /* Mixed toward the surface until it is quiet but still ~6:1 on it. The
+     palette's --leaf-ink-mid is tuned for dark-on-light and would be ~2.3:1. */
   --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 35%);
   --leaf-dock-track: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 22%);
   --leaf-dock-hover: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 9%);
-  /* Day has the most contrast headroom, so it can take the most dimming before
-     body ink on paper falls to 4.5:1. */
-  --leaf-dim-max: 0.5;
+  /* Warm paper has less contrast headroom than the old cooler Day, so it can
+     take a little less dimming before body ink falls to 4.5:1. */
+  --leaf-dim-max: 0.45;
   color-scheme: light;
 }
 

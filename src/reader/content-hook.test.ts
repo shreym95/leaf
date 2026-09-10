@@ -290,7 +290,10 @@ describe("registerContentPipeline", () => {
     const before =
       doc.querySelector('style[id="leaf-content-pipeline"]')?.textContent ?? "";
     expect(before).toContain("font-size:1.06rem");
-    expect(before).toContain("#f1ebdc"); // day paper
+    // Day's page colour, from `content-theme.ts` PALETTES.day. Hard-coded on
+    // purpose: this file is in `src/reader`, which the seam rule forbids from
+    // importing `@/design`. If the palette moves, this moves with it.
+    expect(before).toContain("#ede2cb");
 
     settings = { ...DAY, theme: "night", fontSize: 1.25, margins: "wide" };
     pipeline.refresh();
@@ -302,7 +305,7 @@ describe("registerContentPipeline", () => {
     expect(css).toContain("padding-left:2.75rem");
     expect(css).toContain("max-width:30rem");
     expect(css).toContain("#1a1611"); // night page — theme actually flipped
-    expect(css).not.toContain("#f1ebdc");
+    expect(css).not.toContain("#ede2cb");
     expect(css).toContain("!important"); // hard palette override present
     // still exactly one <style>, and it is the last child of its host
     const all = doc.querySelectorAll('style[id="leaf-content-pipeline"]');
