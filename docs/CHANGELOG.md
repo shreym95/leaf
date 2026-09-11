@@ -2,6 +2,29 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — the top bar's buttons work while the deck is open
+
+Founder, on a phone: in fullscreen with the dock open, Library and the
+exit-fullscreen button did nothing.
+
+**Cause.** `ReaderDock`'s outside-tap dismiss fires on `pointerdown` for anything
+not inside the deck — including the top bar. So a press on the bar closed the
+deck, which flipped the bar to `hidden` (`inert`, `pointer-events: none`), and
+the `click` that followed had nowhere to land. The buttons were being destroyed
+between press and release.
+
+**Fix.** The top bar carries `data-reader-chrome`, and the dismiss handler
+ignores presses inside it. The bar is on screen *because* the deck is open, so
+tapping it was never "tapping the page". Taps on the page still dismiss.
+
+### A test that was worth nothing
+The first regression test drove a full `click` and **passed without the fix** —
+jsdom does not enforce `inert` or `pointer-events`, and React had not re-rendered
+between the synthetic `pointerdown` and `click` anyway. Rewritten to assert at
+the level the bug actually lives: a `pointerdown` on the bar must leave the deck
+open, and a `pointerdown` on the page must still close it. Verified it fails
+without the fix and passes with it, and the real click was confirmed in Chrome.
+
 ## Fix — opening the deck in fullscreen no longer shoves the text down
 
 Founder, on a phone: in fullscreen, opening the dock pushed the prose heavily

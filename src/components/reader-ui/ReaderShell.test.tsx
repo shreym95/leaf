@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, act, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReaderShell } from "./ReaderShell";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -267,6 +274,40 @@ describe("ReaderShell — settings reach the engine", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /^Return to/ })).toBeNull(),
     );
+  });
+
+  it("does not dismiss the deck when the top bar itself is pressed", async () => {
+    // The deck's outside-tap dismiss used to fire on the top bar too: it closed
+    // the deck on `pointerdown`, the bar went `inert`, and the `click` never
+    // landed — Library and the fullscreen toggle silently did nothing while the
+    // deck was open. Asserted at the `pointerdown` level because that is where
+    // the bug lives; jsdom does not enforce `inert`, so a full click would pass
+    // either way and prove nothing.
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    await user.keyboard("f"); // immersive — the bar only shows with the deck
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    const deck = screen.getByRole("region", { name: "Reading controls" });
+    expect(deck).not.toHaveAttribute("aria-hidden", "true");
+
+    fireEvent.pointerDown(screen.getByRole("link", { name: /library/i }));
+    expect(deck).not.toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("still dismisses the deck when the page itself is pressed", async () => {
+    // The other half of the same rule — chrome is exempt, the page is not.
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    const deck = screen.getByRole("region", { name: "Reading controls" });
+    expect(deck).not.toHaveAttribute("aria-hidden", "true");
+
+    fireEvent.pointerDown(screen.getByRole("main", { name: "Reader" }));
+    await waitFor(() => expect(deck).toHaveAttribute("aria-hidden", "true"));
   });
 
   it("keeps the bookmark list reachable from the contents popover", async () => {

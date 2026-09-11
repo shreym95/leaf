@@ -396,6 +396,16 @@ export function ReaderDock({
 
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node;
+      // Reader chrome outside the deck — today the top bar, which is only on
+      // screen BECAUSE the deck is open — is not "the page". Dismissing on it
+      // closed the deck on `pointerdown`, which made that bar `inert` before
+      // the `click` landed, so its buttons silently did nothing.
+      if (
+        target instanceof Element &&
+        target.closest("[data-reader-chrome]") !== null
+      ) {
+        return;
+      }
       if (!deckRef.current?.contains(target)) {
         closeDeck();
         return;

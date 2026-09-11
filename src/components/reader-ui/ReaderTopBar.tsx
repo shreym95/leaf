@@ -60,6 +60,12 @@ export function ReaderTopBar({
 }: ReaderTopBarProps) {
   return (
     <header
+      // Marks this as reader chrome, not the page. `ReaderDock`'s outside-tap
+      // dismiss checks for it: without that, pressing a button here closed the
+      // deck on `pointerdown`, which made this bar `inert` before the `click`
+      // could land — the Library link and the fullscreen toggle did nothing
+      // while the deck was open (founder, 2026-09-12).
+      data-reader-chrome=""
       aria-hidden={hidden}
       inert={hidden}
       className={
