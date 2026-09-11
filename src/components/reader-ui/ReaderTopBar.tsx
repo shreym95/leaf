@@ -19,6 +19,14 @@ import Link from "next/link";
  * resting dock stays visible throughout, so the deck (and with it this bar, and
  * the way back to the library) is always one tap away.
  *
+ * In fullscreen it is taken OUT of the flex flow and positioned against the
+ * reader layout's `relative` container — which is what that container's
+ * `relative` is for. Rendering `null` and re-mounting it into the flow made
+ * opening the deck shrink the frame by the bar's height: the prose jumped down,
+ * and epub.js repaginated underneath it. Floating it means opening and closing
+ * the deck moves nothing on the page. Out of flow it costs no height either, so
+ * it stays mounted and merely fades.
+ *
  * It carries the fullscreen toggle. Immersive is Fullscreen-only now, and
  * its job — removing the browser's URL bar and toolbars, 56–90px that no dock
  * design can reclaim — matters most on a phone, which has no `F` key. Without a
@@ -30,7 +38,9 @@ import Link from "next/link";
 export interface ReaderTopBarProps {
   /** Whether the document is currently fullscreen (best-effort — see useImmersive). */
   immersive: boolean;
-  /** Hide the bar entirely, giving its height back to the page. */
+  /** Fullscreen: float the bar over the page instead of occupying flow height. */
+  overlay: boolean;
+  /** Fade the bar out. Only ever true while `overlay` is — in flow it always shows. */
   hidden: boolean;
   onToggleImmersive: () => void;
 }
@@ -44,17 +54,30 @@ const controlClass =
 
 export function ReaderTopBar({
   immersive,
+  overlay,
   hidden,
   onToggleImmersive,
 }: ReaderTopBarProps) {
-  // `display: none`, not opacity: the point is to give the height back to the
-  // page, and a merely-invisible bar still occupies the flow.
-  if (hidden) return null;
-
   return (
     <header
-      className="z-30 flex flex-none items-center justify-between [padding-block:var(--leaf-reader-bar-pad-y)] [padding-inline:var(--leaf-reader-bar-pad-x)]"
+      aria-hidden={hidden}
+      inert={hidden}
+      className={
+        "z-30 flex items-center justify-between " +
+        "[padding-block:var(--leaf-reader-bar-pad-y)] " +
+        "[padding-inline:var(--leaf-reader-bar-pad-x)] " +
+        "[transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] " +
+        (overlay ? "absolute inset-x-0 top-0" : "flex-none")
+      }
       style={{
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? "none" : undefined,
+        // Floating over prose, it needs its own ground to stay legible — the
+        // same material the dock uses, so the two read as one layer of chrome.
+        background: overlay ? "var(--leaf-dock-bg)" : undefined,
+        borderBottom: overlay
+          ? "1px solid var(--leaf-dock-border)"
+          : undefined,
         paddingTop: `calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-top))`,
         paddingLeft: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-left))`,
         paddingRight: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-right))`,

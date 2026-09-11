@@ -455,9 +455,11 @@ export function ReaderShell({
     <>
       <ReaderTopBar
         immersive={immersive}
-        // Fullscreen gives the page the browser's chrome; keeping ours would
-        // hand the space straight back. Opening the deck brings it back, so the
-        // fullscreen toggle and the way to the library are never unreachable.
+        // Fullscreen gives the page the browser's chrome; keeping ours in the
+        // flow would hand the space straight back. So in fullscreen the bar
+        // floats instead of occupying height, and merely fades — opening the
+        // deck must not move the prose or force a repagination.
+        overlay={immersive}
         hidden={immersive && !deckOpen}
         onToggleImmersive={toggleImmersive}
       />

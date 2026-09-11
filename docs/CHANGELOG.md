@@ -2,6 +2,42 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — opening the deck in fullscreen no longer shoves the text down
+
+Founder, on a phone: in fullscreen, opening the dock pushed the prose heavily
+downward and closing it snapped back. Jarring, and it made the controls feel
+like they were shoving the book around.
+
+**Cause, and it was mine.** Hiding the top bar in fullscreen was implemented as
+`return null`. Opening the deck un-hid it, which *mounted it back into the flex
+column* — the frame lost the bar's height, the text reflowed, and epub.js
+repaginated underneath it.
+
+The reader layout already anticipated exactly this: its container is `relative`
+specifically so "in immersive mode the bars are taken OUT of the flex flow and
+positioned against this container". The `null` implementation ignored that.
+
+### Fixed
+`ReaderTopBar` gains an `overlay` prop, true whenever immersive. In that mode it
+is `absolute inset-x-0 top-0` instead of `flex-none`, so it costs no flow height
+and merely fades in and out — the page never moves and epub.js never re-measures.
+Floating over prose it takes the dock's own surface and border, so it stays
+legible and reads as the same layer of chrome as the deck.
+
+Measured on the running app at 390×844:
+
+| state | frame top | frame height |
+|---|---|---|
+| windowed | 32px | 740px |
+| fullscreen, deck closed | 0px | 772px |
+| fullscreen, deck open | 0px | **772px** |
+
+Identical across the open/close that used to jump. Fullscreen also genuinely
+reclaims the bar's 32px now, rather than only appearing to.
+
+`ReaderTopBar.test.tsx` locks both directions: `absolute` and still mounted when
+overlaid, `flex-none` when windowed.
+
 ## Change — the dock lifts off the page in both themes, and its contrast is tested
 
 **The dock only looked theme-aware.** Day inverted (ink as the surface), Night

@@ -8,6 +8,7 @@ describe("ReaderTopBar", () => {
     render(
       <ReaderTopBar
         immersive={false}
+        overlay={false}
         hidden={false}
         onToggleImmersive={() => {}}
       />,
@@ -25,6 +26,7 @@ describe("ReaderTopBar", () => {
     const { rerender } = render(
       <ReaderTopBar
         immersive={false}
+        overlay={false}
         hidden={false}
         onToggleImmersive={() => {}}
       />,
@@ -33,7 +35,7 @@ describe("ReaderTopBar", () => {
     expect(enter).toHaveAttribute("aria-pressed", "false");
 
     rerender(
-      <ReaderTopBar immersive hidden={false} onToggleImmersive={() => {}} />,
+      <ReaderTopBar immersive overlay hidden={false} onToggleImmersive={() => {}} />,
     );
     expect(
       screen.getByRole("button", { name: "Exit full screen" }),
@@ -46,6 +48,7 @@ describe("ReaderTopBar", () => {
     render(
       <ReaderTopBar
         immersive={false}
+        overlay={false}
         hidden={false}
         onToggleImmersive={onToggleImmersive}
       />,
@@ -54,12 +57,29 @@ describe("ReaderTopBar", () => {
     expect(onToggleImmersive).toHaveBeenCalledTimes(1);
   });
 
-  it("gives its height back to the page when hidden", () => {
-    // Fullscreen exists to reclaim the browser's chrome; leaving our own bar in
-    // the flow would spend that space straight back.
+  it("floats out of the flow in fullscreen, so nothing reflows", () => {
+    // Rendering null and re-mounting into the flow made opening the deck shrink
+    // the frame by the bar's height: the prose jumped and epub.js repaginated.
     const { container } = render(
-      <ReaderTopBar immersive hidden onToggleImmersive={() => {}} />,
+      <ReaderTopBar immersive overlay hidden onToggleImmersive={() => {}} />,
     );
-    expect(container.querySelector("header")).toBeNull();
+    const header = container.querySelector("header");
+    expect(header?.className).toContain("absolute");
+    expect(header?.className).not.toContain("flex-none");
+    // Still mounted — out of flow it costs no height, so it only fades.
+    expect(header).not.toBeNull();
+    expect(header).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("stays in the flow when not in fullscreen", () => {
+    const { container } = render(
+      <ReaderTopBar
+        immersive={false}
+        overlay={false}
+        hidden={false}
+        onToggleImmersive={() => {}}
+      />,
+    );
+    expect(container.querySelector("header")?.className).toContain("flex-none");
   });
 });
