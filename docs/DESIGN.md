@@ -357,34 +357,51 @@ is no words-per-minute model to derive a time from (REVISED_PLAN §9A).
 ## 11b. The reader dock's palette
 
 The dock is the one surface in Leaf that is **not** simply a palette colour, and
-the rule is worth stating because it is easy to get wrong twice.
+the rules are worth stating because they were got wrong twice.
 
-**Never hard-code the dock's colours.** They are composed from the active theme:
+**Never hard-code the dock's colours.** Every one is composed from the active
+theme, with the *same* mix in both themes:
 
-| | Day | Night |
-|---|---|---|
-| `--leaf-dock-bg` | `var(--leaf-ink)` | `color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 10%)` |
-| `--leaf-dock-text` | `var(--leaf-page)` | `var(--leaf-ink)` |
+| token | value |
+|---|---|
+| `--leaf-dock-bg` | `color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 14%)` |
+| `--leaf-dock-border` | same mix at **50%** |
+| `--leaf-dock-text` | `var(--leaf-ink)` |
+| `--leaf-dock-text-muted` | `color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 25%)` |
 
-**Day inverts; night lifts.** On a light theme the dock is the page turned over —
-ink as the surface, paper as the type. On a dark theme that inversion would be a
-bone-white bar glowing beside the text, so the dock is instead the page raised a
-little, reading as a solid object resting above the paper.
+**The dock is the page lifted, in both themes.** It used to invert on Day — ink
+as the surface, paper as the type. That was theme-*aware* but not theme-*adaptive*:
+Day resolved to `rgb(43,34,24)` and Night to `rgb(42,37,32)`, the same slab twice.
+Worse, its weight was inconsistent — the highest-contrast element on a Day page
+and a whisper on Night, which inverts "paper first, chrome second". Lifting keeps
+the weight constant and lets the colour genuinely change.
 
-**The dock must differ from BOTH `--leaf-page` and `--leaf-paper`.** Which of the
-two sits behind it depends on the breakpoint: below 1024px the reader is
-full-bleed on `--leaf-page`, above it the book sits on a `--leaf-paper` mat. A
-value that clears only one of them vanishes at the other width. This is exactly
-how the first version failed — it used a fixed `#1c1713`, one percent off night's
-`--leaf-page`.
+**Separation comes from the border and elevation, not from contrast.** The fill
+is a deliberately quiet lift, so `--leaf-dock-border` is what identifies the
+control, and `--leaf-dock-shadow` is what makes it an object above the page.
 
-**Muted dock text is mixed toward the dock surface, not taken from
-`--leaf-ink-mid`.** The palette's mid tone is tuned for dark-on-light body text
-and lands around 2.3:1 against an ink-coloured dock. The mix holds ~6:1.
+**The dock must differ from BOTH `--leaf-page` and `--leaf-paper`.** Which sits
+behind it depends on the breakpoint: full-bleed page below 1024px, paper mat
+above. A value clearing only one of them vanishes at the other width. That is how
+the first version failed — a fixed `#1c1713`, one percent off night's page.
 
-**One surface, both states.** The resting pill and the expanded pods share the
-same material — children inside the pill are transparent. Giving each part its
-own background is what made the first version read as loose chips.
+**The percentages are measured, never eyeballed**, and
+`src/design/dock-contrast.test.ts` locks them. It resolves the mixes with the
+same Oklab interpolation a browser uses (verified to two decimals against a
+canvas-rasterised measurement of the running app) and asserts:
+
+| | floor | day | night |
+|---|---|---|---|
+| dock text on dock | 4.5:1 AA | 9.05 | 9.50 |
+| muted text on dock | 4.5:1 AA | 4.86 | 5.34 |
+| border vs page | 3:1 (1.4.11) | 3.24 | 3.56 |
+| dock vs page | 1.25 (design) | 1.34 | 1.30 |
+
+That test exists because **night's muted dock text sat at 3.90:1 from the day the
+dock was built** and nobody noticed: `color-mix()` serialises as `oklab()`, so
+these values cannot be read off the stylesheet, and every earlier figure in this
+document was an estimate. If the palette moves, re-run it — the ratios are
+relative to `--leaf-page` and `--leaf-ink`.
 
 ---
 

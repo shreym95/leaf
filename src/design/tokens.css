@@ -329,18 +329,33 @@
   --leaf-hl-rose: rgba(186, 92, 116, 0.30);
   /* Reader dock — ONE solid surface shared by the resting pill and the expanded
      deck (iteration 1 §1/§4: no translucent mismatch between states).
-     Composed from this theme's own palette rather than fixed hexes: on a light
-     theme the dock is the page inverted — ink as the surface, paper as the type
-     — the same ink-on-paper relationship the book uses, read the other way
-     round. It therefore follows a palette change for free. */
-  --leaf-dock-bg: var(--leaf-ink);
-  --leaf-dock-border: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 14%);
-  --leaf-dock-text: var(--leaf-page);
-  /* Mixed toward the surface until it is quiet but still ~6:1 on it. The
-     palette's --leaf-ink-mid is tuned for dark-on-light and would be ~2.3:1. */
-  --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 35%);
-  --leaf-dock-track: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 22%);
-  --leaf-dock-hover: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 9%);
+     Composed from this theme's palette, never fixed hexes, so it follows a
+     palette change for free.
+     The dock is the page LIFTED, in both themes — not inverted in one and
+     lifted in the other. Inverting on Day made it a near-black slab on cream:
+     technically theme-aware (it resolved to the same colour Night did), but the
+     highest-contrast element on the page, which is the opposite of "paper
+     first, chrome second". Lifting keeps its WEIGHT consistent across themes
+     and lets its colour actually change. Separation comes from a firm border
+     and elevation rather than from sheer contrast.
+
+     The percentages are measured, not eyeballed — rasterised through a canvas
+     because color-mix() serialises as oklab() and cannot be parsed as text.
+     Both themes clear the same floors with the same numbers:
+       bg 14%     -> 1.34 (day) / 1.30 (night) against the page: a perceptible
+                     lift without becoming a slab.
+       border 50% -> 3.24 / 3.56, clearing WCAG 1.4.11's 3:1 for the boundary
+                     that identifies the control. At 30% it was ~1.95 and failed.
+       muted 25%  -> 4.86 / 5.34, clearing AA. At 30% day falls to 4.23, and the
+                     old night value (40% toward the page) measured 3.90 — it had
+                     been failing since the dock was built.
+     Re-measure if the palette moves; these are ratios against page and ink. */
+  --leaf-dock-bg: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 14%);
+  --leaf-dock-border: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 50%);
+  --leaf-dock-text: var(--leaf-ink);
+  --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 25%);
+  --leaf-dock-track: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 25%);
+  --leaf-dock-hover: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 22%);
   /* Warm paper has less contrast headroom than the old cooler Day, so it can
      take a little less dimming before body ink falls to 4.5:1. */
   --leaf-dim-max: 0.45;
@@ -375,18 +390,17 @@
   --leaf-hl-sage: rgba(126, 168, 112, 0.30);
   --leaf-hl-sky: rgba(116, 162, 208, 0.30);
   --leaf-hl-rose: rgba(210, 118, 142, 0.30);
-  /* Reader dock — night cannot invert: an ink-coloured surface here would be a
-     bone-white bar glowing next to the page. Instead the dock is the page
-     LIFTED a little, so it reads as a solid object resting above the paper.
-     It has to differ from both --leaf-page (the phone's full-bleed reader
-     ground) and --leaf-paper (the desktop mat behind the book) — the handoff's
-     #1c1713 sat within 1% of our page and vanished against it. */
-  --leaf-dock-bg: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 10%);
-  --leaf-dock-border: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 20%);
+  /* Reader dock — the SAME mixes as day, deliberately. One rule for both
+     themes: the dock is the page lifted, and every value is measured against
+     this theme's own palette, so each theme resolves it differently while the
+     dock's weight stays constant. Every percentage below was chosen by
+     measuring, not by eye — see the day block for what each one clears. */
+  --leaf-dock-bg: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 14%);
+  --leaf-dock-border: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 50%);
   --leaf-dock-text: var(--leaf-ink);
-  --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 40%);
+  --leaf-dock-text-muted: color-mix(in oklab, var(--leaf-ink), var(--leaf-page) 25%);
   --leaf-dock-track: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 25%);
-  --leaf-dock-hover: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 18%);
+  --leaf-dock-hover: color-mix(in oklab, var(--leaf-page), var(--leaf-ink) 22%);
   /* Night starts dark: there is far less room to dim before ink on paper
      stops clearing AA. */
   --leaf-dim-max: 0.25;
@@ -403,6 +417,14 @@
     0 24px 60px -20px rgba(0, 0, 0, 0.25),
     0 4px 16px -8px rgba(0, 0, 0, 0.19);
   --leaf-shadow-sheet: 0 -8px 40px -12px rgba(0, 0, 0, 0.35);
+  /* The dock's own elevation. It is a small object floating over the page, not
+     a sheet rising from the edge, so it casts in all directions. Carries more
+     of the separation now that the dock is a lifted paper surface rather than a
+     near-black slab: on Day the border and this shadow are what say "object",
+     where raw contrast used to. */
+  --leaf-dock-shadow:
+    0 2px 8px -2px rgba(0, 0, 0, 0.18),
+    0 10px 28px -8px rgba(0, 0, 0, 0.22);
   --leaf-shadow-focus:
     0 0 0 2px var(--leaf-paper),
     0 0 0 4px var(--leaf-focus);

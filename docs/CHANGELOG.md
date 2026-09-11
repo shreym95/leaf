@@ -2,6 +2,45 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Change — the dock lifts off the page in both themes, and its contrast is tested
+
+**The dock only looked theme-aware.** Day inverted (ink as the surface), Night
+lifted — and both resolved to nearly the same colour: `rgb(43,34,24)` against
+`rgb(42,37,32)`. Same slab twice. Its *weight* was what actually differed: the
+highest-contrast element on a Day page, a whisper on Night, which is the reverse
+of "paper first, chrome second".
+
+Both themes now use one rule — the page **lifted**, never inverted — so the
+weight stays constant and the colour genuinely changes with the theme.
+Separation comes from a firmer border and a dedicated `--leaf-dock-shadow`
+rather than from raw contrast.
+
+### The measurement, which changed the plan
+Values were picked by rasterising each `color-mix()` through a canvas (it
+serialises as `oklab()` and cannot be parsed as text) and computing WCAG ratios:
+
+- `bg` **14%** — 1.34 day / 1.30 night against the page: a perceptible lift,
+  not a slab. 8% measured 1.18 and read as a slightly different patch of paper.
+- `border` **50%** — 3.24 / 3.56, clearing 1.4.11's 3:1 for the boundary that
+  identifies the control. 30% measured ~1.95 and failed.
+- `text-muted` **25%** — 4.86 / 5.34, clearing AA. 30% drops Day to 4.23.
+
+**And it caught a live bug.** Night's muted dock text had been at **3.90:1** —
+below AA — since the dock was built. Every contrast figure previously written
+into `DESIGN.md` for these tokens was an estimate, never a measurement.
+
+### Added
+- `src/design/dock-contrast.test.ts` — resolves the mixes with the same Oklab
+  interpolation a browser uses (verified to two decimals against the running
+  app) and asserts all four floors per theme, so this cannot drift silently
+  again.
+- `--leaf-dock-shadow` — the dock's own elevation, replacing `--leaf-shadow-sheet`
+  for the dock, the contents popover and the return chip. A small object
+  floating over the page casts in all directions; a sheet rising from the edge
+  does not.
+
+`DESIGN.md` §11b rewritten with the rules and the measured table.
+
 ## Fix — the danger zone is the last thing on the settings page
 
 Adding the Reading section put "Delete account" in the MIDDLE of `/settings`,

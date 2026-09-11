@@ -166,7 +166,7 @@ const podSurface: CSSProperties = {
   background: "var(--leaf-dock-bg)",
   borderColor: "var(--leaf-dock-border)",
   color: "var(--leaf-dock-text)",
-  boxShadow: "var(--leaf-shadow-sheet)",
+  boxShadow: "var(--leaf-dock-shadow)",
 };
 
 const podClass =

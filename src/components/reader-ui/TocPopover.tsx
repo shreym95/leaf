@@ -90,7 +90,7 @@ export function TocPopover({
         background: "var(--leaf-dock-bg)",
         borderColor: "var(--leaf-dock-border)",
         borderRadius: "var(--leaf-radius-lg)",
-        boxShadow: "var(--leaf-shadow-sheet)",
+        boxShadow: "var(--leaf-dock-shadow)",
         color: "var(--leaf-dock-text)",
       }}
     >

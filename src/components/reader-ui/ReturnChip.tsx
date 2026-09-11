@@ -34,7 +34,7 @@ export function ReturnChip({ label, onReturn }: ReturnChipProps) {
         background: "var(--leaf-dock-bg)",
         borderColor: "var(--leaf-dock-border)",
         color: "var(--leaf-dock-text)",
-        boxShadow: "var(--leaf-shadow-sheet)",
+        boxShadow: "var(--leaf-dock-shadow)",
         height: "var(--leaf-dock-h)",
         borderRadius: "var(--leaf-dock-radius)",
       }}
