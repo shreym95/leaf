@@ -59,6 +59,20 @@ vi.mock("@/lib/supabase/client", () => ({
   },
 }));
 
+// The book-store cache is a separate concern (see book-store.test.ts) — this
+// suite only asserts ReaderShell's cache-first WIRING: a hit skips `fetch`
+// entirely, a miss fetches then populates the cache, and with neither the
+// existing error state is unchanged.
+const bookStore = vi.hoisted(() => ({
+  readCachedBook: vi.fn(async (): Promise<ArrayBuffer | undefined> => undefined),
+  writeCachedBook: vi.fn(async () => {}),
+}));
+
+vi.mock("@/lib/offline/book-store", () => ({
+  readCachedBook: bookStore.readCachedBook,
+  writeCachedBook: bookStore.writeCachedBook,
+}));
+
 const INITIAL = {
   fontFamily: "serif" as const,
   fontSize: 1.06,
@@ -74,6 +88,10 @@ beforeEach(() => {
   h.toc.mockReturnValue([]);
   h.currentChapterLabel.mockReturnValue(undefined);
   useReaderSettings.setState({ ...READER_SETTINGS_DEFAULTS });
+  // Default: a cache miss, so the existing fetch-driven tests keep working
+  // unchanged. Individual tests override with a resolved value for a hit.
+  bookStore.readCachedBook.mockImplementation(async () => undefined);
+  bookStore.writeCachedBook.mockImplementation(async () => {});
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })),
@@ -334,5 +352,56 @@ describe("ReaderShell — settings reach the engine", () => {
       // Engine options; the D2 debug probe is off unless `?debug=1` asked.
       expect.objectContaining({ debug: false }),
     );
+  });
+});
+
+describe("ReaderShell — cache-first book bytes (Stage 2 offline reading)", () => {
+  it("a cache hit skips fetch entirely", async () => {
+    const cached = new ArrayBuffer(4);
+    bookStore.readCachedBook.mockImplementation(async () => cached);
+
+    renderShell();
+    await ready();
+
+    expect(bookStore.readCachedBook).toHaveBeenCalledWith("book-1");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(bookStore.writeCachedBook).not.toHaveBeenCalled();
+
+    const { createReader } = await import("@/reader/engine");
+    expect(createReader).toHaveBeenCalledWith(
+      cached,
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("a cache miss fetches over the network then populates the cache", async () => {
+    // beforeEach's default is already a miss; assert the populate side too.
+    renderShell();
+    await ready();
+
+    expect(bookStore.readCachedBook).toHaveBeenCalledWith("book-1");
+    expect(fetch).toHaveBeenCalledWith("https://example.test/book.epub");
+    await waitFor(() =>
+      expect(bookStore.writeCachedBook).toHaveBeenCalledWith(
+        "book-1",
+        expect.any(ArrayBuffer),
+        { title: "Frankenstein", author: "Mary Shelley" },
+      ),
+    );
+  });
+
+  it("shows the existing error state when there is neither cache nor network", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 500, arrayBuffer: async () => new ArrayBuffer(0) })),
+    );
+
+    renderShell();
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Couldn't download the book (HTTP 500).");
+    expect(bookStore.writeCachedBook).not.toHaveBeenCalled();
   });
 });
