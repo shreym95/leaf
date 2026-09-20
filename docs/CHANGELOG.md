@@ -2,6 +2,30 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — an unreachable auth server no longer 500s every protected route
+
+Found while mapping the code for offline reading. `updateSession` awaits
+`supabase.auth.getUser()` — a live call to Supabase's auth server on **every**
+request that carries a session cookie — with no `try/catch`. A Supabase outage, a
+DNS blip or a timeout therefore rejected the proxy, and `/library`, `/settings`
+and `/reader/*` all answered **500**.
+
+`src/lib/auth.ts` has always caught the same call and degraded to "signed out".
+The asymmetry was the bug: one layer treated an upstream failure as recoverable
+and the other let it take the app down.
+
+**A thrown call says nothing about the session, so it is now treated as unknown
+rather than as signed out:** the request passes through with the cookies it
+arrived with. It cannot leak a protected page — the page's own `requireUser`
+makes the same call server-side and redirects to `/login` if that also fails. It
+only stops a transient upstream failure becoming a hard error at the edge.
+
+### Also: the proxy had no tests at all
+`src/lib/supabase/middleware.test.ts` is new — signed-in passthrough, redirect
+with a preserved `next` param, the no-cookie fast path that skips the network
+entirely, and the outage case above. Verified the outage test fails without the
+fix rather than merely passing with it.
+
 ## Fix — the top bar's buttons work while the deck is open
 
 Founder, on a phone: in fullscreen with the dock open, Library and the
