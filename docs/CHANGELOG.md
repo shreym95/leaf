@@ -2,6 +2,49 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — offline reading, stage 1: the service worker (Claude, 2026-09-21)
+
+`src/lib/offline/service-worker.ts` + `src/components/reader-ui/RegisterServiceWorker.tsx`,
+mounted from the reader layout. Goal: `/reader/<bookId>` loads with no network, for a book
+previously opened on this device. Self-contained (no imports from `src/`), root-scoped via
+Next's auto-injected `Service-Worker-Allowed` header (confirmed in a real build — see spike
+notes in the file). Fetch handler is an allowlist: only same-origin GETs to `/reader/<id>`
+navigations (network-first, cache-fallback, small inline "not available offline" response on a
+miss) and `/_next/static/*` (cache-first) are ever intercepted; `/api/*`, `/auth/*`,
+`/_next/image`, RSC payload fetches, and every other navigation (`/library`, `/settings`,
+`/login`, `/`) pass straight through untouched — a stale authenticated shell must never be
+servable outside the one route we've deliberately built for it.
+
+**Spike finding that reshaped the versioning design:** the plan was to bake
+`NEXT_PUBLIC_BUILD_ID` into the cache names so a deploy could drop stale caches by name.
+Turbopack compiles this file into a distinct "service worker" chunking context that does not
+support `process` as an external module — any `process.env.*` reference here fails the whole
+build (`the chunking context (unknown) does not support external modules (request:
+node:process)`). Adapted: cache names are fixed, and `RegisterServiceWorker.tsx` (an ordinary
+client component, where env inlining works normally) posts the build id to the worker at
+runtime; the worker compares it against a value it persists in its own cache storage and drops
+the reader/static caches on a mismatch. Verified end-to-end with Playwright.
+
+Security: the cached `/reader/<id>` document is authenticated content. The worker exposes
+`{ type: "leaf-offline/purge" }` (postMessage to the controller) to drop every cache it owns —
+wire this to sign-out in a later stage. Also ships a kill switch
+(`KILL_SWITCH_ENABLED` in `service-worker.ts`): flip it and the worker purges + unregisters
+itself on next activate.
+
+Verified in a real Chrome + `next start` build (jsdom can't do Service Worker / Cache Storage):
+registration at root scope, the `Service-Worker-Allowed` header, `/_next/static/*` cache
+population, offline cache-hit and cache-miss for `/reader/<id>`, non-reader routes failing
+honestly offline, the purge message, and build-id staleness purging — all via Playwright against
+a manually seeded cache (no Supabase session was available to open a real book end-to-end).
+Local `next build` needed a temporary `turbopack.root` override to work around this worktree's
+node_modules being a symlink to a sibling worktree (Turbopack treats that as outside the
+filesystem root); not needed on Vercel and not committed.
+- Cache writes are handed to the fetch event's `waitUntil` rather than left
+  dangling. The browser may terminate the worker as soon as the promise given
+  to `respondWith` settles, which would drop an in-flight `cache.put` and leave
+  the page permanently uncached — the one failure that would look like the
+  worker simply not working.
+
 ## Added — book bytes cached in IndexedDB (Stage 2 offline reading)
 
 A book opened once now reopens instantly and works with no network: `ReaderShell`
