@@ -2,6 +2,71 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Added — book bytes cached in IndexedDB (Stage 2 offline reading)
+
+A book opened once now reopens instantly and works with no network: `ReaderShell`
+is cache-first — it checks the cache before ever calling `fetch`, and populates
+it on a miss.
+
+### Added
+- **`src/lib/offline/book-store.ts`** — book bytes in a dedicated `leaf-books`
+  IndexedDB database (`books` store keyed by `bookId`, `by-lastOpenedAt` index;
+  a single-row `meta` store keeping a running `totalBytes` so eviction never
+  needs a full cursor scan). Public surface is deliberately small:
+  `readCachedBook`, `writeCachedBook`, `listCachedBooks`, `purgeCachedBooks`.
+  Same conventions as `locations-cache.ts` — a support guard that survives SSR
+  and thrown/blocked storage, reads that never throw, fire-and-forget writes —
+  adapted to async.
+- **Eviction**: budget is `min(300MB, quota * 0.5)` from
+  `navigator.storage.estimate()`, falling back to 100MB when that API is
+  absent or throws. A book bigger than the budget alone is never cached. Over
+  budget, least-recently-opened books are evicted first (`by-lastOpenedAt`),
+  always skipping the book currently being written; if evicting everything
+  else still doesn't make room, the write is skipped silently rather than
+  breaking the budget. `navigator.storage.persist()` is requested best-effort
+  once per successful write.
+- `src/lib/offline/book-store.test.ts` — 16 tests: round-trip, miss, eviction
+  order and the never-evict-the-open-book rule, the oversized-skip and
+  still-doesn't-fit-after-eviction backstops, budget fallback (absent/throwing
+  `estimate()`, and the 300MB cap), `listCachedBooks` / `purgeCachedBooks`, and
+  unsupported/blocked storage degrading to an always-miss.
+- `fake-indexeddb` (devDependency) — jsdom has no IndexedDB, unlike the
+  `localStorage` `locations-cache.ts` already runs against.
+
+### Changed
+- **`ReaderShell`** now reads the cache before `fetch` and writes it (fire-and-forget)
+  on a miss, before handing bytes to `createReader`. Cache-first, not
+  network-first, deliberately: a book's bytes are immutable per `bookId` (a
+  re-upload mints a new row and id), so a hit is always correct by
+  construction — and it means a long-open tab whose 1-hour signed URL has
+  expired reopens from cache instead of attempting a doomed fetch. The
+  existing error state is unchanged when there is neither cache nor network.
+  3 new tests: cache hit skips `fetch`, cache miss fetches then populates, and
+  the no-cache-no-network error path.
+- **`locations-cache.ts`** header comment only (no code change) — points at
+  `book-store.ts` and records why the locations table stays on synchronous
+  `localStorage` rather than moving beside the bytes: an async IndexedDB read
+  lands a tick after the first `relocated` event and re-flashes 0%, the exact
+  bug D7 fixed.
+
+### Decisions
+- A cache read hands back a **copy** of the stored buffer (`.slice(0)`), and a
+  write stores a copy of the caller's buffer rather than the live reference —
+  the engine's zip parser goes on to read (and may write into or transfer)
+  the bytes ReaderShell just cached, and that must never reach back into what
+  stays cached for the next open.
+- Eviction accounts for the book being rewritten by backing its *old* size out
+  of the running total before checking against budget, so re-caching a book
+  with a new byte length (e.g. after a re-upload) doesn't double-count itself
+  as its own eviction target.
+- The store keeps **one IndexedDB connection** for the page rather than opening
+  a fresh one per call. A live handle blocks a later `DB_VERSION` upgrade with
+  `onblocked` — the very failure the open path already degrades on — so a
+  leaked handle per read would have made a future migration unrunnable. The
+  cached handle is dropped on `versionchange`/`close`, and is guarded by the
+  `IDBFactory` it was opened from, since a handle is only valid for its own
+  factory.
+
 ## Fix — an unreachable auth server no longer 500s every protected route
 
 Found while mapping the code for offline reading. `updateSession` awaits

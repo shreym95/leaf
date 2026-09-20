@@ -25,6 +25,7 @@ import {
   type BookmarkManager,
   type BookmarkRecord,
 } from "@/reader/bookmarks";
+import { readCachedBook, writeCachedBook } from "@/lib/offline/book-store";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
@@ -195,12 +196,24 @@ export function ReaderShell({
 
     (async () => {
       try {
-        const res = await fetch(fileUrl);
-        if (!res.ok) {
-          throw new Error(`Couldn't download the book (HTTP ${res.status}).`);
-        }
-        const bytes = await res.arrayBuffer();
+        // Cache-first: a book's bytes are immutable per `bookId` (a re-upload
+        // mints a new row and id — see `src/lib/storage.ts`), so a cache hit
+        // is always correct by construction. This also means a long-open tab
+        // whose 1-hour signed URL has expired reopens from cache instead of
+        // attempting a doomed fetch.
+        let bytes = await readCachedBook(bookId);
         if (cancelled) return;
+        if (!bytes) {
+          const res = await fetch(fileUrl);
+          if (!res.ok) {
+            throw new Error(
+              `Couldn't download the book (HTTP ${res.status}).`,
+            );
+          }
+          bytes = await res.arrayBuffer();
+          if (cancelled) return;
+          void writeCachedBook(bookId, bytes, { title, author });
+        }
 
         // `bookId` keys the locations cache so progress is exact on reopen
         // instead of climbing from 0 while the table regenerates (D7).
