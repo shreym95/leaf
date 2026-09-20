@@ -372,6 +372,49 @@ function openDb(): Promise<IDBDatabase | undefined> {
   });
 }
 
+/**
+ * One connection, shared by every operation. Opening per call leaked a handle
+ * each time, and a live handle blocks a later `DB_VERSION` upgrade with
+ * `onblocked` — the failure `openDb` already degrades on. Dropped on
+ * `versionchange`/`close`, and guarded by the `IDBFactory` it was opened from,
+ * since a handle is only valid for its own factory (tests swap the global).
+ * A failed open is never memoised: storage can become available again.
+ */
+let dbPromise: Promise<IDBDatabase | undefined> | undefined;
+let dbFactory: IDBFactory | undefined;
+
+function currentFactory(): IDBFactory | undefined {
+  try {
+    return typeof indexedDB === "undefined" ? undefined : indexedDB;
+  } catch {
+    return undefined;
+  }
+}
+
+function getDb(): Promise<IDBDatabase | undefined> {
+  const factory = currentFactory();
+  if (!factory) return Promise.resolve(undefined);
+  if (dbPromise && dbFactory === factory) return dbPromise;
+
+  dbFactory = factory;
+  const pending = openDb().then((db) => {
+    if (!db) {
+      if (dbPromise === pending) dbPromise = undefined;
+      return undefined;
+    }
+    db.onversionchange = () => {
+      db.close();
+      if (dbPromise === pending) dbPromise = undefined;
+    };
+    db.onclose = () => {
+      if (dbPromise === pending) dbPromise = undefined;
+    };
+    return db;
+  });
+  dbPromise = pending;
+  return pending;
+}
+
 let idSeq = 0;
 /** Chronologically sortable (string keys sort lexicographically in
  *  IndexedDB, and `Date.now()` only grows), unique within a session. */
@@ -389,7 +432,7 @@ export function createIndexedDbStore(): OutboxStore {
     async enqueue(entry) {
       const id = makeId();
       try {
-        const db = await openDb();
+        const db = await getDb();
         if (!db) return id; // no IndexedDB — the write is simply not queued
         await new Promise<void>((resolve) => {
           try {
@@ -400,8 +443,6 @@ export function createIndexedDbStore(): OutboxStore {
             tx.onabort = () => resolve();
           } catch {
             resolve();
-          } finally {
-            db.close();
           }
         });
       } catch {
@@ -412,7 +453,7 @@ export function createIndexedDbStore(): OutboxStore {
 
     async list() {
       try {
-        const db = await openDb();
+        const db = await getDb();
         if (!db) return [];
         return await new Promise<QueuedEntry[]>((resolve) => {
           try {
@@ -422,8 +463,6 @@ export function createIndexedDbStore(): OutboxStore {
             req.onerror = () => resolve([]);
           } catch {
             resolve([]);
-          } finally {
-            db.close();
           }
         });
       } catch {
@@ -433,7 +472,7 @@ export function createIndexedDbStore(): OutboxStore {
 
     async discard(id) {
       try {
-        const db = await openDb();
+        const db = await getDb();
         if (!db) return;
         await new Promise<void>((resolve) => {
           try {
@@ -444,8 +483,6 @@ export function createIndexedDbStore(): OutboxStore {
             tx.onabort = () => resolve();
           } catch {
             resolve();
-          } finally {
-            db.close();
           }
         });
       } catch {
@@ -743,6 +780,40 @@ async function replayNow(): Promise<void> {
   } finally {
     replaying = false;
   }
+}
+
+/**
+ * Drop every queued write and close the connection. Called on sign-out and on
+ * account deletion, alongside the book store's `purgeCachedBooks()` and the
+ * service worker's `leaf-offline/purge` message.
+ *
+ * The outbox holds reading positions, bookmark and highlight text keyed by
+ * user id. That is another person's content if the device changes hands, so it
+ * must not outlive the session that produced it. Like everything else here,
+ * this never throws — a purge that cannot run must not block sign-out.
+ */
+export async function purgeOutbox(): Promise<void> {
+  try {
+    const db = await getDb();
+    if (db) {
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(STORE_NAME, "readwrite");
+          tx.objectStore(STORE_NAME).clear();
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+          tx.onabort = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+      db.close();
+    }
+  } catch {
+    // Best-effort, as above.
+  }
+  dbPromise = undefined;
+  dbFactory = undefined;
 }
 
 let initialized = false;
