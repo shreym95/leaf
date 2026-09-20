@@ -11,6 +11,7 @@ import { create } from "zustand";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { IS_DEMO } from "@/lib/demo/flag";
 import { DEMO_SETTINGS_KEY, readDemoJSON, writeDemoJSON } from "@/lib/demo/local";
+import { classifyWriteFailure, enqueueReaderSettings } from "@/lib/offline/outbox";
 import type { ThemeName } from "@/lib/types";
 
 export type FontFamily = "serif" | "sans" | "legible";
@@ -136,14 +137,24 @@ export const useReaderSettings = create<ReaderSettingsState>((set, get) => {
       return;
     }
     if (!isSupabaseConfigured) return;
+    const row = toRow(userId, values);
     try {
       const supabase = createClient();
-      await supabase
+      const { error } = await supabase
         .from("reader_settings")
-        .upsert(toRow(userId, values), { onConflict: "user_id" });
-    } catch {
+        .upsert(row, { onConflict: "user_id" });
+      if (error) throw error;
+    } catch (err) {
       // Persistence is best-effort — a failed write never blocks reading.
-      // The next change re-attempts the full upsert.
+      // The next change re-attempts the full upsert. A connectivity failure
+      // is also queued so this snapshot survives a reload rather than being
+      // silently superseded by whatever the user changes next; a rejection
+      // (RLS, bad data) is dropped, not retried forever.
+      if (classifyWriteFailure(err) !== "transport") return;
+      // `userId` is already known (checked above) — no need to re-derive it
+      // from a session, unlike the reader/* managers which only learn who
+      // they're writing for via `auth.getUser()`.
+      await enqueueReaderSettings(row);
     }
   }
 

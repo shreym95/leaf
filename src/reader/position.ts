@@ -17,6 +17,11 @@ import { createClient } from "@/lib/supabase/client";
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
 import { IS_DEMO } from "@/lib/demo/flag";
 import { demoPositionKey, readDemoJSON, writeDemoJSON } from "@/lib/demo/local";
+import {
+  classifyWriteFailure,
+  enqueueReadingState,
+  getCachedUserId,
+} from "@/lib/offline/outbox";
 import type { ReaderController, ReaderLocation } from "./engine";
 
 export interface PositionTracker {
@@ -46,17 +51,80 @@ export function trackPosition(
       writeDemoJSON(demoPositionKey(bookId), toWrite);
       return;
     }
+    let supabase: ReturnType<typeof createClient> | undefined;
     try {
-      const supabase = createClient();
+      supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return; // signed out — nothing to scope the write to
       await upsertReadingState(user.id, bookId, toWrite, supabase);
-    } catch {
+    } catch (err) {
       // Position sync is best-effort: a failed write must never interrupt
-      // reading. The next relocation will try again.
+      // reading. A connectivity failure is queued so the write survives a
+      // reload (outbox.ts, §8a); a non-network rejection (RLS, bad data) is
+      // dropped — retrying it forever would never succeed.
+      if (!supabase || classifyWriteFailure(err) !== "transport") return;
+      const userId = await getCachedUserId(supabase);
+      if (!userId) return;
+      await enqueueReadingState(userId, bookId, toWrite);
     }
+  }
+
+  // D8: `stop()` (React unmount) is not enough — backgrounding or killing a
+  // mobile tab never unmounts, so up to `debounceMs` of page turns were lost.
+  // `visibilitychange`→hidden and `pagehide` are the only events reliably
+  // delivered on mobile Safari/Chrome (`beforeunload`/`unload` are not).
+  //
+  // A normal async request can be cancelled the instant the page is hidden,
+  // and neither fallback actually works here: `sendBeacon` can only POST a
+  // body with no custom headers, so it cannot carry the `apikey` /
+  // `Authorization` headers a Supabase REST write needs; a `keepalive` fetch
+  // could in principle, but only by hand-building the PostgREST request
+  // outside the shared browser client (`@/lib/supabase/client`, which this
+  // agent does not own) and duplicating its auth/upsert semantics. So: skip
+  // the network entirely on hide and enqueue straight to the outbox — a
+  // local IndexedDB append that has a real chance of finishing inside the
+  // brief window a hidden/pagehide handler gets, and is durable if the tab
+  // is killed a moment later.
+  function flushToOutboxOnHide(): void {
+    if (!pending) return;
+    const toWrite = pending;
+    pending = undefined;
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    if (IS_DEMO) {
+      writeDemoJSON(demoPositionKey(bookId), toWrite);
+      return;
+    }
+    try {
+      const supabase = createClient();
+      void (async () => {
+        const userId = await getCachedUserId(supabase);
+        if (!userId) return; // no cached session — nothing to queue against
+        await enqueueReadingState(userId, bookId, toWrite);
+      })();
+    } catch {
+      // Supabase not configured — nothing to queue against.
+    }
+  }
+
+  function onVisibilityChange(): void {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      flushToOutboxOnHide();
+    }
+  }
+  function onPageHide(): void {
+    flushToOutboxOnHide();
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", onPageHide);
   }
 
   const unsubscribe = controller.onRelocated((loc: ReaderLocation) => {
@@ -104,6 +172,12 @@ export function trackPosition(
     stop(): void {
       stopped = true;
       unsubscribe();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pagehide", onPageHide);
+      }
       if (timer) {
         clearTimeout(timer);
         timer = undefined;
