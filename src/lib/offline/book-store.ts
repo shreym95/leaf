@@ -97,6 +97,54 @@ function openDb(): Promise<IDBDatabase | undefined> {
   });
 }
 
+/**
+ * One connection, shared by every call. Opening per call leaked a handle each
+ * time, and a live handle blocks a later `DB_VERSION` upgrade (`onblocked`) —
+ * the very failure `openDb` already treats as "no cache". The cache is dropped
+ * when the connection closes or another tab starts an upgrade, so the next
+ * call re-opens cleanly. A failed open is never memoised: storage can become
+ * available again (a tab leaving private browsing, a quota freed).
+ */
+let dbPromise: Promise<IDBDatabase | undefined> | undefined;
+/**
+ * The factory the cached handle was opened from. A handle is only valid for
+ * its own `IDBFactory`, so if the global is ever replaced the cache is stale
+ * and must be dropped rather than reused.
+ */
+let dbFactory: IDBFactory | undefined;
+
+function currentFactory(): IDBFactory | undefined {
+  try {
+    return typeof indexedDB === "undefined" ? undefined : indexedDB;
+  } catch {
+    return undefined;
+  }
+}
+
+function getDb(): Promise<IDBDatabase | undefined> {
+  const factory = currentFactory();
+  if (!factory) return Promise.resolve(undefined);
+  if (dbPromise && dbFactory === factory) return dbPromise;
+
+  dbFactory = factory;
+  const pending = openDb().then((db) => {
+    if (!db) {
+      if (dbPromise === pending) dbPromise = undefined;
+      return undefined;
+    }
+    db.onversionchange = () => {
+      db.close();
+      if (dbPromise === pending) dbPromise = undefined;
+    };
+    db.onclose = () => {
+      if (dbPromise === pending) dbPromise = undefined;
+    };
+    return db;
+  });
+  dbPromise = pending;
+  return pending;
+}
+
 function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
@@ -233,7 +281,7 @@ export async function readCachedBook(
 ): Promise<ArrayBuffer | undefined> {
   if (!bookId) return undefined;
   try {
-    const db = await openDb();
+    const db = await getDb();
     if (!db) return undefined;
 
     const tx = db.transaction(BOOKS_STORE, "readonly");
@@ -275,7 +323,7 @@ export async function writeCachedBook(
 ): Promise<void> {
   if (!bookId) return;
   try {
-    const db = await openDb();
+    const db = await getDb();
     if (!db) return;
 
     const byteLength = bytes.byteLength;
@@ -342,7 +390,7 @@ export async function writeCachedBook(
  */
 export async function listCachedBooks(): Promise<CachedBookSummary[]> {
   try {
-    const db = await openDb();
+    const db = await getDb();
     if (!db) return [];
 
     const tx = db.transaction(BOOKS_STORE, "readonly");
@@ -368,7 +416,7 @@ export async function listCachedBooks(): Promise<CachedBookSummary[]> {
  */
 export async function purgeCachedBooks(): Promise<void> {
   try {
-    const db = await openDb();
+    const db = await getDb();
     if (!db) return;
 
     const tx = db.transaction([BOOKS_STORE, META_STORE], "readwrite");

@@ -260,6 +260,24 @@ describe("book-store", () => {
     });
   });
 
+  describe("connection handling", () => {
+    it("opens the database once and reuses the handle across calls", async () => {
+      const factory = globalThis.indexedDB;
+      const openSpy = vi.spyOn(factory, "open");
+
+      await writeCachedBook("book-1", bytesOf(10), { title: "T", author: "A" });
+      await readCachedBook("book-1");
+      await listCachedBooks();
+      await readCachedBook("book-1");
+
+      // One handle for the page, not one per call: a live handle blocks a
+      // later `DB_VERSION` upgrade with `onblocked`, so leaking one per read
+      // would make a future migration unrunnable.
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      openSpy.mockRestore();
+    });
+  });
+
   describe("unsupported / blocked storage", () => {
     it("always misses when indexedDB is undefined (SSR-like)", async () => {
       const original = (globalThis as unknown as { indexedDB?: IDBFactory })
