@@ -14,11 +14,23 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({
     auth: {
       getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })),
+      getSession: vi.fn(async () => ({ data: { session: { user: { id: "u1" } } } })),
     },
   })),
 }));
 
+vi.mock("@/lib/offline/outbox", () => ({
+  classifyWriteFailure: vi.fn(() => "transport"),
+  enqueueReadingState: vi.fn(async () => {}),
+  getCachedUserId: vi.fn(async () => "u1"),
+}));
+
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
+import {
+  classifyWriteFailure,
+  enqueueReadingState,
+  getCachedUserId,
+} from "@/lib/offline/outbox";
 import type { ReaderController } from "./engine";
 import { trackPosition } from "./position";
 
@@ -47,6 +59,12 @@ function makeController(): ReaderController & { _emit: RelocatedCb } {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // `clearAllMocks` resets call history but not implementations set with
+  // `mockResolvedValue` / `mockReturnValue` — reset the outbox mocks to sane
+  // defaults so one test's failure-path setup can't leak into the next.
+  vi.mocked(upsertReadingState).mockResolvedValue(undefined);
+  vi.mocked(classifyWriteFailure).mockReturnValue("transport");
+  vi.mocked(getCachedUserId).mockResolvedValue("u1");
 });
 
 describe("save path", () => {
@@ -90,6 +108,146 @@ describe("save path", () => {
       expect.anything(),
     );
     vi.useRealTimers();
+  });
+});
+
+describe("offline queuing (§8a / D8 item 4)", () => {
+  it("queues the write when it fails with a transport error", async () => {
+    vi.useFakeTimers();
+    vi.mocked(classifyWriteFailure).mockReturnValue("transport");
+    vi.mocked(upsertReadingState).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const c = makeController();
+    trackPosition(c, "book1", { debounceMs: 1500 });
+    c._emit({ cfi: "epubcfi(/6/14!/4/2/1:0)", percent: 0.42 });
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(enqueueReadingState).toHaveBeenCalledWith(
+      "u1",
+      "book1",
+      { cfi: "epubcfi(/6/14!/4/2/1:0)", percent: 0.42 },
+    );
+    vi.useRealTimers();
+  });
+
+  it("does NOT queue when the failure is a rejection (RLS / bad data)", async () => {
+    vi.useFakeTimers();
+    vi.mocked(classifyWriteFailure).mockReturnValue("rejected");
+    vi.mocked(upsertReadingState).mockRejectedValue({ code: "42501" });
+
+    const c = makeController();
+    trackPosition(c, "book1", { debounceMs: 1500 });
+    c._emit({ cfi: "epubcfi(/6/14!/4/2/1:0)", percent: 0.42 });
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(enqueueReadingState).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("does not queue when there is no cached identity to queue against", async () => {
+    vi.useFakeTimers();
+    vi.mocked(classifyWriteFailure).mockReturnValue("transport");
+    vi.mocked(upsertReadingState).mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.mocked(getCachedUserId).mockResolvedValue(null);
+
+    const c = makeController();
+    trackPosition(c, "book1", { debounceMs: 1500 });
+    c._emit({ cfi: "epubcfi(/6/14!/4/2/1:0)", percent: 0.42 });
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(enqueueReadingState).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});
+
+describe("page-hide flush (D8)", () => {
+  it("enqueues a pending write on visibilitychange -> hidden, without touching the network", async () => {
+    vi.useFakeTimers();
+    const c = makeController();
+    const tracker = trackPosition(c, "book1", { debounceMs: 1500 });
+
+    c._emit({ cfi: "epubcfi(/6/14!/4/2/1:0)", percent: 0.42 });
+    // Debounce window has NOT elapsed — the write is still only pending.
+    expect(upsertReadingState).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(upsertReadingState).not.toHaveBeenCalled();
+    expect(enqueueReadingState).toHaveBeenCalledWith(
+      "u1",
+      "book1",
+      { cfi: "epubcfi(/6/14!/4/2/1:0)", percent: 0.42 },
+    );
+
+    // The debounce timer fires later: nothing left to flush.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(upsertReadingState).not.toHaveBeenCalled();
+
+    tracker.stop();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    vi.useRealTimers();
+  });
+
+  it("enqueues a pending write on pagehide", async () => {
+    vi.useFakeTimers();
+    const c = makeController();
+    const tracker = trackPosition(c, "book1", { debounceMs: 1500 });
+
+    c._emit({ cfi: "epubcfi(/6/20!/4/2/1:0)", percent: 0.77 });
+    window.dispatchEvent(new Event("pagehide"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(enqueueReadingState).toHaveBeenCalledWith(
+      "u1",
+      "book1",
+      { cfi: "epubcfi(/6/20!/4/2/1:0)", percent: 0.77 },
+    );
+
+    tracker.stop();
+    vi.useRealTimers();
+  });
+
+  it("does nothing on hide when there is no pending write", async () => {
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("pagehide"));
+    await Promise.resolve();
+
+    expect(enqueueReadingState).not.toHaveBeenCalled();
+    tracker.stop();
+  });
+
+  it("stop() removes the visibilitychange/pagehide listeners", async () => {
+    const c = makeController();
+    const tracker = trackPosition(c, "book1", { debounceMs: 1500 });
+    c._emit({ cfi: "epubcfi(/6/1!/4/2/1:0)", percent: 0.1 });
+    tracker.stop(); // flushes the pending write itself, and clears `pending`
+    // Let that fire-and-forget flush's promise chain settle before clearing
+    // mocks, so it isn't mistaken for a call caused by the events below.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.clearAllMocks();
+
+    // A hide event after stop() must not do anything more — no listener left.
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("pagehide"));
+    await Promise.resolve();
+
+    expect(enqueueReadingState).not.toHaveBeenCalled();
+    expect(upsertReadingState).not.toHaveBeenCalled();
   });
 });
 

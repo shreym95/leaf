@@ -2,6 +2,65 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — a durable offline outbox for the four client-side writes (§8a+b, closes D8) (Claude, 2026-09-21)
+
+Reading position, bookmarks, highlights and reader settings all write straight
+from the browser Supabase client to Postgres, and all four silently dropped
+the write on any failure — offline, worst of all, since bookmarks and
+highlights had already shown the reader an optimistic record that then
+vanished forever on reload. This is Stage 3 of `docs/REVISED_PLAN.md` §8:
+implements (a) durable and (b) convergent; (c) — a live "continue on this
+device?" prompt — is still unscheduled.
+
+- **`src/lib/offline/outbox.ts` (new).** An append-only IndexedDB queue
+  (`leaf-outbox` — a separate database from the book store's `leaf-books`, so
+  the two agents' schemas can't collide), replayed on the `online` event and
+  on next load. Every storage operation degrades to "the write is dropped,
+  exactly like before" if IndexedDB is unavailable or blocked — same
+  conventions as `src/reader/locations-cache.ts`. A write is classified
+  `transport` (re-queued) or `rejected` (discarded, never retried forever) by
+  whether the error carries a structured Postgrest `code` — see the module
+  header for the reasoning and its limits.
+- **§8(b) furthest-position-wins.** Reading-position replay compares the
+  queued `percent` against the row's *current* `percent` (not against other
+  queued entries) and only overwrites when the queue is further along, with
+  `updated_at` as a tiebreak — a write queued an hour ago can no longer drag a
+  reader backwards on a device that has since read further.
+- **D8 fix.** `trackPosition` (`src/reader/position.ts`) now flushes on
+  `visibilitychange`→hidden and `pagehide` (not just `stop()`, which
+  backgrounding never triggers), registered on start and removed in `stop()`.
+  Neither `sendBeacon` nor a `keepalive` fetch can carry an authenticated
+  Supabase REST write without bypassing the shared browser client this agent
+  doesn't own, so the page-hide path skips the network entirely and enqueues
+  straight to the outbox — a local IndexedDB append has a real chance of
+  finishing before the tab dies, and survives if it doesn't.
+- **The four `catch {}` blocks now enqueue instead of dropping** —
+  `position.ts`, `bookmarks.ts`, `highlights.ts` (create/delete/note),
+  `reader-settings.ts` — on a transport failure only; a rejection still drops,
+  same as today. Optimistic UI is unchanged; the write now also survives a
+  reload. Deleting (or re-noting) a bookmark/highlight that never made it past
+  an offline create cancels the still-queued create instead of asking the
+  server to delete a row it never got.
+- **Known gap:** a note added to a highlight while its own create is still
+  queued (offline, before first sync) is itself queued against the
+  not-yet-real id and is discarded, unapplied, once the create replays under
+  a different id — same outcome as today (the note is lost), not a
+  regression, just not fully solved.
+- Online behaviour is unchanged: a successful write never touches the queue.
+- The outbox shares **one IndexedDB connection** rather than opening and closing
+  one per operation. Closing per call is what a shared handle replaces, and the
+  two together were silently fatal: the first `list()` closed the shared handle
+  and every later enqueue no-opped against a dead connection, so nothing was
+  ever queued.
+- **`purgeOutbox()`** — the queue holds reading positions and bookmark and
+  highlight text keyed by user id, so it must not outlive the session that
+  produced it. Called on sign-out and account deletion alongside
+  `purgeCachedBooks()` and the worker's `leaf-offline/purge`.
+- `src/lib/offline/outbox-idb.test.ts` covers the real IndexedDB-backed store —
+  round-trip, ordering, discard, connection reuse, absent storage, and purge.
+  The engine's own tests drive an in-memory store, which left the actual
+  `indexedDB` plumbing uncovered.
+
 ## Feature — offline reading, stage 1: the service worker (Claude, 2026-09-21)
 
 `src/lib/offline/service-worker.ts` + `src/components/reader-ui/RegisterServiceWorker.tsx`,

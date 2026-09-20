@@ -18,8 +18,18 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({
     auth: {
       getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })),
+      getSession: vi.fn(async () => ({ data: { session: { user: { id: "u1" } } } })),
     },
   })),
+}));
+
+vi.mock("@/lib/offline/outbox", () => ({
+  cancelQueuedHighlightCreate: vi.fn(async () => true),
+  classifyWriteFailure: vi.fn(() => "transport"),
+  enqueueHighlightCreate: vi.fn(async () => {}),
+  enqueueHighlightDelete: vi.fn(async () => {}),
+  enqueueHighlightNote: vi.fn(async () => {}),
+  resolveUserId: vi.fn(async () => "u1"),
 }));
 
 import {
@@ -30,6 +40,13 @@ import {
 } from "@/lib/db/highlights";
 import type { Highlight } from "@/lib/types";
 import type { ReaderController } from "./engine";
+import {
+  cancelQueuedHighlightCreate,
+  classifyWriteFailure,
+  enqueueHighlightCreate,
+  enqueueHighlightDelete,
+  enqueueHighlightNote,
+} from "@/lib/offline/outbox";
 import { manageHighlights } from "./highlights";
 
 type SelectedCb = (sel: { cfiRange: string; text: string }) => void;
@@ -84,6 +101,11 @@ const ROW = (over: Partial<Highlight> = {}): Highlight => ({
 beforeEach(() => {
   vi.clearAllMocks();
   stylesFor.mockImplementation((color: string) => ({ "data-color": color }));
+  // `clearAllMocks` resets call history but not implementations set with
+  // `mockResolvedValue` / `mockReturnValue` — reset the outbox mocks to sane
+  // defaults so one test's failure-path setup can't leak into the next.
+  vi.mocked(classifyWriteFailure).mockReturnValue("transport");
+  vi.mocked(cancelQueuedHighlightCreate).mockResolvedValue(true);
 });
 
 describe("create", () => {
@@ -134,7 +156,7 @@ describe("create", () => {
     );
   });
 
-  it("does not throw when the db write fails, and still tracks + paints locally", async () => {
+  it("does not throw when the db write fails, still tracks + paints locally, and QUEUES the write for replay (was: silently dropped)", async () => {
     vi.mocked(createHighlight).mockRejectedValue(new Error("network down"));
     const c = makeController();
     const mgr = manageHighlights(c, "book1", { stylesFor });
@@ -145,6 +167,24 @@ describe("create", () => {
     expect(mgr.list()).toHaveLength(1);
     expect(c.added).toHaveLength(1);
     expect(c.added[0].cfiRange).toBe("cfi-y");
+    expect(enqueueHighlightCreate).toHaveBeenCalledWith("u1", {
+      localId: rec.id,
+      bookId: "book1",
+      cfiRange: "cfi-y",
+      text: "orphan",
+      color: "copper",
+    });
+  });
+
+  it("does NOT queue when the failure is a rejection (RLS / bad data), not a transport failure", async () => {
+    vi.mocked(classifyWriteFailure).mockReturnValue("rejected");
+    vi.mocked(createHighlight).mockRejectedValue({ code: "42501" });
+    const c = makeController();
+    const mgr = manageHighlights(c, "book1", { stylesFor });
+
+    await mgr.create({ cfiRange: "cfi-z", text: "t" });
+
+    expect(enqueueHighlightCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -213,7 +253,7 @@ describe("remove", () => {
     expect(mgr.list()).toHaveLength(0);
   });
 
-  it("does not throw when the db delete fails", async () => {
+  it("does not throw when the db delete fails, and QUEUES the delete for replay (was: silently dropped)", async () => {
     vi.mocked(listHighlights).mockResolvedValue([ROW()]);
     vi.mocked(deleteHighlight).mockRejectedValue(new Error("boom"));
     const c = makeController();
@@ -222,6 +262,34 @@ describe("remove", () => {
 
     await expect(mgr.remove("hl-1")).resolves.toBeUndefined();
     expect(c.removed).toEqual([ROW().cfi_range]);
+    expect(enqueueHighlightDelete).toHaveBeenCalledWith("u1", "hl-1");
+  });
+
+  it("does NOT queue a delete failure that is a rejection, not a transport failure", async () => {
+    vi.mocked(listHighlights).mockResolvedValue([ROW()]);
+    vi.mocked(classifyWriteFailure).mockReturnValue("rejected");
+    vi.mocked(deleteHighlight).mockRejectedValue({ code: "42501" });
+    const c = makeController();
+    const mgr = manageHighlights(c, "book1", { stylesFor });
+    await mgr.restore();
+
+    await mgr.remove("hl-1");
+
+    expect(enqueueHighlightDelete).not.toHaveBeenCalled();
+  });
+
+  it("removing a highlight that never synced (local id) cancels the queued create instead of deleting on the server", async () => {
+    vi.mocked(createHighlight).mockRejectedValue(new Error("offline"));
+    const c = makeController();
+    const mgr = manageHighlights(c, "book1", { stylesFor });
+    const rec = await mgr.create({ cfiRange: "cfi-local", text: "t" }); // fails -> queued, local id kept
+
+    await mgr.remove(rec.id);
+
+    expect(cancelQueuedHighlightCreate).toHaveBeenCalledWith("u1", rec.id);
+    expect(deleteHighlight).not.toHaveBeenCalled();
+    expect(enqueueHighlightDelete).not.toHaveBeenCalled();
+    expect(mgr.list()).toHaveLength(0);
   });
 });
 
@@ -262,6 +330,32 @@ describe("setNote", () => {
       expect.anything(),
     );
     expect(mgr.list()[0].note).toBeNull();
+  });
+
+  it("does not throw when the note write fails, and queues it for replay", async () => {
+    vi.mocked(listHighlights).mockResolvedValue([ROW()]);
+    vi.mocked(updateHighlightNote).mockRejectedValue(new Error("offline"));
+    const c = makeController();
+    const mgr = manageHighlights(c, "book1", { stylesFor });
+    await mgr.restore();
+
+    await expect(mgr.setNote("hl-1", "queued note")).resolves.toBeUndefined();
+
+    expect(mgr.list()[0].note).toBe("queued note"); // in-memory note stands
+    expect(enqueueHighlightNote).toHaveBeenCalledWith("u1", "hl-1", "queued note");
+  });
+
+  it("does NOT queue a note-write failure that is a rejection", async () => {
+    vi.mocked(listHighlights).mockResolvedValue([ROW()]);
+    vi.mocked(classifyWriteFailure).mockReturnValue("rejected");
+    vi.mocked(updateHighlightNote).mockRejectedValue({ code: "42501" });
+    const c = makeController();
+    const mgr = manageHighlights(c, "book1", { stylesFor });
+    await mgr.restore();
+
+    await mgr.setNote("hl-1", "won't queue");
+
+    expect(enqueueHighlightNote).not.toHaveBeenCalled();
   });
 });
 
