@@ -205,12 +205,24 @@ function isRscRequest(request: Request, url: URL): boolean {
   return false;
 }
 
-async function handleReaderNavigation(request: Request, url: URL): Promise<Response> {
+/**
+ * `cache.put` is handed to the event's `waitUntil`, never left dangling: the
+ * browser is free to terminate the worker once the promise passed to
+ * `respondWith` settles, which would drop a write still in flight and leave
+ * the page permanently uncached.
+ */
+type KeepAlive = (promise: Promise<unknown>) => void;
+
+async function handleReaderNavigation(
+  request: Request,
+  url: URL,
+  keepAlive: KeepAlive
+): Promise<Response> {
   const cache = await caches.open(READER_CACHE);
   try {
     const response = await fetch(request);
     if (response && response.ok) {
-      cache.put(url.pathname, response.clone());
+      keepAlive(cache.put(url.pathname, response.clone()).catch(() => {}));
     }
     return response;
   } catch {
@@ -220,13 +232,16 @@ async function handleReaderNavigation(request: Request, url: URL): Promise<Respo
   }
 }
 
-async function handleStaticAsset(request: Request): Promise<Response> {
+async function handleStaticAsset(
+  request: Request,
+  keepAlive: KeepAlive
+): Promise<Response> {
   const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
   if (cached) return cached;
   const response = await fetch(request);
   if (response && response.ok) {
-    cache.put(request, response.clone());
+    keepAlive(cache.put(request, response.clone()).catch(() => {}));
   }
   return response;
 }
@@ -318,13 +333,15 @@ sw.addEventListener("fetch", (event) => {
 
   // Reader navigations only.
   if (request.mode === "navigate" && READER_ROUTE_PATTERN.test(url.pathname)) {
-    event.respondWith(handleReaderNavigation(request, url));
+    event.respondWith(
+      handleReaderNavigation(request, url, (p) => event.waitUntil(p))
+    );
     return;
   }
 
   // Content-hashed static assets: cache-first, never revalidate.
   if (url.pathname.startsWith("/_next/static/")) {
-    event.respondWith(handleStaticAsset(request));
+    event.respondWith(handleStaticAsset(request, (p) => event.waitUntil(p)));
     return;
   }
 
