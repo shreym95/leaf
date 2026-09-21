@@ -2,6 +2,30 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — purge offline reading data on sign-out and account deletion (Claude, 2026-09-21)
+
+Offline reading (cached book bytes/metadata in `leaf-books`, queued writes in
+`leaf-outbox`, and authenticated reader documents in Cache Storage) put a
+user's library on disk in a way Leaf never previously did — and nothing
+purged any of it. All three purge mechanisms already existed
+(`purgeCachedBooks()`, `purgeOutbox()`, the service worker's
+`leaf-offline/purge` message) but had no caller, so a shared or handed-on
+device kept the previous reader's library indefinitely.
+
+- **`src/lib/offline/purge.ts` (new).** `purgeAllOfflineData()` runs all
+  three purges concurrently, never throws, and always settles within a
+  bounded timeout (1.5s worst case) even if a leg is unavailable or a storage
+  backend is blocked — safe to `await` from a flow that must never be
+  blocked or failed by a purge problem.
+- **Sign-out (`src/components/ui/AccountMenu.tsx`).** The purge is awaited
+  (bounded) before the sign-out form submits, so the navigation can't cut it
+  off mid-flight, and a second, idempotent safety-net purge runs whenever the
+  menu renders signed-out (covering a lost race, session expiry, or the
+  account-deletion flow below).
+- **Account deletion (`src/components/settings-ui/DeleteAccountDialog.tsx`).**
+  Purges once the server confirms deletion, before navigating to `/login` —
+  the stronger case, since that data must not survive at all.
+
 ## Feature — a durable offline outbox for the four client-side writes (§8a+b, closes D8) (Claude, 2026-09-21)
 
 Reading position, bookmarks, highlights and reader settings all write straight
