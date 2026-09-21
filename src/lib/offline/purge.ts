@@ -81,14 +81,51 @@ function resolveWithin(promise: Promise<unknown>, ms: number): Promise<void> {
 }
 
 /**
+ * Cache names the service worker owns. Kept in step with `CACHE_PREFIX` in
+ * `service-worker.ts` by hand rather than imported: that module registers
+ * worker event listeners at import time, so pulling a constant out of it
+ * would drag worker code into the page bundle.
+ */
+const SW_CACHE_PREFIX = "leaf-offline";
+
+/**
+ * Delete the worker's caches directly from the page. Cache Storage is
+ * same-origin state the window can reach — it is not private to the worker.
+ *
+ * This is the leg that actually guarantees the purge. Messaging the worker is
+ * not sufficient on its own: **Cache Storage outlives the session that filled
+ * it.** A worker installed on an earlier visit can hold cached authenticated
+ * reader documents while *this* page load has no controller yet (the first
+ * load after registration, or a tab that loaded before the worker claimed
+ * it). Skipping the purge in that case — as "no controller, nothing to
+ * purge" would — leaves one user's reader documents on the device for the
+ * next person to sign in.
+ */
+async function purgeCacheStorage(): Promise<void> {
+  try {
+    if (typeof caches === "undefined") return;
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => key.startsWith(SW_CACHE_PREFIX))
+        .map((key) => caches.delete(key).catch(() => false))
+    );
+  } catch {
+    // Cache Storage is unavailable (SSR, or a browser blocking site data).
+  }
+}
+
+/**
  * Ask the service worker to drop its caches, and wait (briefly) for it to
  * confirm. Never throws.
  *
+ * This runs *alongside* `purgeCacheStorage`, not instead of it. A live worker
+ * is told so it drops its own handles and cannot repopulate from work already
+ * in flight; the direct deletion above is what covers the uncontrolled case.
+ *
  * No-ops when: there is no `navigator` (SSR), the browser has no
- * `serviceWorker` support, or no worker currently controls this page (e.g.
- * one was never installed, or the tab loaded before it took control) — in
- * that last case there is nothing to message, and since this session was
- * never controlled by a worker, no worker populated caches on its behalf.
+ * `serviceWorker` support, or no worker currently controls this page — in
+ * that last case there is simply nobody to message.
  */
 function purgeServiceWorkerCaches(): Promise<void> {
   try {
@@ -130,9 +167,11 @@ function purgeServiceWorkerCaches(): Promise<void> {
 /**
  * Purge every trace of the signed-in user's offline data from this device:
  * cached book bytes/metadata (`leaf-books`), queued outbox writes
- * (`leaf-outbox`), and the service worker's cached reader documents.
+ * (`leaf-outbox`), and the service worker's cached reader documents — the
+ * last both by messaging a live worker and by deleting the caches directly,
+ * since a worker need not be controlling this page for its caches to exist.
  *
- * Runs all three concurrently. Never throws, and always settles within
+ * Runs every leg concurrently. Never throws, and always settles within
  * `OVERALL_TIMEOUT_MS` even if a storage backend is blocked, missing, or
  * unresponsive — safe to `await` from a flow (sign-out, account deletion)
  * that must never be blocked or failed by a purge problem. Each leg is
@@ -143,6 +182,7 @@ export async function purgeAllOfflineData(): Promise<void> {
     purgeCachedBooks().catch(() => undefined),
     purgeOutbox().catch(() => undefined),
     purgeServiceWorkerCaches().catch(() => undefined),
+    purgeCacheStorage().catch(() => undefined),
   ]).then(() => undefined);
 
   await resolveWithin(legs, OVERALL_TIMEOUT_MS);
