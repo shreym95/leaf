@@ -2,3 +2,4 @@
 // token-driven, and deliberately client-only: see OfflineShelf.tsx for why.
 
 export { OfflineShelf } from "./OfflineShelf";
+export { OfflineOwnerGuard } from "./OfflineOwnerGuard";

@@ -2,6 +2,44 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — offline reading: close the cross-user data exposure on a shared device (Claude, 2026-09-21)
+
+Confirmed HIGH-severity finding: `leaf-books`, `leaf-outbox` and the service
+worker's cached authenticated `/reader/<id>` documents only ever got purged by
+an explicit Sign out click or account deletion. Any session that ended
+without one — closed tab, closed browser, killed app, force-quit PWA — left
+all three intact, and `/offline` (deliberately auth-free, so an installed PWA
+still has somewhere to land with no network) would then hand a second person
+on the same device the first person's books, reading identity, and a live
+signed download URL, entirely offline and with no authentication at any step.
+
+Two-part fix, boot-time rather than a data re-key (re-keying `leaf-books` /
+`leaf-outbox` / the worker's caches per user is a larger refactor and out of
+scope here — this closes the exposure without it):
+
+- **`src/lib/offline/owner.ts` (new).** Reads the locally persisted Supabase
+  session — `getSession()`, never `getUser()`, so it works fully offline —
+  and compares its user id against a `localStorage` marker recording who this
+  device's offline caches were last claimed for. No session, or a session that
+  doesn't match the marker, calls the existing `purgeAllOfflineData()` and
+  reclaims the marker; a first-run marker for an already signed-in user is
+  claimed without purging. Never throws, idempotent, safe to call from more
+  than one place in the same boot.
+- **Mounted once, in the root layout (`src/app/layout.tsx`).** The root
+  layout is the one ancestor every route shares — `(chrome)`, `(reader)`, and
+  `/offline` itself, which sits outside both route groups — so this runs at
+  every fresh page load regardless of which of those a user (or the service
+  worker's offline fallback) lands on first.
+- **`OfflineShelf` (`src/components/offline-ui/OfflineShelf.tsx`) now gates
+  on a local session before listing anything.** It calls the same
+  `enforceOfflineOwner()` itself, awaited, rather than trusting that the root
+  layout's copy already finished — a deeper component's mount effect fires
+  before an ancestor layout's in React's commit order, so relying on that
+  alone would leave a race where the shelf's own read could land before the
+  boot purge does. With no local session it now shows an honest "Sign in to
+  see the books saved on this device" state instead of an empty-vs-populated
+  shelf either way.
+
 ## Feature — offline reading, stage 4: the auth-free shelf, live progress, a connectivity signal (Claude, 2026-09-21)
 
 `src/app/manifest.ts` launches the installed PWA at `/library` — authenticated,
