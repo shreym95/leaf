@@ -66,11 +66,13 @@ vi.mock("@/lib/supabase/client", () => ({
 const bookStore = vi.hoisted(() => ({
   readCachedBook: vi.fn(async (): Promise<ArrayBuffer | undefined> => undefined),
   writeCachedBook: vi.fn(async () => {}),
+  updateCachedBookProgress: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/offline/book-store", () => ({
   readCachedBook: bookStore.readCachedBook,
   writeCachedBook: bookStore.writeCachedBook,
+  updateCachedBookProgress: bookStore.updateCachedBookProgress,
 }));
 
 const INITIAL = {
@@ -404,4 +406,40 @@ describe("ReaderShell — cache-first book bytes (Stage 2 offline reading)", () 
     ).toHaveTextContent("Couldn't download the book (HTTP 500).");
     expect(bookStore.writeCachedBook).not.toHaveBeenCalled();
   });
+});
+
+describe("ReaderShell — cached percent stays fresh (Stage 4 offline reading, part 2)", () => {
+  it("debounces the cache-percent write instead of writing on every relocation", async () => {
+    let emit: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
+    renderShell();
+    await ready();
+    bookStore.updateCachedBookProgress.mockClear();
+
+    // Two relocations in quick succession — a fast page-turner — must
+    // collapse into a single write of the LATEST percent, not one write per
+    // page turn.
+    await act(async () => {
+      emit?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.1 });
+    });
+    await act(async () => {
+      emit?.({ cfi: "epubcfi(/6/10!/4/2)", percent: 0.2 });
+    });
+
+    expect(bookStore.updateCachedBookProgress).not.toHaveBeenCalled();
+
+    await waitFor(
+      () =>
+        expect(bookStore.updateCachedBookProgress).toHaveBeenCalledWith(
+          "book-1",
+          0.2,
+        ),
+      { timeout: 3000 },
+    );
+    expect(bookStore.updateCachedBookProgress).toHaveBeenCalledTimes(1);
+  }, 8000);
 });

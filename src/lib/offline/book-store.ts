@@ -385,6 +385,42 @@ export async function writeCachedBook(
 }
 
 /**
+ * Update the `percent` of a book already cached — Stage 4's fix for the
+ * offline shelf otherwise showing every book frozen at whatever progress it
+ * had when it was first cached (`writeCachedBook` only runs on a cache MISS,
+ * so a normal re-read of an already-cached book never touched this field).
+ *
+ * This is cosmetic data for `/offline`'s shelf, never the source of truth for
+ * reading position — that is `src/reader/position.ts` + the outbox, writing
+ * to Supabase's `reading_state` table, a completely separate system this
+ * function never reads from or races with. If the book isn't cached yet (or
+ * the write fails for any reason), this silently does nothing: it must never
+ * throw into the reader's render path, and it must never be the thing that
+ * decides to cache a book — `writeCachedBook` alone does that.
+ */
+export async function updateCachedBookProgress(
+  bookId: string,
+  percent: number,
+): Promise<void> {
+  if (!bookId) return;
+  try {
+    const db = await getDb();
+    if (!db) return;
+
+    const tx = db.transaction(BOOKS_STORE, "readwrite");
+    const store = tx.objectStore(BOOKS_STORE);
+    const existing = (await reqToPromise(store.get(bookId))) as
+      | BookRecord
+      | undefined;
+    if (!existing) return; // not cached — nothing to update
+    store.put({ ...existing, percent });
+    await txDone(tx);
+  } catch {
+    // Cosmetic only; a failed update just leaves the last-known percent.
+  }
+}
+
+/**
  * The metadata an offline shelf needs to render cached books, with no network.
  * Returns an empty list on any failure.
  */
