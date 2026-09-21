@@ -2,6 +2,53 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — offline reading, stage 4: the auth-free shelf, live progress, a connectivity signal (Claude, 2026-09-21)
+
+`src/app/manifest.ts` launches the installed PWA at `/library` — authenticated,
+per-user, `force-dynamic` content that must never be cached (a shared device
+must never serve one person's shelf, or stale auth state, to the next). A
+cold, offline launch therefore had no way in at all. Three independent fixes:
+
+- **`/offline` (new route, `src/app/offline/page.tsx` +
+  `src/components/offline-ui/OfflineShelf.tsx`).** A static, auth-free Server
+  Component — no `requireUser`, no cookies, no Supabase call — prerendered at
+  build time (`next build`'s route list marks it `○`, not `ƒ`). Its content
+  comes entirely from the client: `OfflineShelf` reads `listCachedBooks()`
+  straight out of IndexedDB and links each book to `/reader/<id>`, with an
+  honest empty state when nothing is cached yet.
+- **The service worker (`src/lib/offline/service-worker.ts`) now precaches
+  `/offline`** at `install` — the document plus every `/_next/static/*` chunk
+  its markup references, parsed out of the fetched HTML, so the route can
+  actually hydrate with no network — and intercepts `/library` navigations
+  network-first, **never caching the response**, falling back to the
+  precached shelf on failure. An uncached `/reader/<id>` navigation now
+  redirects to `/offline` instead of dead-ending on an inline 503: the reader
+  lands somewhere with a way forward (every other book this device does
+  have) rather than a page with none.
+- **`percent` was never written back.** `CachedBookSummary.percent` existed
+  but `ReaderShell` only ever set it on a cache MISS, so a book's offline-shelf
+  progress froze at whatever it was the day it was first cached. Added
+  `updateCachedBookProgress()` (`src/lib/offline/book-store.ts`) and call it
+  from the same `onRelocated` subscription that already drives the live
+  reading UI, debounced 1500ms — matching `src/reader/position.ts`'s own
+  cadence for the real position write, deliberately, so the two go stale by
+  about the same amount. Cosmetic and best-effort only: never throws, never
+  blocks rendering, and never touches `reading_state` or the outbox.
+- **`OfflineIndicator` (new, `src/components/reader-ui/OfflineIndicator.tsx`).**
+  A quiet, non-modal pill in the reader's top row — the empty middle between
+  `ReaderTopBar`'s Library link and its wordmark/fullscreen toggle — that
+  appears only while `navigator.onLine` is `false`. Built on
+  `useSyncExternalStore` (the same pattern `ThemeProvider` already uses for
+  its own browser-only state) rather than `useState` + `useEffect`, so there's
+  no hydration-mismatch risk and no synchronous `setState`-in-effect. Fades
+  (without unmounting) under the same `immersive && !deckOpen` condition as
+  `ReaderTopBar` itself.
+- Defect found in the existing design: `handleReaderNavigation`'s uncached-book
+  fallback was a dead-end inline 503 with no link anywhere on it — before
+  `/offline` existed there was nowhere to send a stranded reader, but leaving
+  it that way after Stage 4 would have shipped a known dead end on purpose.
+  It now redirects to `/offline`.
+
 ## Fix — purge offline reading data on sign-out and account deletion (Claude, 2026-09-21)
 
 Offline reading (cached book bytes/metadata in `leaf-books`, queued writes in

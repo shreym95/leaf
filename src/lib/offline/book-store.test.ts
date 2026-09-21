@@ -10,6 +10,7 @@ import {
   listCachedBooks,
   purgeCachedBooks,
   readCachedBook,
+  updateCachedBookProgress,
   writeCachedBook,
 } from "./book-store";
 
@@ -153,6 +154,54 @@ describe("book-store", () => {
     await writeCachedBook("", bytesOf(10), { title: "T", author: "A" });
     expect(await listCachedBooks()).toEqual([]);
     expect(await readCachedBook("")).toBeUndefined();
+  });
+
+  describe("updateCachedBookProgress", () => {
+    it("updates the percent of an already-cached book without touching its bytes", async () => {
+      await writeCachedBook("book-1", bytesOf(1024), {
+        title: "Dracula",
+        author: "Bram Stoker",
+        percent: 0.1,
+      });
+
+      await updateCachedBookProgress("book-1", 0.73);
+
+      const list = await listCachedBooks();
+      expect(list).toEqual([
+        { bookId: "book-1", title: "Dracula", author: "Bram Stoker", percent: 0.73 },
+      ]);
+      // Bytes and identity are untouched — only `percent` moved.
+      expectHit(await readCachedBook("book-1"), 1024);
+    });
+
+    it("does nothing when the book isn't cached yet", async () => {
+      await expect(
+        updateCachedBookProgress("never-cached", 0.5),
+      ).resolves.toBeUndefined();
+      expect(await listCachedBooks()).toEqual([]);
+    });
+
+    it("does nothing without a book id", async () => {
+      await expect(
+        updateCachedBookProgress("", 0.5),
+      ).resolves.toBeUndefined();
+    });
+
+    it("degrades quietly, never throwing, when indexedDB is unavailable", async () => {
+      const original = (globalThis as unknown as { indexedDB?: IDBFactory })
+        .indexedDB;
+      // @ts-expect-error - simulating an environment with no IndexedDB at all.
+      delete globalThis.indexedDB;
+
+      try {
+        await expect(
+          updateCachedBookProgress("book-1", 0.5),
+        ).resolves.toBeUndefined();
+      } finally {
+        (globalThis as unknown as { indexedDB: IDBFactory }).indexedDB =
+          original as IDBFactory;
+      }
+    });
   });
 
   describe("eviction", () => {

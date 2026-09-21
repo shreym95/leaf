@@ -1,5 +1,6 @@
 /**
- * Offline reading service worker (Stage 1 of the offline plan).
+ * Offline reading service worker (Stage 1 of the offline plan; `/library` /
+ * `/offline` handling added in Stage 4).
  *
  * Self-contained: no imports from the rest of `src/` (this file is compiled
  * as its own bundle entry via `new URL(..., import.meta.url)` in
@@ -7,8 +8,12 @@
  * `node_modules/next/dist/docs/01-app/02-guides/progressive-web-apps.md`).
  *
  * Goal: a navigation to `/reader/<bookId>` succeeds with no network, for a
- * book previously opened on this device. Everything else is deliberately
- * left alone — see the fetch handler's allowlist below.
+ * book previously opened on this device. Stage 4 adds one more goal: an
+ * installed PWA opened with no network at all (its `start_url` is
+ * `/library`, an authenticated page this worker must never cache — see
+ * `handleLibraryNavigation`) lands on the auth-free `/offline` shelf instead
+ * of a dead page. Everything else is deliberately left alone — see the fetch
+ * handler's allowlist below.
  *
  * ---------------------------------------------------------------------------
  * SPIKE FINDING — process.env is unusable in this file
@@ -115,6 +120,15 @@ const CACHE_PREFIX = "leaf-offline";
 const READER_CACHE = `${CACHE_PREFIX}-reader`;
 const STATIC_CACHE = `${CACHE_PREFIX}-static`;
 const META_CACHE = `${CACHE_PREFIX}-meta`;
+// Stage 4: the auth-free `/offline` shelf's own document, precached at
+// install so it can stand in for `/library` (see the fetch handler below).
+// Deliberately its OWN cache, not folded into READER_CACHE: unlike a reader
+// page it is never written from a runtime navigation-with-fallback (only
+// `install` and a successful `/offline` fetch populate it), and unlike
+// STATIC_CACHE it is never a `/_next/static/*` cache-first match. Kept
+// SEPARATE from `purgeContentCaches` too — see that function's comment.
+const OFFLINE_CACHE = `${CACHE_PREFIX}-offline`;
+const OFFLINE_PATH = "/offline";
 const BUILD_ID_KEY = "https://leaf.internal/__build_id__";
 
 const READER_ROUTE_PATTERN = /^\/reader\/[^/]+$/;
@@ -146,6 +160,19 @@ const BUILD_ID_MESSAGE_TYPE = "leaf-offline/build-id";
 const PURGE_MESSAGE_TYPE = "leaf-offline/purge";
 const PURGED_MESSAGE_TYPE = "leaf-offline/purged";
 
+/**
+ * Dropped on a stale build id (see `syncBuildId` below). Deliberately does
+ * NOT include `OFFLINE_CACHE`: that cache is refreshed unconditionally on
+ * every `install` (a new SW version — i.e. every deploy — always re-fetches
+ * `/offline` fresh, see `precacheOfflineShell`), which already happens
+ * before a client ever gets far enough to postMessage a build id. Dropping
+ * it again here would just discard a precache that already matches the
+ * CURRENT build for no benefit, and — unlike `STATIC_CACHE`, which is
+ * repopulated lazily on the next visit to any cached route — nothing
+ * lazily repopulates `/offline` at runtime except an online visit to that
+ * exact route, so an unnecessary drop here could leave the shelf without
+ * its fallback until one happens.
+ */
 async function purgeContentCaches(): Promise<void> {
   await Promise.all([caches.delete(READER_CACHE), caches.delete(STATIC_CACHE)]);
 }
@@ -177,20 +204,49 @@ async function notifyClientsPurged(): Promise<void> {
   }
 }
 
+/**
+ * The absolute last resort: no network, AND whatever cache should have had
+ * an answer doesn't. In normal operation this should be unreachable —
+ * `/offline` is precached at `install` (see `precacheOfflineShell`) before
+ * this worker ever starts intercepting fetches — but `install` fetching
+ * `/offline` can itself fail (installing this very worker while already
+ * offline), so this stays as a true floor rather than an assumed-dead branch.
+ */
 function offlineFallbackResponse(): Response {
   return new Response(
     `<!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Not available offline</title></head>
+<head><meta charset="utf-8"><title>You're offline</title></head>
 <body style="font-family: system-ui, sans-serif; padding: 2rem; color: #333;">
-<h1>This book isn't available offline yet</h1>
-<p>Open it once while you have a connection, and it'll be ready to read offline after that.</p>
+<h1>You're offline</h1>
+<p>This page hasn't been saved on this device yet. Reconnect and try again.</p>
 </body>
 </html>`,
     {
       status: 503,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     }
+  );
+}
+
+/**
+ * Redirects an uncached reader navigation to the offline shelf instead of
+ * dead-ending on an inline 503 (the pre-Stage-4 behaviour). `/offline` lists
+ * every OTHER book this device does have, so a reader who lands on one
+ * uncached book — a cold-boot deep link, a shared/typed URL, a book opened on
+ * a different device — gets somewhere useful instead of a page with no way
+ * out. A 302 (not a served copy of the `/offline` document) so the address
+ * bar and history reflect where the reader actually ended up; the browser's
+ * follow-up navigation to `/offline` is a SEPARATE fetch event, handled below
+ * by `handleOfflineShellNavigation`, which is what actually serves it from
+ * cache. Built from `sw.location.origin` rather than a bare relative path:
+ * `Response.redirect` resolves relative to the WORKER SCRIPT's own URL, not
+ * page root, and that's an unnecessary place for this to be wrong.
+ */
+function redirectToOfflineShelf(): Response {
+  return Response.redirect(
+    new URL(OFFLINE_PATH, sw.location.origin).toString(),
+    302
   );
 }
 
@@ -228,7 +284,7 @@ async function handleReaderNavigation(
   } catch {
     const cached = await cache.match(url.pathname);
     if (cached) return cached;
-    return offlineFallbackResponse();
+    return redirectToOfflineShelf();
   }
 }
 
@@ -246,13 +302,127 @@ async function handleStaticAsset(
   return response;
 }
 
+/**
+ * `/library` navigations — Stage 4. Network-first, and the response is NEVER
+ * written to any cache: `/library` is authenticated, per-user content
+ * (`force-dynamic`, reads the session cookie), so caching it — even for a
+ * moment, even for "just this session" — risks a shared device serving one
+ * person's shelf, or stale auth state, to whoever opens Leaf next. On a
+ * network failure this falls back to the precached `/offline` shelf instead,
+ * which is what actually solves the "installed PWA opens `/library` with no
+ * network" problem the manifest's `start_url` creates.
+ */
+async function handleLibraryNavigation(request: Request): Promise<Response> {
+  try {
+    return await fetch(request);
+  } catch {
+    const cache = await caches.open(OFFLINE_CACHE);
+    const cached = await cache.match(OFFLINE_PATH);
+    if (cached) return cached;
+    return offlineFallbackResponse();
+  }
+}
+
+/**
+ * A direct navigation to `/offline` itself — typed, bookmarked, reached via
+ * `redirectToOfflineShelf`, or the PWA's own `start_url` if that's ever
+ * pointed here. Network-first so an online visit always sees the current
+ * build (and keeps the cache fresh for next time, `keepAlive`d exactly like
+ * `handleReaderNavigation`'s cache write); offline, serves the copy
+ * `precacheOfflineShell` put there at `install`.
+ */
+async function handleOfflineShellNavigation(
+  request: Request,
+  keepAlive: KeepAlive
+): Promise<Response> {
+  const cache = await caches.open(OFFLINE_CACHE);
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      keepAlive(cache.put(OFFLINE_PATH, response.clone()).catch(() => {}));
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(OFFLINE_PATH);
+    if (cached) return cached;
+    return offlineFallbackResponse();
+  }
+}
+
+/**
+ * `/_next/static/*` URLs referenced by an HTML document's `href="..."` /
+ * `src="..."` attributes — the crude-but-effective way to find out, from
+ * INSIDE the worker, which build-hashed chunks a freshly-fetched page
+ * actually needs, with no build-time manifest of our own to consult (see the
+ * spike-finding comment at the top of this file for why one isn't available
+ * here). Good enough for a best-effort precache: a miss here just means that
+ * particular asset gets cached lazily instead, the same way every other
+ * `/_next/static/*` request already does (`handleStaticAsset`).
+ */
+const STATIC_ASSET_HREF_PATTERN = /(?:href|src)="(\/_next\/static\/[^"]+)"/g;
+
+async function precacheStaticAssetsReferencedBy(html: string): Promise<void> {
+  const urls = new Set<string>();
+  for (const match of html.matchAll(STATIC_ASSET_HREF_PATTERN)) {
+    urls.add(match[1]);
+  }
+  if (urls.size === 0) return;
+
+  const cache = await caches.open(STATIC_CACHE);
+  await Promise.all(
+    Array.from(urls).map(async (assetUrl) => {
+      try {
+        if (await cache.match(assetUrl)) return; // already cached
+        const response = await fetch(assetUrl);
+        if (response && response.ok) await cache.put(assetUrl, response);
+      } catch {
+        // Best-effort, per asset: one failure must not fail the whole
+        // install, and a miss here is recovered later by the ordinary
+        // cache-first `/_next/static/*` fetch handler.
+      }
+    })
+  );
+}
+
+/**
+ * Precaches the `/offline` document itself, plus every `/_next/static/*`
+ * asset its markup references — without both, a browser that opens `/offline`
+ * (directly, or via the `/library` fallback) with no network at all would get
+ * an unhydratable shell: the server-rendered HTML with no JS to run
+ * `OfflineShelf`'s `listCachedBooks()` read. Runs on every `install` (i.e.
+ * every deploy), fetching fresh rather than trusting anything already
+ * cached, so the chunk hashes it stores always match the build that is about
+ * to control the page. Entirely best-effort: a failure here (installing this
+ * very worker while already offline, most plausibly) leaves `/offline`
+ * without a precached fallback until the next successful install or online
+ * visit — `handleLibraryNavigation` and `handleOfflineShellNavigation` both
+ * already degrade further to `offlineFallbackResponse()` for exactly that
+ * case.
+ */
+async function precacheOfflineShell(): Promise<void> {
+  try {
+    const response = await fetch(OFFLINE_PATH, { cache: "no-store" });
+    if (!response || !response.ok) return;
+    const html = await response.clone().text();
+    const cache = await caches.open(OFFLINE_CACHE);
+    await cache.put(OFFLINE_PATH, response);
+    await precacheStaticAssetsReferencedBy(html);
+  } catch {
+    // Network unavailable at install time — best-effort, see the doc comment.
+  }
+}
+
 async function disableWorker(): Promise<void> {
   await purgeAllCaches();
   await sw.registration.unregister();
 }
 
 sw.addEventListener("install", (event) => {
-  event.waitUntil(sw.skipWaiting());
+  // `skipWaiting` and the precache are independent — either failing must
+  // not block the other, so this is a `Promise.all`, not a `.then` chain.
+  // `precacheOfflineShell` never rejects (it's internally try/caught) but
+  // treating it as fallible here costs nothing and documents the intent.
+  event.waitUntil(Promise.all([sw.skipWaiting(), precacheOfflineShell()]));
 });
 
 sw.addEventListener("activate", (event) => {
@@ -274,7 +444,8 @@ sw.addEventListener("activate", (event) => {
               key.startsWith(CACHE_PREFIX) &&
               key !== READER_CACHE &&
               key !== STATIC_CACHE &&
-              key !== META_CACHE
+              key !== META_CACHE &&
+              key !== OFFLINE_CACHE
           )
           .map((key) => caches.delete(key))
       );
@@ -339,15 +510,34 @@ sw.addEventListener("fetch", (event) => {
     return;
   }
 
+  // /library — Stage 4. Network-first, response NEVER cached (see
+  // `handleLibraryNavigation`'s doc comment); falls back to the precached
+  // `/offline` shelf on failure instead of the browser's own offline error
+  // page, which is what makes the PWA's `start_url` survive a cold, offline
+  // launch.
+  if (request.mode === "navigate" && url.pathname === "/library") {
+    event.respondWith(handleLibraryNavigation(request));
+    return;
+  }
+
+  // /offline itself — Stage 4. Reached directly, or via the redirect from an
+  // uncached reader navigation / the /library fallback above.
+  if (request.mode === "navigate" && url.pathname === OFFLINE_PATH) {
+    event.respondWith(
+      handleOfflineShellNavigation(request, (p) => event.waitUntil(p))
+    );
+    return;
+  }
+
   // Content-hashed static assets: cache-first, never revalidate.
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(handleStaticAsset(request, (p) => event.waitUntil(p)));
     return;
   }
 
-  // Every other navigation (/library, /settings, /login, /, ...): allowlist,
-  // not denylist. Do not intercept — a stale shell with stale auth state
-  // must never be servable, and no future route silently inherits caching.
+  // Every other navigation (/settings, /login, /, ...): allowlist, not
+  // denylist. Do not intercept — a stale shell with stale auth state must
+  // never be servable, and no future route silently inherits caching.
 });
 
 export {};

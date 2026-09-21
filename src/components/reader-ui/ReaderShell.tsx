@@ -25,11 +25,16 @@ import {
   type BookmarkManager,
   type BookmarkRecord,
 } from "@/reader/bookmarks";
-import { readCachedBook, writeCachedBook } from "@/lib/offline/book-store";
+import {
+  readCachedBook,
+  updateCachedBookProgress,
+  writeCachedBook,
+} from "@/lib/offline/book-store";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
 import { ReturnChip } from "./ReturnChip";
+import { OfflineIndicator } from "./OfflineIndicator";
 import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
 import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
@@ -42,6 +47,18 @@ import { useImmersive } from "./useImmersive";
  * tracker (`@/reader/position`) are style-agnostic — this shell is the only
  * seam between them and the design layer.
  */
+
+// Stage 4 offline reading, part 2: how often the *cached* book's `percent`
+// (read by the `/offline` shelf) is refreshed as the reader moves through the
+// book. 1500ms — matching `src/reader/position.ts`'s own debounce for the
+// real position write — deliberately, not coincidentally: it's a cadence
+// already proven cheap enough to run on every relocation without hammering
+// IndexedDB, and reusing it means the offline shelf's percent and the real
+// reading position go stale by about the same amount if a session ends
+// mid-debounce. This is a SEPARATE timer, not a hook into position.ts's
+// internal one (that file isn't ours to touch) — cosmetic data, its own
+// cheap, independent, best-effort write.
+const CACHE_PROGRESS_DEBOUNCE_MS = 1500;
 
 export interface ReaderShellInitialSettings {
   fontFamily: "serif" | "sans" | "legible";
@@ -193,6 +210,10 @@ export function ReaderShell({
     let unsubSelected: (() => void) | undefined;
     let unsubHighlights: (() => void) | undefined;
     let unsubBookmarks: (() => void) | undefined;
+    // Stage 4 part 2 — debounced, best-effort cache-percent write. Scoped to
+    // this effect instance like the `unsub*` handles above, not a ref: it
+    // never needs to outlive this book's engine lifecycle.
+    let cacheProgressTimer: ReturnType<typeof setTimeout> | undefined;
 
     (async () => {
       try {
@@ -246,6 +267,18 @@ export function ReaderShell({
           setAnnouncedPct((prev) =>
             prev === null || Math.abs(p - prev) >= 5 ? p : prev,
           );
+
+          // Cosmetic, best-effort: keep the offline shelf's percent from
+          // freezing at whatever it was when this book was first cached.
+          // `updateCachedBookProgress` already swallows its own errors and
+          // no-ops if the book isn't cached — this timer only throttles HOW
+          // OFTEN it's asked to, so a fast page-turner doesn't hit IndexedDB
+          // on every relocation.
+          if (cacheProgressTimer) clearTimeout(cacheProgressTimer);
+          cacheProgressTimer = setTimeout(() => {
+            cacheProgressTimer = undefined;
+            void updateCachedBookProgress(bookId, loc.percent);
+          }, CACHE_PROGRESS_DEBOUNCE_MS);
         });
 
         await controller.attach(viewerRef.current);
@@ -306,6 +339,7 @@ export function ReaderShell({
 
     return () => {
       cancelled = true;
+      if (cacheProgressTimer) clearTimeout(cacheProgressTimer);
       unsubRelocated?.();
       unsubSelected?.();
       unsubHighlights?.();
@@ -476,6 +510,11 @@ export function ReaderShell({
         hidden={immersive && !deckOpen}
         onToggleImmersive={toggleImmersive}
       />
+
+      {/* Stage 4 part 3 — quiet, non-modal connectivity signal. Fades with
+          the top bar in fullscreen (same `hidden` condition) rather than
+          floating over the reclaimed screen. */}
+      <OfflineIndicator hidden={immersive && !deckOpen} />
 
       <SpreadFrame
         viewerRef={viewerRef}
