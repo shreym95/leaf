@@ -10,6 +10,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { OfflineOwnerGuard } from "@/components/offline-ui/OfflineOwnerGuard";
 
 /* Fonts — the `variable` names are a contract with src/design/tokens.css. */
 
@@ -103,6 +104,14 @@ export default function RootLayout({
       {/* suppressHydrationWarning: browser extensions (Grammarly etc.) inject
           attributes onto <body> before React hydrates. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {/* Runs at every boot, on every route — critically including
+            `/offline`, which is outside both route groups and has no
+            server-side auth check of its own (see that page's header). Closes
+            the offline cross-user data exposure: a session that ends without
+            an explicit sign-out (closed tab, killed app) otherwise leaves a
+            previous user's cached books on the device for whoever is signed
+            in next time it boots. See src/lib/offline/owner.ts. */}
+        <OfflineOwnerGuard />
         {/* Chrome lives in the route-group layouts, not here: the reader
             (src/app/(reader)) renders full-bleed with its own immersive bars
             and no app NavBar (SPEC §8). */}

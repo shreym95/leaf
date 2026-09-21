@@ -6,6 +6,7 @@ import {
   listCachedBooks,
   type CachedBookSummary,
 } from "@/lib/offline/book-store";
+import { enforceOfflineOwner, getLocalSessionUserId } from "@/lib/offline/owner";
 
 /**
  * OfflineShelf — the `/offline` route's only content (Stage 4 offline
@@ -14,13 +15,34 @@ import {
  * that data actually gets read — client-side, straight out of IndexedDB, on
  * this exact device, no server round trip at all.
  *
- * Three states, never a blank page: briefly loading (IndexedDB is async),
- * a shelf of cached books, or an honest explanation that nothing is cached
- * yet.
+ * `/offline` has no server-side auth check by design (see that page's
+ * header), which is exactly why this component cannot just read and list:
+ * with no gate, a device that changed hands without an explicit sign-out
+ * would show the PREVIOUS user's cached books to whoever opens it next,
+ * offline, with no authentication at any step. So before this ever reads
+ * `listCachedBooks()`, it:
+ *
+ *   1. calls `enforceOfflineOwner()` itself, awaited — the root layout
+ *      (`src/app/layout.tsx`) already runs this once at boot, but React fires
+ *      a *deeper* component's own mount effect before an ancestor layout's,
+ *      so relying on that alone would leave a window where this shelf's own
+ *      read could land before the boot purge finishes. Calling it again here
+ *      is idempotent (see its own header) and closes that race outright
+ *      rather than hoping the timing works out.
+ *   2. checks whether a local session exists at all. `enforceOfflineOwner`
+ *      already purges when it doesn't — after that, `listCachedBooks()` would
+ *      correctly return nothing — but a bare empty shelf reads as "you have no
+ *      offline books," which isn't the honest reason. A visitor with no
+ *      session gets told to sign in instead.
+ *
+ * Four states, never a blank page: briefly loading (this check plus the
+ * IndexedDB read are both async), signed-out, a shelf of cached books, or an
+ * honest explanation that nothing is cached yet.
  */
 
 type State =
   | { phase: "loading" }
+  | { phase: "signed-out" }
   | { phase: "ready"; books: CachedBookSummary[] };
 
 /** `UNREAD` / `NN% READ` / `FINISHED` — mirrors the shelf's own convention
@@ -39,9 +61,21 @@ export function OfflineShelf() {
 
   useEffect(() => {
     let cancelled = false;
-    void listCachedBooks().then((books) => {
+    void (async () => {
+      // Idempotent — see the header above for why this shelf can't just
+      // trust that the root layout's own boot-time call already finished.
+      await enforceOfflineOwner();
+      const userId = await getLocalSessionUserId();
+      if (cancelled) return;
+
+      if (!userId) {
+        setState({ phase: "signed-out" });
+        return;
+      }
+
+      const books = await listCachedBooks();
       if (!cancelled) setState({ phase: "ready", books });
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -56,6 +90,14 @@ export function OfflineShelf() {
         className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]"
       >
         Checking this device…
+      </p>
+    );
+  }
+
+  if (state.phase === "signed-out") {
+    return (
+      <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
+        Sign in to see the books saved on this device.
       </p>
     );
   }
