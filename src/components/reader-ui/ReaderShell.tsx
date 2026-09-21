@@ -30,6 +30,7 @@ import {
   updateCachedBookProgress,
   writeCachedBook,
 } from "@/lib/offline/book-store";
+import { enforceOfflineOwner } from "@/lib/offline/owner";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
@@ -217,6 +218,19 @@ export function ReaderShell({
 
     (async () => {
       try {
+        // Ownership gate BEFORE the cache read, not merely at app boot. The
+        // boot guard mounts in the root layout, but React commits a deeper
+        // page's effects before an ancestor layout's — so on a hard
+        // navigation straight to a bookmarked `/reader/<id>` this effect can
+        // run first and serve one stale read out of a cache that is about to
+        // be purged. Awaiting the same idempotent guard here closes that
+        // window: if this device's cache belongs to someone else (or to
+        // nobody), it is gone before `readCachedBook` is allowed to look.
+        // Local-only — it reads the persisted session, never the network —
+        // so it costs no round trip on the reader's critical path.
+        await enforceOfflineOwner();
+        if (cancelled) return;
+
         // Cache-first: a book's bytes are immutable per `bookId` (a re-upload
         // mints a new row and id — see `src/lib/storage.ts`), so a cache hit
         // is always correct by construction. This also means a long-open tab

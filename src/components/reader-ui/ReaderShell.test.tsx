@@ -75,6 +75,19 @@ vi.mock("@/lib/offline/book-store", () => ({
   updateCachedBookProgress: bookStore.updateCachedBookProgress,
 }));
 
+// The offline owner guard runs before the cache read (see ReaderShell). Its
+// own behaviour is covered in owner.test.ts; here we only need to observe the
+// ORDER — the gate must resolve before `readCachedBook` is allowed to look,
+// or a bookmarked deep link could serve one stale read out of a cache that is
+// about to be purged.
+const owner = vi.hoisted(() => ({
+  enforceOfflineOwner: vi.fn(async () => {}),
+}));
+
+vi.mock("@/lib/offline/owner", () => ({
+  enforceOfflineOwner: owner.enforceOfflineOwner,
+}));
+
 const INITIAL = {
   fontFamily: "serif" as const,
   fontSize: 1.06,
@@ -442,4 +455,35 @@ describe("ReaderShell — cached percent stays fresh (Stage 4 offline reading, p
     );
     expect(bookStore.updateCachedBookProgress).toHaveBeenCalledTimes(1);
   }, 8000);
+});
+
+describe("ReaderShell — the offline cache is gated on ownership", () => {
+  it("resolves the owner guard BEFORE reading the cached bytes", async () => {
+    // The security fix: the boot guard mounts in the root layout, but React
+    // commits a deeper page's effects before an ancestor layout's — so a hard
+    // navigation straight to a bookmarked /reader/<id> can reach this effect
+    // first. If the cache read were allowed to win that race, a device that
+    // changed hands without an explicit sign-out would serve the previous
+    // user's book bytes once, out of a cache that was about to be purged.
+    const order: string[] = [];
+
+    owner.enforceOfflineOwner.mockImplementationOnce(async () => {
+      // Resolve on a later microtask, the way a real localStorage +
+      // getSession read does. A marker pushed synchronously would appear
+      // first whether or not the caller awaited, which would make this test
+      // pass against the very race it exists to catch.
+      await Promise.resolve();
+      await Promise.resolve();
+      order.push("guard");
+    });
+    bookStore.readCachedBook.mockImplementationOnce(async () => {
+      order.push("read");
+      return undefined;
+    });
+
+    renderShell();
+    await ready();
+
+    expect(order).toEqual(["guard", "read"]);
+  });
 });
