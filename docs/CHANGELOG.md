@@ -2,6 +2,42 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — offline reading: two real-browser-only defects (Claude, 2026-09-27)
+
+Real-browser testing of a Vercel preview found two defects neither jsdom nor
+a code read had caught: opening a book from `/library` never cached its
+reader document at all, and an offline reopen always lost the reader's place.
+
+- **The reader document was never cached during normal use.** Clicking a book
+  in `/library` is a Next App Router *soft* navigation (an RSC fetch, not a
+  document `navigate`), which `service-worker.ts` deliberately never
+  intercepts (`isRscRequest`) — so nothing ever reached
+  `handleReaderNavigation` to populate `READER_CACHE` unless the reader
+  happened to hit a plain reload. Fix: once a book finishes opening online,
+  `ReaderShell` now posts a new `leaf-offline/cache-reader` message
+  (`bookId` → `/reader/<id>`) to the worker, which validates the path against
+  `READER_ROUTE_PATTERN`, fetches it same-origin/credentialed, and — only on
+  a genuine `response.ok` with no redirect — writes it into `READER_CACHE`
+  under `url.pathname`, the exact key `handleReaderNavigation` already reads.
+  Fire-and-forget, online-only, no reply, never surfaced to the reader.
+- **Reading position was lost offline (reopened at page 0).**
+  `position.ts`'s `restore()` called `supabase.auth.getUser()` then a
+  Postgres read, both network calls that throw offline; the `catch` returned
+  `false` with nothing local to fall back to. Fix: a new
+  `src/reader/position-cache.ts` mirrors `locations-cache.ts`'s conventions
+  (synchronous `localStorage`, versioned key, best-effort) to keep the last
+  CFI/percent/timestamp on-device, written on every position flush alongside
+  the existing server write (including the outbox-queued offline path).
+  `restore()` now reads local + server, uses `getSession()` (not `getUser()`)
+  for identity so it resolves with no network, and takes the **furthest**
+  of the two via `pickFurthestPosition`, which reuses
+  `isFurtherAlong` (`lib/offline/outbox.ts`, §8(b)) rather than a second copy
+  of the rule — so neither a stale server row nor a stale local entry can
+  drag a reader backwards, offline or on.
+
+Files: `src/lib/offline/service-worker.ts`, `src/components/reader-ui/ReaderShell.tsx`,
+`src/reader/position.ts`, `src/reader/position-cache.ts` (new).
+
 ## Fix — offline reading: close the cross-user data exposure on a shared device (Claude, 2026-09-21)
 
 Confirmed HIGH-severity finding: `leaf-books`, `leaf-outbox` and the service

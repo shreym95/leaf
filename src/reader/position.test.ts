@@ -19,11 +19,18 @@ vi.mock("@/lib/supabase/client", () => ({
   })),
 }));
 
-vi.mock("@/lib/offline/outbox", () => ({
-  classifyWriteFailure: vi.fn(() => "transport"),
-  enqueueReadingState: vi.fn(async () => {}),
-  getCachedUserId: vi.fn(async () => "u1"),
-}));
+vi.mock("@/lib/offline/outbox", async (importOriginal) => {
+  // `isFurtherAlong` is kept real (pure, no I/O) rather than mocked: the
+  // "restore merges local + server" tests below exercise the actual §8(b)
+  // rule through `pickFurthestPosition`, not a stand-in for it.
+  const actual = await importOriginal<typeof import("@/lib/offline/outbox")>();
+  return {
+    ...actual,
+    classifyWriteFailure: vi.fn(() => "transport"),
+    enqueueReadingState: vi.fn(async () => {}),
+    getCachedUserId: vi.fn(async () => "u1"),
+  };
+});
 
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
 import {
@@ -32,7 +39,8 @@ import {
   getCachedUserId,
 } from "@/lib/offline/outbox";
 import type { ReaderController } from "./engine";
-import { trackPosition } from "./position";
+import { pickFurthestPosition, trackPosition } from "./position";
+import { writeCachedPosition } from "./position-cache";
 
 type RelocatedCb = (loc: { cfi: string; percent: number }) => void;
 
@@ -65,6 +73,11 @@ beforeEach(() => {
   vi.mocked(upsertReadingState).mockResolvedValue(undefined);
   vi.mocked(classifyWriteFailure).mockReturnValue("transport");
   vi.mocked(getCachedUserId).mockResolvedValue("u1");
+  // Every test in this file uses bookId "book1"; the local position cache is
+  // real jsdom localStorage (not mocked, same convention as
+  // locations-cache.test.ts), so it must be cleared between tests or one
+  // test's write leaks into the next as a spurious local position.
+  window.localStorage.clear();
 });
 
 describe("save path", () => {
@@ -277,6 +290,123 @@ describe("restore path", () => {
 
     expect(ok).toBe(false);
     expect(c.goTo).not.toHaveBeenCalled();
+  });
+});
+
+describe("furthest-position merge (offline restore fix)", () => {
+  const local = (percent: number, updatedAt = "2026-01-01T00:00:00Z") => ({
+    cfi: "local-cfi",
+    percent,
+    updatedAt,
+  });
+  const server = (percent: number, updatedAt = "2026-01-01T00:00:00Z") => ({
+    cfi: "server-cfi",
+    percent,
+    updatedAt,
+  });
+
+  it("picks local when local is further along", () => {
+    expect(pickFurthestPosition(local(0.8), server(0.3))).toEqual(local(0.8));
+  });
+
+  it("picks server when server is further along", () => {
+    expect(pickFurthestPosition(local(0.2), server(0.9))).toEqual(server(0.9));
+  });
+
+  it("returns local when only local is present", () => {
+    expect(pickFurthestPosition(local(0.5), undefined)).toEqual(local(0.5));
+  });
+
+  it("returns server when only server is present", () => {
+    expect(pickFurthestPosition(undefined, server(0.5))).toEqual(server(0.5));
+  });
+
+  it("returns undefined when neither is present", () => {
+    expect(pickFurthestPosition(undefined, undefined)).toBeUndefined();
+  });
+
+  it("breaks an exact-percent tie by the later timestamp", () => {
+    expect(
+      pickFurthestPosition(
+        local(0.5, "2026-01-02T00:00:00Z"),
+        server(0.5, "2026-01-01T00:00:00Z"),
+      ),
+    ).toEqual(local(0.5, "2026-01-02T00:00:00Z"));
+  });
+});
+
+describe("restore merges local + server (defect: offline restore lost position)", () => {
+  it("restores from the local cache alone when the server is unreachable (offline)", async () => {
+    vi.mocked(getReadingState).mockRejectedValue(new TypeError("Failed to fetch"));
+    writeCachedPosition("book1", {
+      cfi: "epubcfi(/6/99!/4/2/1:0)",
+      percent: 0.55,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const ok = await trackPosition(c, "book1").restore();
+
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("epubcfi(/6/99!/4/2/1:0)");
+  });
+
+  it("prefers the server position when it is further along than the local cache", async () => {
+    vi.mocked(getReadingState).mockResolvedValue({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "server-cfi",
+      percent: 0.9,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.2,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const ok = await trackPosition(c, "book1").restore();
+
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("server-cfi");
+  });
+
+  it("prefers the local cache when it is further along than the server", async () => {
+    vi.mocked(getReadingState).mockResolvedValue({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "server-cfi",
+      percent: 0.2,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.9,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const ok = await trackPosition(c, "book1").restore();
+
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("local-cfi");
+  });
+
+  it("behaves exactly as before when online with no local entry", async () => {
+    vi.mocked(getReadingState).mockResolvedValue({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "epubcfi(/6/14!/4/2/1:0)",
+      percent: 0.42,
+      updated_at: "2026-08-30T00:00:00Z",
+    });
+
+    const c = makeController();
+    const ok = await trackPosition(c, "book1").restore();
+
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("epubcfi(/6/14!/4/2/1:0)");
   });
 });
 
