@@ -203,7 +203,7 @@ describe("Cache Storage is purged directly, not only via the worker", () => {
     Reflect.deleteProperty(globalThis as object, "caches");
   });
 
-  it("deletes the worker's caches even when no worker controls the page", async () => {
+  it("deletes the reader cache even when no worker controls the page", async () => {
     // The load-bearing case: Cache Storage OUTLIVES the session that filled
     // it. A worker installed on an earlier visit can hold cached
     // authenticated reader documents while this page load has no controller
@@ -213,17 +213,37 @@ describe("Cache Storage is purged directly, not only via the worker", () => {
     installFakeServiceWorker({ controller: null });
     const { deleted } = installFakeCaches([
       "leaf-offline-reader",
+      "leaf-offline-offline",
       "leaf-offline-static",
       "leaf-offline-meta",
     ]);
 
     await purgeAllOfflineData();
 
-    expect(deleted.sort()).toEqual([
-      "leaf-offline-meta",
+    expect(deleted).toEqual(["leaf-offline-reader"]);
+  });
+
+  it("leaves the offline shell, static and meta caches intact — only the reader cache holds anything user-specific", async () => {
+    // leaf-offline-offline is the precached, auth-free `/offline` shelf: the
+    // offline entry point once signed out. Deleting it on sign-out was the
+    // actual defect this scoping fixes — nothing repopulates it at runtime
+    // (precacheOfflineShell only runs on `install`), so a signed-out, offline
+    // visitor was landing on the inline 503 fallback instead of the shelf.
+    // leaf-offline-static (public build assets) and leaf-offline-meta (a
+    // build id string) were never user-specific to begin with.
+    installFakeServiceWorker({ controller: null });
+    const { store } = installFakeCaches([
       "leaf-offline-reader",
+      "leaf-offline-offline",
       "leaf-offline-static",
+      "leaf-offline-meta",
     ]);
+
+    await purgeAllOfflineData();
+
+    expect(store.delete).not.toHaveBeenCalledWith("leaf-offline-offline");
+    expect(store.delete).not.toHaveBeenCalledWith("leaf-offline-static");
+    expect(store.delete).not.toHaveBeenCalledWith("leaf-offline-meta");
   });
 
   it("leaves caches it does not own alone", async () => {

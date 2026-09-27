@@ -81,16 +81,29 @@ function resolveWithin(promise: Promise<unknown>, ms: number): Promise<void> {
 }
 
 /**
- * Cache names the service worker owns. Kept in step with `CACHE_PREFIX` in
- * `service-worker.ts` by hand rather than imported: that module registers
- * worker event listeners at import time, so pulling a constant out of it
- * would drag worker code into the page bundle.
+ * Cache name of the service worker's READER_CACHE — the one worker-owned
+ * cache that can hold anything user-specific (authenticated `/reader/<id>`
+ * documents, each embedding a short-lived signed Supabase Storage URL). Kept
+ * in step with `READER_CACHE` in `service-worker.ts` by hand rather than
+ * imported: that module registers worker event listeners at import time, so
+ * pulling a constant out of it would drag worker code into the page bundle.
+ *
+ * This is deliberately the ONLY worker-owned cache this file deletes.
+ * `leaf-offline-offline` (the precached, auth-free `/offline` document —
+ * byte-identical for every user and already publicly fetchable),
+ * `leaf-offline-static` (public `/_next/static/*` build assets) and
+ * `leaf-offline-meta` (a build id string) hold nothing user-specific, and
+ * `precacheOfflineShell()` in `service-worker.ts` only repopulates
+ * `leaf-offline-offline` on `install` — nothing does it at runtime — so
+ * deleting it here would leave a signed-out, offline visitor with no way
+ * back into the app until the next deploy.
  */
-const SW_CACHE_PREFIX = "leaf-offline";
+const READER_CACHE_NAME = "leaf-offline-reader";
 
 /**
- * Delete the worker's caches directly from the page. Cache Storage is
- * same-origin state the window can reach — it is not private to the worker.
+ * Delete the worker's reader-document cache directly from the page. Cache
+ * Storage is same-origin state the window can reach — it is not private to
+ * the worker.
  *
  * This is the leg that actually guarantees the purge. Messaging the worker is
  * not sufficient on its own: **Cache Storage outlives the session that filled
@@ -104,12 +117,7 @@ const SW_CACHE_PREFIX = "leaf-offline";
 async function purgeCacheStorage(): Promise<void> {
   try {
     if (typeof caches === "undefined") return;
-    const keys = await caches.keys();
-    await Promise.all(
-      keys
-        .filter((key) => key.startsWith(SW_CACHE_PREFIX))
-        .map((key) => caches.delete(key).catch(() => false))
-    );
+    await caches.delete(READER_CACHE_NAME);
   } catch {
     // Cache Storage is unavailable (SSR, or a browser blocking site data).
   }

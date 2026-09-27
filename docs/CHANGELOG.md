@@ -2,6 +2,31 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — offline reading: sign-out purge destroyed the offline entry point (Claude, 2026-09-27)
+
+Real-device testing found: sign out, go offline, navigate to the app → the
+inline 503 fallback instead of `/offline`'s signed-out state. Cause: both
+purge paths (`purgeAllCaches()` in `service-worker.ts`'s
+`leaf-offline/purge` handler, and `purgeCacheStorage()` in `purge.ts`) deleted
+every cache prefixed `leaf-offline`, which includes `leaf-offline-offline`
+(`OFFLINE_CACHE`) — the precached, auth-free `/offline` document.
+`precacheOfflineShell()` only runs on `install`, so nothing repopulates it at
+runtime; signing out destroyed the one page the app can still show once
+offline.
+
+Fix: scoped both purge paths to `READER_CACHE` (`leaf-offline-reader`) only —
+the sole cache holding anything user-specific (authenticated `/reader/<id>`
+documents, each embedding a short-lived signed Storage URL). Verified
+`src/app/offline/page.tsx` / `OfflineShelf.tsx` render no server/user data
+(static prerendered shell; the book list is a client-side IndexedDB read),
+so `OFFLINE_CACHE`, `STATIC_CACHE` (public build assets) and `META_CACHE` (a
+build id string) are safe to leave alone. `service-worker.ts` gained a second,
+unscoped `purgeAllCaches()` kept only for the kill switch (`disableWorker`),
+which still drops every cache on purpose.
+
+Files: `src/lib/offline/service-worker.ts`, `src/lib/offline/purge.ts`,
+`src/lib/offline/purge.test.ts`.
+
 ## Fix — offline reading: two real-browser-only defects (Claude, 2026-09-27)
 
 Real-browser testing of a Vercel preview found two defects neither jsdom nor
