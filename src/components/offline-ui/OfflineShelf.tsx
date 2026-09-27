@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/primitives";
+import { useIsOffline } from "@/components/ui/useOnlineStatus";
 import {
   listCachedBooks,
   type CachedBookSummary,
@@ -38,6 +40,35 @@ import { enforceOfflineOwner, getLocalSessionUserId } from "@/lib/offline/owner"
  * Four states, never a blank page: briefly loading (this check plus the
  * IndexedDB read are both async), signed-out, a shelf of cached books, or an
  * honest explanation that nothing is cached yet.
+ *
+ * ---------------------------------------------------------------------------
+ * The way out (offline-polish defect 3)
+ * ---------------------------------------------------------------------------
+ * `/offline` used to be a dead end: no nav, no header, nothing on the page
+ * links anywhere but a cached book's own reader route. Reached via the
+ * service worker's `/library` (and, since defect 2, any other route's)
+ * fallback, a reader whose connection has since returned had no way off this
+ * page short of editing the URL bar by hand.
+ *
+ * Two different fixes for two different states, because they need different
+ * things:
+ *   - OFFLINE, the cached-book list above already IS the way out — every
+ *     entry links to `/reader/<id>`, and those work with no network. What was
+ *     missing was honesty that everything else on the site needs a
+ *     connection this device doesn't have right now, so `WayOut` says that
+ *     plainly instead of offering a link that would just fail when tapped.
+ *   - ONLINE, a real link finally works, so `WayOut` renders one: to
+ *     `/library` if this device has a local session (the real shelf is one
+ *     tap away), or `/login` if it doesn't (nothing else here is reachable
+ *     until that happens). Session presence is already known by then — it's
+ *     exactly `state.phase === "ready"` vs `"signed-out"` — so this reuses
+ *     that rather than calling `getLocalSessionUserId()` a second time.
+ *
+ * `useIsOffline` (extracted from `OfflineIndicator`, which had the identical
+ * `navigator.onLine` / `useSyncExternalStore` need) makes this reactive: a
+ * reader sitting on this exact page when the network returns sees the link
+ * appear on its own, no refresh, because the connectivity read is live, not
+ * a one-time check alongside the session check above.
  */
 
 type State =
@@ -56,8 +87,35 @@ function progressLabel(percent: number | undefined): string {
   return `${pct}% read`;
 }
 
+/**
+ * The way out — see the module header's "the way out" section. Only ever
+ * rendered while online (the caller decides that); `hasLocalSession` is the
+ * caller's already-known `state.phase === "ready"`, not a second session
+ * check.
+ */
+function WayOut({ hasLocalSession }: { hasLocalSession: boolean }) {
+  return (
+    <Button asChild variant="primary" className="self-start">
+      <Link href={hasLocalSession ? "/library" : "/login"}>
+        {hasLocalSession ? "Go to your library" : "Sign in"}
+      </Link>
+    </Button>
+  );
+}
+
+/** Offline counterpart to `WayOut`: plain text, no link — a link that just
+ *  fails when tapped is worse than none (see the module header). */
+function NeedsConnectionNote() {
+  return (
+    <p className="font-ui text-faint [font-size:var(--leaf-text-xs)]">
+      Everything else here needs a connection.
+    </p>
+  );
+}
+
 export function OfflineShelf() {
   const [state, setState] = useState<State>({ phase: "loading" });
+  const offline = useIsOffline();
 
   useEffect(() => {
     let cancelled = false;
@@ -96,52 +154,60 @@ export function OfflineShelf() {
 
   if (state.phase === "signed-out") {
     return (
-      <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
-        Sign in to see the books saved on this device.
-      </p>
-    );
-  }
-
-  if (state.books.length === 0) {
-    return (
-      <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
-        Nothing is saved on this device yet. Open a book while you have a
-        connection, and it will show up here — ready to read with none.
-      </p>
+      <div className="flex flex-col items-start gap-[var(--leaf-space-4)]">
+        <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
+          Sign in to see the books saved on this device.
+        </p>
+        {offline ? (
+          <NeedsConnectionNote />
+        ) : (
+          <WayOut hasLocalSession={false} />
+        )}
+      </div>
     );
   }
 
   return (
-    <ul className="flex flex-col gap-[var(--leaf-space-3)]">
-      {state.books.map((book) => (
-        <li key={book.bookId}>
-          <Link
-            href={`/reader/${book.bookId}`}
-            className="group flex items-center gap-[var(--leaf-space-4)] rounded-sm border border-rule-soft px-[var(--leaf-space-4)] py-[var(--leaf-space-3)] transition-colors [transition-duration:var(--leaf-dur-ui)] hover:bg-edge focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
-          >
-            {/* No cover art: a signed Storage URL needs a connection this
-                page is built to work without. An initial stands in, same
-                fallback BookCard already uses for a book with no cover. */}
-            <span
-              aria-hidden
-              className="flex h-10 w-10 flex-none items-center justify-center rounded-sm border border-rule-soft bg-page font-display text-faint [font-size:var(--leaf-text-lg)]"
-            >
-              {book.title.trim().charAt(0).toUpperCase() || "?"}
-            </span>
-            <span className="flex min-w-0 flex-col gap-[var(--leaf-space-1)]">
-              <span className="truncate font-display text-ink [font-size:var(--leaf-text-base)]">
-                {book.title}
-              </span>
-              <span className="truncate font-ui text-ink-mid [font-size:var(--leaf-text-xs)]">
-                {book.author}
-              </span>
-              <span className="font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)]">
-                {progressLabel(book.percent)}
-              </span>
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col items-start gap-[var(--leaf-space-5)]">
+      {state.books.length === 0 ? (
+        <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
+          Nothing is saved on this device yet. Open a book while you have a
+          connection, and it will show up here — ready to read with none.
+        </p>
+      ) : (
+        <ul className="flex w-full flex-col gap-[var(--leaf-space-3)]">
+          {state.books.map((book) => (
+            <li key={book.bookId}>
+              <Link
+                href={`/reader/${book.bookId}`}
+                className="group flex items-center gap-[var(--leaf-space-4)] rounded-sm border border-rule-soft px-[var(--leaf-space-4)] py-[var(--leaf-space-3)] transition-colors [transition-duration:var(--leaf-dur-ui)] hover:bg-edge focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+              >
+                {/* No cover art: a signed Storage URL needs a connection this
+                    page is built to work without. An initial stands in, same
+                    fallback BookCard already uses for a book with no cover. */}
+                <span
+                  aria-hidden
+                  className="flex h-10 w-10 flex-none items-center justify-center rounded-sm border border-rule-soft bg-page font-display text-faint [font-size:var(--leaf-text-lg)]"
+                >
+                  {book.title.trim().charAt(0).toUpperCase() || "?"}
+                </span>
+                <span className="flex min-w-0 flex-col gap-[var(--leaf-space-1)]">
+                  <span className="truncate font-display text-ink [font-size:var(--leaf-text-base)]">
+                    {book.title}
+                  </span>
+                  <span className="truncate font-ui text-ink-mid [font-size:var(--leaf-text-xs)]">
+                    {book.author}
+                  </span>
+                  <span className="font-mono uppercase text-faint [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)]">
+                    {progressLabel(book.percent)}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {offline ? <NeedsConnectionNote /> : <WayOut hasLocalSession />}
+    </div>
   );
 }
