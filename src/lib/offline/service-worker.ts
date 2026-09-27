@@ -12,8 +12,18 @@
  * installed PWA opened with no network at all (its `start_url` is
  * `/library`, an authenticated page this worker must never cache — see
  * `handleLibraryNavigation`) lands on the auth-free `/offline` shelf instead
- * of a dead page. Everything else is deliberately left alone — see the fetch
- * handler's allowlist below.
+ * of a dead page.
+ *
+ * Offline-polish pass adds a third, narrower goal: ANY other same-origin
+ * navigation that fails offline (`/login` while signed out, `/settings`, a
+ * typed URL, `/`) also lands on the `/offline` shelf instead of the
+ * browser's own raw connection-error page — see `handleUncachedNavigation`
+ * and the fetch handler's final `request.mode === "navigate"` branch. This
+ * is NOT a new cache entry in the allowlist below: those routes stay
+ * completely uncached (network-first, nothing ever written to any cache for
+ * them), and a non-navigation request (a script, an image, a fetch) is
+ * untouched by this — it's gated on navigation mode alone, checked last,
+ * after every route that DOES get its own caching behaviour above it.
  *
  * ---------------------------------------------------------------------------
  * SPIKE FINDING — process.env is unusable in this file
@@ -404,16 +414,20 @@ async function handleStaticAsset(
 }
 
 /**
- * `/library` navigations — Stage 4. Network-first, and the response is NEVER
- * written to any cache: `/library` is authenticated, per-user content
- * (`force-dynamic`, reads the session cookie), so caching it — even for a
- * moment, even for "just this session" — risks a shared device serving one
- * person's shelf, or stale auth state, to whoever opens Leaf next. On a
- * network failure this falls back to the precached `/offline` shelf instead,
- * which is what actually solves the "installed PWA opens `/library` with no
- * network" problem the manifest's `start_url` creates.
+ * Network-first, writing NOTHING to any cache, falling back to the precached
+ * `/offline` shelf on failure (the inline 503 floor if even that isn't
+ * cached — see `offlineFallbackResponse`). Shared by every same-origin
+ * navigation that must stay completely uncached: `/library` below
+ * (authenticated, per-user content) and, since the offline-polish pass,
+ * `handleUncachedNavigation` (every OTHER navigation not otherwise handled —
+ * `/login`, `/settings`, `/`, ...). Deliberately does not know or care WHICH
+ * route it was called for: the whole point of both callers is "this route is
+ * never cached," so there is exactly one code path that can write to a
+ * cache here, and it doesn't.
  */
-async function handleLibraryNavigation(request: Request): Promise<Response> {
+async function networkFirstNoCacheWithOfflineFallback(
+  request: Request
+): Promise<Response> {
   try {
     return await fetch(request);
   } catch {
@@ -422,6 +436,42 @@ async function handleLibraryNavigation(request: Request): Promise<Response> {
     if (cached) return cached;
     return offlineFallbackResponse();
   }
+}
+
+/**
+ * `/library` navigations — Stage 4. `/library` is authenticated, per-user
+ * content (`force-dynamic`, reads the session cookie), so caching it — even
+ * for a moment, even for "just this session" — risks a shared device serving
+ * one person's shelf, or stale auth state, to whoever opens Leaf next. Falls
+ * back to the precached `/offline` shelf on failure, which is what actually
+ * solves the "installed PWA opens `/library` with no network" problem the
+ * manifest's `start_url` creates. See `networkFirstNoCacheWithOfflineFallback`
+ * for the (shared, uncached) mechanics.
+ */
+async function handleLibraryNavigation(request: Request): Promise<Response> {
+  return networkFirstNoCacheWithOfflineFallback(request);
+}
+
+/**
+ * Every same-origin navigation that isn't `/reader/<id>`, `/library`, or
+ * `/offline` itself — `/login`, `/settings`, `/`, and anything added later.
+ * Offline-polish defect fix: previously these fell all the way through to
+ * the network with no interception at all, so a failed navigation surfaced
+ * the browser's own raw connection-error page instead of anything Leaf
+ * controls.
+ *
+ * Same shape as `handleLibraryNavigation` and for the same reason these
+ * routes must stay uncached: `/login` and `/settings` are exactly as
+ * session-sensitive as `/library`, most of them are NOT even in this file's
+ * allowlist deliberately (see the fetch handler's own comment on that), and
+ * nothing about this changes that — this only softens a network failure into
+ * the offline shell, it does not add a single byte to any cache. The caller
+ * (the fetch handler) is what keeps this scoped to actual navigations only
+ * (`request.mode === "navigate"`); this function itself has no opinion on
+ * that, same as `handleLibraryNavigation` doesn't either.
+ */
+async function handleUncachedNavigation(request: Request): Promise<Response> {
+  return networkFirstNoCacheWithOfflineFallback(request);
 }
 
 /**
@@ -655,9 +705,24 @@ sw.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Every other navigation (/settings, /login, /, ...): allowlist, not
-  // denylist. Do not intercept — a stale shell with stale auth state must
-  // never be servable, and no future route silently inherits caching.
+  // Every other same-origin navigation (/settings, /login, /, ...) —
+  // offline-polish defect fix. Gated on `request.mode === "navigate"` ALONE,
+  // with no pathname check: this is not a new allowlist entry and adds no
+  // new caching (see `handleUncachedNavigation`'s doc comment) — it only
+  // means a failed navigation to one of these routes gets the precached
+  // `/offline` shelf instead of the browser's own raw connection-error page.
+  // A non-navigation request to some other, non-allowlisted path (a script,
+  // an image, a plain `fetch`) is NOT a "navigate" request and falls through
+  // to the network untouched below, exactly as before — it must never
+  // receive an HTML body it isn't expecting.
+  if (request.mode === "navigate") {
+    event.respondWith(handleUncachedNavigation(request));
+    return;
+  }
+
+  // Every other, non-navigation request to a path not covered above: allow,
+  // not intercept. A stale asset with stale auth state must never be
+  // servable, and no future route silently inherits caching.
 });
 
 export {};
