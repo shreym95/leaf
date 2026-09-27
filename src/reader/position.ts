@@ -21,7 +21,13 @@ import {
   classifyWriteFailure,
   enqueueReadingState,
   getCachedUserId,
+  isFurtherAlong,
 } from "@/lib/offline/outbox";
+import {
+  readCachedPosition,
+  writeCachedPosition,
+  type CachedPosition,
+} from "./position-cache";
 import type { ReaderController, ReaderLocation } from "./engine";
 
 export interface PositionTracker {
@@ -30,6 +36,28 @@ export interface PositionTracker {
 }
 
 const DEFAULT_DEBOUNCE_MS = 1500;
+
+/**
+ * Furthest-of-local-and-server-wins for restore, reusing `isFurtherAlong`
+ * (`@/lib/offline/outbox`, §8(b)) rather than a second copy of the same rule.
+ * NOT "most recent" — a stale server row must never drag a reader backwards
+ * on a device that has since read further, and a stale local entry must
+ * never do the same to a position that has since synced further on another
+ * device. Exported so the merge itself is directly testable without driving
+ * a whole `restore()` call for every case.
+ */
+export function pickFurthestPosition(
+  local: CachedPosition | undefined,
+  server: CachedPosition | undefined,
+): CachedPosition | undefined {
+  if (!local) return server;
+  if (!server) return local;
+  const localIsFurthest = isFurtherAlong(
+    { percent: server.percent, updatedAt: server.updatedAt },
+    { percent: local.percent, updatedAt: local.updatedAt },
+  );
+  return localIsFurthest ? local : server;
+}
 
 export function trackPosition(
   controller: ReaderController,
@@ -51,6 +79,11 @@ export function trackPosition(
       writeDemoJSON(demoPositionKey(bookId), toWrite);
       return;
     }
+    // Local cache, written alongside the server write below (including when
+    // that write fails and is queued to the outbox instead) — this is what
+    // lets `restore()` work at all when the server is unreachable. See
+    // `position-cache.ts`.
+    writeCachedPosition(bookId, { ...toWrite, updatedAt: new Date().toISOString() });
     let supabase: ReturnType<typeof createClient> | undefined;
     try {
       supabase = createClient();
@@ -99,6 +132,7 @@ export function trackPosition(
       writeDemoJSON(demoPositionKey(bookId), toWrite);
       return;
     }
+    writeCachedPosition(bookId, { ...toWrite, updatedAt: new Date().toISOString() });
     try {
       const supabase = createClient();
       void (async () => {
@@ -151,20 +185,37 @@ export function trackPosition(
           return false;
         }
       }
+      // Local read first — cheap and always available, offline or not.
+      const local = readCachedPosition(bookId);
+
+      // `getSession()`, not `getUser()`: the latter revalidates against the
+      // Auth server, a network round trip that, by construction, cannot
+      // succeed exactly when this fallback matters most (offline). Same
+      // reasoning as `src/lib/offline/owner.ts`'s `getLocalSessionUserId`.
+      let server: CachedPosition | undefined;
       try {
         const supabase = createClient();
         const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return false;
-        const row = await getReadingState(user.id, bookId, supabase);
-        if (row?.cfi) {
-          await controller.goTo(row.cfi);
-          return true;
+          data: { session },
+        } = await supabase.auth.getSession();
+        const userId = session?.user?.id;
+        if (userId) {
+          const row = await getReadingState(userId, bookId, supabase);
+          if (row?.cfi) {
+            server = { cfi: row.cfi, percent: row.percent, updatedAt: row.updated_at };
+          }
         }
-        return false;
       } catch {
-        // No stored position we can reach — start from the top.
+        // Offline, or any other failure reaching the server — fall back to
+        // whatever this device has locally via `pickFurthestPosition` below.
+      }
+
+      const winner = pickFurthestPosition(local, server);
+      if (!winner) return false;
+      try {
+        await controller.goTo(winner.cfi);
+        return true;
+      } catch {
         return false;
       }
     },

@@ -152,13 +152,40 @@ const READER_ROUTE_PATTERN = /^\/reader\/[^/]+$/;
  *     a sign-out, and a second user on the same device must never see the
  *     first user's cached pages.
  *
+ *   { type: "leaf-offline/cache-reader", path: string }
+ *     Best-effort: fetch `path` itself (same-origin, credentialed — the same
+ *     kind of request a real navigation makes) and, on a genuinely
+ *     successful response, cache it into READER_CACHE under the same key
+ *     `handleReaderNavigation` uses (`url.pathname`). Exists because a
+ *     `/library` → `/reader/<id>` click is a Next App Router SOFT
+ *     navigation (an RSC fetch, deliberately excluded below — see
+ *     `isRscRequest`), never a `navigate` request, so nothing ever reaches
+ *     `handleReaderNavigation` to cache the document during ordinary
+ *     click-through use; only a plain reload previously populated the
+ *     cache. Send this once a book has finished opening online so it works
+ *     offline too even for a reader who never reloads.
+ *
+ *     `path` is UNTRUSTED — it comes from a page, not from this worker —
+ *     and is validated (`validatedReaderPath`) against
+ *     `READER_ROUTE_PATTERN` before anything is fetched, so a hostile
+ *     same-origin script can only ever make the worker (re)fetch-and-cache
+ *     a `/reader/<id>` document using the visiting page's OWN credentials —
+ *     exactly what that page could already fetch and see itself by
+ *     navigating there directly (RLS still applies server-side; a book the
+ *     signed-in user doesn't own 404s, and a 404 is never `response.ok`, so
+ *     it's never cached). It cannot be used to fetch or cache any other
+ *     path, cross-origin content, or a redirect/error response. No reply is
+ *     sent — this is fire-and-forget, and never blocks or surfaces an error
+ *     to the page.
+ *
  * The worker replies to every open client with
- * `{ type: "leaf-offline/purged" }` after either message results in a
- * purge, so a caller can confirm if it wants to.
+ * `{ type: "leaf-offline/purged" }` after either the "purge" message results
+ * in a purge, so a caller can confirm if it wants to.
  */
 const BUILD_ID_MESSAGE_TYPE = "leaf-offline/build-id";
 const PURGE_MESSAGE_TYPE = "leaf-offline/purge";
 const PURGED_MESSAGE_TYPE = "leaf-offline/purged";
+const CACHE_READER_MESSAGE_TYPE = "leaf-offline/cache-reader";
 
 /**
  * Dropped on a stale build id (see `syncBuildId` below). Deliberately does
@@ -285,6 +312,52 @@ async function handleReaderNavigation(
     const cached = await cache.match(url.pathname);
     if (cached) return cached;
     return redirectToOfflineShelf();
+  }
+}
+
+/**
+ * Resolves `rawPath` — as posted by a page via `leaf-offline/cache-reader`,
+ * UNTRUSTED input — to a same-origin `/reader/<id>` pathname, or `null` for
+ * anything else. Parsing through `URL` (rather than testing the raw string
+ * directly) normalizes away any query string / fragment / relative dots the
+ * caller included, so on a match the returned pathname is EXACTLY the cache
+ * key `handleReaderNavigation` would have used for the same document, and on
+ * anything else — a different route, a cross-origin URL, garbage — this
+ * returns `null` and the caller does nothing.
+ */
+function validatedReaderPath(rawPath: string): string | null {
+  try {
+    const url = new URL(rawPath, sw.location.origin);
+    if (url.origin !== sw.location.origin) return null;
+    if (!READER_ROUTE_PATTERN.test(url.pathname)) return null;
+    return url.pathname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetches `pathname` itself — a same-origin, credentialed GET, the same kind
+ * of request a real navigation makes — and, only on a genuine success,
+ * writes it into READER_CACHE under `pathname`. Only ever called with a
+ * value `validatedReaderPath` has already approved (see that function and
+ * the `leaf-offline/cache-reader` doc comment above for why that's safe).
+ *
+ * Never surfaces a failure: offline, a signed-out session (redirect), a
+ * missing/forbidden book (404), or any other problem here must be completely
+ * invisible to the page that asked — `handleReaderNavigation`'s own
+ * reload-triggered caching remains the fallback source of truth regardless.
+ */
+async function cacheReaderDocument(pathname: string): Promise<void> {
+  try {
+    const response = await fetch(pathname, { credentials: "same-origin" });
+    // A redirect (e.g. to a sign-in page) or a non-2xx status (404, 500)
+    // must never be cached as if it were the reader document itself.
+    if (!response.ok || response.redirected) return;
+    const cache = await caches.open(READER_CACHE);
+    await cache.put(pathname, response);
+  } catch {
+    // Best-effort — see doc comment.
   }
 }
 
@@ -455,7 +528,9 @@ sw.addEventListener("activate", (event) => {
 });
 
 sw.addEventListener("message", (event) => {
-  const data = event.data as { type?: string; buildId?: string } | null;
+  const data = event.data as
+    | { type?: string; buildId?: string; path?: unknown }
+    | null;
 
   if (data?.type === BUILD_ID_MESSAGE_TYPE && typeof data.buildId === "string") {
     const buildId = data.buildId;
@@ -475,6 +550,17 @@ sw.addEventListener("message", (event) => {
         await notifyClientsPurged();
       })()
     );
+    return;
+  }
+
+  if (data?.type === CACHE_READER_MESSAGE_TYPE) {
+    const rawPath = data.path;
+    if (typeof rawPath === "string") {
+      const pathname = validatedReaderPath(rawPath);
+      if (pathname) {
+        event.waitUntil(cacheReaderDocument(pathname));
+      }
+    }
   }
 });
 

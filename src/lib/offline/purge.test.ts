@@ -255,3 +255,45 @@ describe("Cache Storage is purged directly, not only via the worker", () => {
     await expect(purgeAllOfflineData()).resolves.toBeUndefined();
   });
 });
+
+describe("local reading state is purged too", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("removes cached positions and locations tables", async () => {
+    // Reading position is user data: how far through a book someone got. It
+    // lives in localStorage (synchronously, so a hit lands before the first
+    // `relocated` event — see locations-cache.ts's header) and must not
+    // outlive the session that produced it any more than the bytes do.
+    window.localStorage.setItem("leaf:position:v1:book-a", "{}");
+    window.localStorage.setItem("leaf:position:v1:book-b", "{}");
+    window.localStorage.setItem("leaf:locations:v1:book-a:1000", "[]");
+
+    await purgeAllOfflineData();
+
+    expect(window.localStorage.getItem("leaf:position:v1:book-a")).toBeNull();
+    expect(window.localStorage.getItem("leaf:position:v1:book-b")).toBeNull();
+    expect(
+      window.localStorage.getItem("leaf:locations:v1:book-a:1000"),
+    ).toBeNull();
+  });
+
+  it("leaves keys it does not own alone", async () => {
+    window.localStorage.setItem("leaf:position:v1:book-a", "{}");
+    window.localStorage.setItem("leaf:offline-owner:v1", "user-1");
+    window.localStorage.setItem("some-other-app", "keep me");
+
+    await purgeAllOfflineData();
+
+    expect(window.localStorage.getItem("leaf:position:v1:book-a")).toBeNull();
+    // The owner marker is managed by owner.ts, which clears it itself on a
+    // sign-out — purging it here would race that.
+    expect(window.localStorage.getItem("leaf:offline-owner:v1")).toBe("user-1");
+    expect(window.localStorage.getItem("some-other-app")).toBe("keep me");
+  });
+});

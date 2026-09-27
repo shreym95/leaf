@@ -457,6 +457,67 @@ describe("ReaderShell — cached percent stays fresh (Stage 4 offline reading, p
   }, 8000);
 });
 
+describe("ReaderShell — asks the worker to cache its own document (defect: soft nav never cached)", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "serviceWorker");
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+  });
+
+  it("messages the worker with this reader's path once the book is open, while online", async () => {
+    const postMessage = vi.fn();
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { controller: { postMessage } },
+    });
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+
+    renderShell();
+    await ready();
+
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith({
+        type: "leaf-offline/cache-reader",
+        path: "/reader/book-1",
+      }),
+    );
+  });
+
+  it("does not message the worker while offline", async () => {
+    const postMessage = vi.fn();
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { controller: { postMessage } },
+    });
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+
+    renderShell();
+    await ready();
+
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("does nothing (and does not throw) when there is no controller yet", async () => {
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { controller: null },
+    });
+
+    // Reaching `ready()` at all is the assertion: a throw inside
+    // `requestReaderCache` would have left the shell stuck in `loading`.
+    renderShell();
+    await ready();
+  });
+});
+
 describe("ReaderShell — the offline cache is gated on ownership", () => {
   it("resolves the owner guard BEFORE reading the cached bytes", async () => {
     // The security fix: the boot guard mounts in the root layout, but React

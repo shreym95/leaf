@@ -61,6 +61,42 @@ import { useImmersive } from "./useImmersive";
 // cheap, independent, best-effort write.
 const CACHE_PROGRESS_DEBOUNCE_MS = 1500;
 
+/** Must match `CACHE_READER_MESSAGE_TYPE` in `src/lib/offline/service-worker.ts`. */
+const CACHE_READER_MESSAGE_TYPE = "leaf-offline/cache-reader";
+
+/**
+ * Defect fix: a `/library` → `/reader/<id>` click is a Next soft (RSC)
+ * navigation, which the service worker deliberately never intercepts (see
+ * `isRscRequest` in service-worker.ts) — so nothing ever asked it to cache
+ * this reader's own document, and a reader who only ever clicks through from
+ * the library (never reloads) had no offline copy despite the worker itself
+ * working correctly. Once a book has finished opening, ask the worker to go
+ * fetch-and-cache its own document, matching the reload path that already
+ * worked.
+ *
+ * Fire-and-forget and completely best-effort: no controller yet (worker not
+ * registered — demo mode, non-production build, an unsupported browser), and
+ * no attempt at all while offline, where the fetch would just fail and there
+ * is nothing new to cache. Never throws, never surfaces anything to the
+ * reader.
+ */
+function requestReaderCache(bookId: string): void {
+  try {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return;
+    }
+    if (navigator.onLine === false) return;
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) return;
+    controller.postMessage({
+      type: CACHE_READER_MESSAGE_TYPE,
+      path: `/reader/${bookId}`,
+    });
+  } catch {
+    // Best-effort — never let this affect the reading session.
+  }
+}
+
 export interface ReaderShellInitialSettings {
   fontFamily: "serif" | "sans" | "legible";
   fontSize: number;
@@ -338,7 +374,11 @@ export function ReaderShell({
         // highlight needs a touch-first design first — see docs/BACKLOG.md.
         // Re-enable by restoring `controller.onSelected(...)` here.
 
-        if (!cancelled) setLoad({ state: "ready" });
+        if (!cancelled) {
+          setLoad({ state: "ready" });
+          // Best-effort, online-only — see requestReaderCache's doc comment.
+          requestReaderCache(bookId);
+        }
       } catch (err) {
         if (cancelled) return;
         setLoad({
