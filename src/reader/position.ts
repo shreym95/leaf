@@ -57,8 +57,11 @@ export interface PositionTracker {
    *      up to undo it. Instead, when the server IS strictly further along,
    *      `onSyncOffer` fires once so the chrome can offer it — see that
    *      method. Skipped entirely if the device is known offline, if the
-   *      tracker has since been `stop()`-ped, or if the reader's own
-   *      reading has already reached or passed the offered position.
+   *      tracker has since been `stop()`-ped, if the server isn't
+   *      MEANINGFULLY further along (see `isMeaningfullyAhead` — same-device
+   *      float32 rounding must never count), or if the reader's own reading
+   *      has already reached or passed the offered position (with the same
+   *      tolerance).
    *
    * Resolves `true` if phase 1 produced a navigation (local or server),
    * `false` if it found nothing to navigate to. The phase-2 background
@@ -90,6 +93,55 @@ const DEFAULT_DEBOUNCE_MS = 1500;
  * falling back to page 0.
  */
 export const SERVER_LEG_TIMEOUT_MS = 4000;
+
+/**
+ * How far ahead, in book-percent terms, the server's position must be before
+ * it is worth INTERRUPTING a reader with a sync offer (production defect,
+ * 2026-09-28 — the founder saw a "Continue…" offer to the exact place they
+ * already were).
+ *
+ * `reading_state.percent` is Postgres `real` — float32, ~7 significant
+ * digits — while `position-cache.ts` keeps the full JS double locally.
+ * Storing a double as float32 rounds it, and rounds UP about half the time,
+ * so on a single device the server's percent is routinely a hair greater
+ * than the identical local position's. Comparing raw percents (as
+ * `isFurtherAlong`, `src/lib/offline/outbox.ts`, correctly does for ITS job —
+ * outbox conflict resolution, where an equal-enough position is harmless
+ * either way) reads that hair as "the server is ahead" and fires an offer for
+ * nowhere.
+ *
+ * float32's rounding error for a value in [0, 1] tops out around 1.2e-7 (one
+ * ULP at 1.0) — so any threshold many orders of magnitude above that absorbs
+ * it completely. 0.5% is chosen from the other direction: it is roughly a
+ * page or two in a typical novel (a few hundred "pages" cover to cover), the
+ * point below which a reader would call a synced position "here", not
+ * "further along on another device" — worth a passive prompt only past that.
+ */
+export const SYNC_OFFER_MIN_PERCENT_AHEAD = 0.005;
+
+/** Percent-only half of `isMeaningfullyAhead`, split out because the
+ *  suppression check (below) only ever has a bare number — `lastKnownPercent`
+ *  — to compare, never a second CFI. */
+function isMeaningfullyAheadPercent(fromPercent: number, toPercent: number): boolean {
+  return toPercent - fromPercent > SYNC_OFFER_MIN_PERCENT_AHEAD;
+}
+
+/**
+ * Whether `to` is a reading position a reader would call "meaningfully
+ * further along" than `from` — the sync offer's actual firing condition (see
+ * `SYNC_OFFER_MIN_PERCENT_AHEAD`'s own comment for the float32 defect and the
+ * margin's size). The identical CFI is never "further along" regardless of
+ * what its two percents say — same-device restore's most common case is
+ * exactly this: identical CFI, float32-jittered percent — so that check comes
+ * first and short-circuits the percent comparison entirely.
+ */
+export function isMeaningfullyAhead(
+  from: { cfi: string; percent: number },
+  to: { cfi: string; percent: number },
+): boolean {
+  if (from.cfi === to.cfi) return false;
+  return isMeaningfullyAheadPercent(from.percent, to.percent);
+}
 
 /**
  * `navigator.onLine` is asymmetric (see `OfflineIndicator`'s own comment,
@@ -369,15 +421,29 @@ export function trackPosition(
             // server said.
             if (stopped || !server) return;
 
-            const winner = pickFurthestPosition(local, server);
-            if (winner !== server) return; // not strictly further — silent, per case 2
+            // Fixed defect (2026-09-28): this used to be
+            // `pickFurthestPosition(local, server) === server`, which
+            // delegates to `isFurtherAlong`'s STRICT percent comparison —
+            // exactly what a float32-rounded server percent trips on same-
+            // device (see `SYNC_OFFER_MIN_PERCENT_AHEAD`'s comment).
+            // `isMeaningfullyAhead` is deliberately NOT `isFurtherAlong`:
+            // that function stays untouched (it also governs outbox conflict
+            // resolution, where a float32-equal position being "not further"
+            // is harmless — same place either way) and this is a stricter,
+            // sync-offer-only bar: same CFI never qualifies, and otherwise
+            // the server must lead by a real margin, not a rounding artifact.
+            if (!isMeaningfullyAhead(local, server)) return;
 
             // The reader may have kept reading (their own page turns) while
             // this was in flight. If they've already reached or passed the
-            // offered position under their own steam, offering it now would
-            // be presenting stale, redundant, possibly-backwards-looking
-            // "news" — suppress rather than interrupt.
-            if (lastKnownPercent !== undefined && lastKnownPercent >= server.percent) {
+            // offered position under their own steam — within the same
+            // tolerance — offering it now would be presenting stale,
+            // redundant, possibly-backwards-looking "news" — suppress rather
+            // than interrupt.
+            if (
+              lastKnownPercent !== undefined &&
+              !isMeaningfullyAheadPercent(lastKnownPercent, server.percent)
+            ) {
               return;
             }
 

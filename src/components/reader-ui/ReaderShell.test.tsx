@@ -603,6 +603,8 @@ describe("ReaderShell — the offline cache is gated on ownership", () => {
   });
 });
 
+// Wording changed 2026-09-28: "Continue from X" -> "Continue at X" (part of
+// the phone-readability fix; see `SyncOfferChip.test.tsx`'s own note).
 describe("ReaderShell — cross-device sync offer (corrected: offered, never applied silently)", () => {
   it("surfaces an offer instead of navigating when the background reconcile finds a further position", async () => {
     let emit: ((offer: { cfi: string }) => void) | undefined;
@@ -621,7 +623,7 @@ describe("ReaderShell — cross-device sync offer (corrected: offered, never app
     });
 
     expect(
-      await screen.findByRole("button", { name: /^Continue from Chapter 12/i }),
+      await screen.findByRole("button", { name: /^Continue at Chapter 12/i }),
     ).toBeTruthy();
     // Never a silent navigation for it.
     expect(h.goTo).not.toHaveBeenCalled();
@@ -632,7 +634,7 @@ describe("ReaderShell — cross-device sync offer (corrected: offered, never app
     await ready();
 
     expect(
-      screen.queryByRole("button", { name: /^Continue from/i }),
+      screen.queryByRole("button", { name: /^Continue at/i }),
     ).toBeNull();
   });
 
@@ -663,7 +665,7 @@ describe("ReaderShell — cross-device sync offer (corrected: offered, never app
       emit?.({ cfi: "server-cfi" });
     });
     const offerBtn = await screen.findByRole("button", {
-      name: /^Continue from Chapter 12/i,
+      name: /^Continue at Chapter 12/i,
     });
     h.goTo.mockClear();
     await user.click(offerBtn);
@@ -673,7 +675,7 @@ describe("ReaderShell — cross-device sync offer (corrected: offered, never app
     // jumped FROM — accepting is itself a non-linear jump, undoable like any
     // other (reuses the same `jumpTo`/`returnTo` machinery as a TOC jump).
     expect(
-      screen.queryByRole("button", { name: /^Continue from/i }),
+      screen.queryByRole("button", { name: /^Continue at/i }),
     ).toBeNull();
     expect(
       await screen.findByRole("button", { name: "Return to Ch. 4" }),
@@ -697,12 +699,12 @@ describe("ReaderShell — cross-device sync offer (corrected: offered, never app
       emit?.({ cfi: "server-cfi" });
     });
     const dismissBtn = await screen.findByRole("button", {
-      name: /Dismiss continue from Chapter 12 offer/i,
+      name: /Dismiss continue at Chapter 12 offer/i,
     });
     await user.click(dismissBtn);
 
     expect(
-      screen.queryByRole("button", { name: /^Continue from/i }),
+      screen.queryByRole("button", { name: /^Continue at/i }),
     ).toBeNull();
     expect(h.goTo).not.toHaveBeenCalled();
   });
@@ -719,5 +721,104 @@ describe("ReaderShell — cross-device sync offer (corrected: offered, never app
     unmount();
 
     expect(() => emit?.({ cfi: "server-cfi" })).not.toThrow();
+  });
+
+  it("accepting an offer for the reader's own current position does not leave a meaningless way back (production defect, 2026-09-28)", async () => {
+    // Confirmed root cause: nothing in the shell ever calls `jumpTo`
+    // automatically — its only three callers are `acceptSyncOffer`, the
+    // contents popover, and the bookmark list — so the "Back to Ch. 35"
+    // chip the founder saw could only mean the sync offer's own primary
+    // button was tapped. The chip sits over the first line of prose; tapping
+    // it to try to read the cut-off text accepts the offer. Because the
+    // offer (per the float32 defect this replaces) was for the exact place
+    // the reader already was, accepting it "jumped" from Ch. 35 to Ch. 35 —
+    // a round trip with nothing to undo.
+    let emit: ((offer: { cfi: string }) => void) | undefined;
+    h.onSyncOffer.mockImplementation((cb: (offer: { cfi: string }) => void) => {
+      emit = cb;
+      return () => {};
+    });
+    h.chapterLabelForCfi.mockReturnValue("Chapter 35");
+    h.currentChapterLabel.mockReturnValue("35");
+    let relocate: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      relocate = cb;
+      return () => {};
+    });
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    // The reader is already exactly where the (same-place) offer points.
+    await act(async () => {
+      relocate?.({ cfi: "same-cfi", percent: 0.84 });
+    });
+
+    act(() => {
+      emit?.({ cfi: "same-cfi" });
+    });
+    const offerBtn = await screen.findByRole("button", {
+      name: /^Continue at Chapter 35/i,
+    });
+    await user.click(offerBtn);
+
+    // Still lands (harmlessly — it's already there), but no undo for a jump
+    // that went nowhere.
+    expect(
+      screen.queryByRole("button", { name: /^Return to/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Continue at/i }),
+    ).toBeNull();
+  });
+});
+
+describe("ReaderShell — at most one jump chip at a time (structural)", () => {
+  it("never shows the sync-offer chip alongside the way-back chip, even when both would otherwise be set", async () => {
+    // `ReaderShell` renders `returnTo` and `syncOffer` as mutually exclusive
+    // (`{returnTo && <ReturnChip/>}`, `{!returnTo && syncOffer && ...}`) —
+    // this proves that guard holds even when a sync offer is already showing
+    // and the reader then makes an unrelated jump (TOC), which sets
+    // `returnTo` without ever touching `syncOffer`.
+    h.toc.mockReturnValue([{ href: "ch2.html", label: "Chapter 2" }]);
+    h.chapterLabelForCfi.mockReturnValue("Chapter 12");
+    h.currentChapterLabel.mockReturnValue("4");
+    let relocate: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      relocate = cb;
+      return () => {};
+    });
+    let emit: ((offer: { cfi: string }) => void) | undefined;
+    h.onSyncOffer.mockImplementation((cb: (offer: { cfi: string }) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await act(async () => {
+      relocate?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.34 });
+    });
+
+    // The sync-offer chip is up first.
+    act(() => {
+      emit?.({ cfi: "server-cfi" });
+    });
+    await screen.findByRole("button", { name: /^Continue at Chapter 12/i });
+
+    // The reader jumps via the TOC instead of acting on the offer.
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("button", { name: "Chapter 2" }));
+
+    // Exactly one jump chip on screen — the way-back, never both.
+    expect(
+      await screen.findByRole("button", { name: "Return to Ch. 4" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /^Continue at/i }),
+    ).toBeNull();
   });
 });

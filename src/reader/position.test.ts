@@ -40,8 +40,10 @@ import {
 } from "@/lib/offline/outbox";
 import type { ReaderController } from "./engine";
 import {
+  isMeaningfullyAhead,
   pickFurthestPosition,
   SERVER_LEG_TIMEOUT_MS,
+  SYNC_OFFER_MIN_PERCENT_AHEAD,
   trackPosition,
 } from "./position";
 import { writeCachedPosition } from "./position-cache";
@@ -339,6 +341,61 @@ describe("furthest-position merge (offline restore fix)", () => {
   });
 });
 
+describe("isMeaningfullyAhead (defect: float32 percent rounding fired a false sync offer)", () => {
+  // `reading_state.percent` is Postgres `real` (float32, ~7 significant
+  // digits); the local cache keeps the full JS double. Storing a double as
+  // float32 rounds it — and rounds UP about half the time — so on a single
+  // device the server's percent read-back is routinely a hair greater than
+  // the identical local position. `Math.fround` is exactly that rounding.
+  it("never treats a float32-rounded copy of the SAME position as ahead", () => {
+    const percent = 0.333333333333; // an arbitrary double
+    const rounded = Math.fround(percent); // what comes back from `real`
+    // Rounded up (the common case for this bug) — assert the fixture is
+    // actually exercising it, not coincidentally rounding down or equal.
+    expect(rounded).toBeGreaterThan(percent);
+
+    expect(
+      isMeaningfullyAhead(
+        { cfi: "same-cfi", percent },
+        { cfi: "same-cfi", percent: rounded },
+      ),
+    ).toBe(false);
+  });
+
+  it("never treats the identical CFI as ahead, regardless of percent", () => {
+    // Defensive: even a percent gap far bigger than any float32 artifact must
+    // not count once the CFI matches — same place is same place.
+    expect(
+      isMeaningfullyAhead(
+        { cfi: "same-cfi", percent: 0.1 },
+        { cfi: "same-cfi", percent: 0.9 },
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat a different CFI as ahead when the percent gap is at or under the margin", () => {
+    // Comfortably under the boundary (not exactly AT it) — `0.5 +
+    // SYNC_OFFER_MIN_PERCENT_AHEAD` is not bit-exact in floating point, and
+    // this test is about "under the margin", not about pinning down a float
+    // rounding edge.
+    expect(
+      isMeaningfullyAhead(
+        { cfi: "local-cfi", percent: 0.5 },
+        { cfi: "server-cfi", percent: 0.5 + SYNC_OFFER_MIN_PERCENT_AHEAD * 0.5 },
+      ),
+    ).toBe(false);
+  });
+
+  it("treats a different CFI as ahead once the percent gap clears the margin", () => {
+    expect(
+      isMeaningfullyAhead(
+        { cfi: "local-cfi", percent: 0.5 },
+        { cfi: "server-cfi", percent: 0.5 + SYNC_OFFER_MIN_PERCENT_AHEAD + 0.0001 },
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("restore merges local + server (defect: offline restore lost position)", () => {
   it("restores from the local cache alone when the server is unreachable (offline)", async () => {
     vi.mocked(getReadingState).mockRejectedValue(new TypeError("Failed to fetch"));
@@ -417,6 +474,47 @@ describe("restore merges local + server (defect: offline restore lost position)"
     // Never a second navigation for it — only the offer.
     expect(c.goTo).toHaveBeenCalledTimes(1);
     expect(c.goTo).not.toHaveBeenCalledWith("server-cfi");
+
+    tracker.stop();
+  });
+
+  it("does not offer to continue from the same place on the same device (defect: float32 percent rounding, founder 2026-09-28)", async () => {
+    // Same CFI on both sides — the single-device case this defect actually
+    // hit. The server's percent is the float32 (`real`) round-trip of the
+    // exact double written locally, which rounds up here (as it does about
+    // half the time), so `server.percent > local.percent` even though this
+    // is the identical position.
+    const percent = 0.333333333333;
+    const serverPercent = Math.fround(percent);
+    expect(serverPercent).toBeGreaterThan(percent);
+
+    vi.mocked(getReadingState).mockResolvedValue({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "same-cfi",
+      percent: serverPercent,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    writeCachedPosition("book1", {
+      cfi: "same-cfi",
+      percent,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+    const onOffer = vi.fn();
+    tracker.onSyncOffer(onOffer);
+
+    const ok = await tracker.restore();
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("same-cfi");
+
+    // Let the background reconcile finish; no offer for the place the reader
+    // is already at.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    expect(onOffer).not.toHaveBeenCalled();
 
     tracker.stop();
   });
@@ -539,6 +637,61 @@ describe("restore merges local + server (defect: offline restore lost position)"
 
     // The reader reads on, past where the server (about to answer) is.
     c._emit({ cfi: "further-cfi", percent: 0.95 });
+
+    resolveReadingState({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "server-cfi",
+      percent: 0.9,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onOffer).not.toHaveBeenCalled();
+
+    tracker.stop();
+  });
+
+  it("suppresses the offer when the reader's own reading is within the same tolerance of the offered position, even if not yet exactly there (defect: strict >= missed a float32-sized gap)", async () => {
+    // Same tolerance as the offer's own firing condition, applied
+    // symmetrically: a reader who has read to within a rounding-sized hair of
+    // the server's position has, for every practical purpose, already
+    // arrived — offering it as "further along" would be noise, not news.
+    let resolveReadingState: (row: {
+      book_id: string;
+      user_id: string;
+      cfi: string;
+      percent: number;
+      updated_at: string;
+    }) => void = () => {};
+    vi.mocked(getReadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReadingState = resolve;
+        }),
+    );
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.1,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+    const onOffer = vi.fn();
+    tracker.onSyncOffer(onOffer);
+
+    const ok = await tracker.restore();
+    expect(ok).toBe(true);
+
+    // The reader reads on to JUST under the server's position — closer than
+    // the margin, but not equal to or past it.
+    c._emit({
+      cfi: "further-cfi",
+      percent: 0.9 - SYNC_OFFER_MIN_PERCENT_AHEAD / 2,
+    });
 
     resolveReadingState({
       book_id: "book1",

@@ -41,8 +41,19 @@ export function JumpChip({
 }: JumpChipProps) {
   return (
     <div
-      className="absolute left-1/2 top-[var(--leaf-space-4)] z-30 flex -translate-x-1/2 items-stretch border"
+      // `max-width` is viewport-relative, not a fixed character count: a
+      // fixed `18ch` cut a real chapter title off with no way to read it (a
+      // production defect, founder 2026-09-28 — the chip read "Continue
+      // from…" and named no destination). This instead takes whatever room
+      // the screen has, short of its own side margins, so the label
+      // (shortened first — see `chapter-label.ts`'s `shortenForJumpChip` —
+      // and only truncated by CSS as a last resort) gets the width it needs
+      // rather than an arbitrary cap.
+      className="absolute left-1/2 z-30 flex -translate-x-1/2 items-stretch border"
       style={{
+        top: "var(--leaf-jump-chip-top)",
+        maxWidth:
+          "calc(100vw - (2 * var(--leaf-space-4)) - var(--leaf-safe-left) - var(--leaf-safe-right))",
         background: "var(--leaf-dock-bg)",
         borderColor: "var(--leaf-dock-border)",
         color: "var(--leaf-dock-text)",
@@ -55,7 +66,7 @@ export function JumpChip({
         type="button"
         onClick={onActivate}
         aria-label={ariaLabel}
-        className="flex items-center gap-[var(--leaf-space-2)] px-[var(--leaf-space-4)] font-mono uppercase outline-none [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)] [transition:background_var(--leaf-dur-ui)_var(--leaf-ease)] hover:[background:var(--leaf-dock-hover)] focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+        className="flex min-w-0 items-center gap-[var(--leaf-space-2)] px-[var(--leaf-space-4)] font-mono uppercase outline-none [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)] [transition:background_var(--leaf-dur-ui)_var(--leaf-ease)] hover:[background:var(--leaf-dock-hover)] focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
         style={{
           borderRadius: onDismiss
             ? "var(--leaf-dock-radius) 0 0 var(--leaf-dock-radius)"
@@ -63,7 +74,13 @@ export function JumpChip({
         }}
       >
         {icon}
-        <span className="max-w-[18ch] truncate">{label}</span>
+        {/* `min-w-0` lets this shrink inside the flex button — without it a
+            flex item's default `min-width: auto` refuses to shrink below its
+            content's natural width, and `truncate` never gets the chance to
+            fire at all. `truncate` itself is now a rare safety net (the
+            content's own length is already bounded by `shortenForJumpChip`),
+            not the primary way this label gets kept short. */}
+        <span className="min-w-0 truncate">{label}</span>
       </button>
 
       {onDismiss && (

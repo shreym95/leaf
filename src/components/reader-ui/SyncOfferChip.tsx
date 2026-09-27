@@ -1,6 +1,7 @@
 "use client";
 
 import { JumpChip } from "./JumpChip";
+import { shortenForJumpChip } from "./chapter-label";
 
 /**
  * SyncOfferChip — a further reading position synced from another device,
@@ -43,6 +44,9 @@ export interface SyncOfferChipProps {
 }
 
 export function SyncOfferChip({ label, onContinue, onDismiss }: SyncOfferChipProps) {
+  // Shortened for the pill itself only — see `ReturnChip`'s own comment.
+  // `aria-label`s below stay built from the full `label`.
+  const shortLabel = shortenForJumpChip(label);
   return (
     <JumpChip
       icon={
@@ -56,20 +60,29 @@ export function SyncOfferChip({ label, onContinue, onDismiss }: SyncOfferChipPro
           strokeLinejoin="round"
           className="h-[calc(var(--leaf-dock-icon)-4px)] w-[calc(var(--leaf-dock-icon)-4px)]"
         >
-          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+          {/* Horizontal mirror of `ReturnChip`'s own "corner" arrow — same
+              stroke weight and construction, pointing forward instead of
+              back, so the pair reads as "undo" / "redo" rather than as two
+              unrelated glyphs. Previously a corner-brackets icon, which is
+              the exact glyph `ReaderTopBar` uses for the fullscreen toggle —
+              on a phone the two sit on the same screen and read as the same
+              control (founder, 2026-09-28). This one is used nowhere else in
+              the reader's chrome. */}
+          <path d="M15 14 20 9l-5-5" />
+          <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
         </svg>
       }
-      label={label ? `Continue from ${label}` : "Continue reading"}
+      label={shortLabel ? `Continue at ${shortLabel}` : "Continue reading"}
       ariaLabel={
         label
-          ? `Continue from ${label} — synced from another device`
+          ? `Continue at ${label} — synced from another device`
           : "Continue from where you left off on another device"
       }
       onActivate={onContinue}
       onDismiss={onDismiss}
       dismissAriaLabel={
         label
-          ? `Dismiss continue from ${label} offer`
+          ? `Dismiss continue at ${label} offer`
           : "Dismiss continue reading offer"
       }
     />
