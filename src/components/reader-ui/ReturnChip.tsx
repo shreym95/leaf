@@ -1,6 +1,7 @@
 "use client";
 
 import { JumpChip } from "./JumpChip";
+import { shortenForJumpChip } from "./chapter-label";
 
 /**
  * ReturnChip — the way back from a jump.
@@ -39,6 +40,12 @@ export interface ReturnChipProps {
 }
 
 export function ReturnChip({ label, onReturn, onDismiss }: ReturnChipProps) {
+  // Shortened for the pill itself only — a long chapter TITLE (as opposed to
+  // "Ch. N") would otherwise blow the chip's width on a phone. The
+  // `aria-label`s below stay built from the full, untouched `label`, so
+  // assistive tech always hears the real destination even when the visible
+  // text is shortened.
+  const shortLabel = shortenForJumpChip(label);
   return (
     <JumpChip
       icon={
@@ -56,7 +63,7 @@ export function ReturnChip({ label, onReturn, onDismiss }: ReturnChipProps) {
           <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
         </svg>
       }
-      label={label ? `Back to ${label}` : "Back"}
+      label={shortLabel ? `Back to ${shortLabel}` : "Back"}
       ariaLabel={label ? `Return to ${label}` : "Return to where you were"}
       onActivate={onReturn}
       onDismiss={onDismiss}

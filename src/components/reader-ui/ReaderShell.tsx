@@ -516,6 +516,20 @@ export function ReaderShell({
   const jumpTo = useCallback(
     (target: string) => {
       const from = hereRef.current.cfi;
+      // A jump to the exact CFI already on screen is not a jump — it is a
+      // no-op landing, and a "Back to Ch. N" chip for the chapter you are
+      // reading right now is never useful, only confusing (founder,
+      // 2026-09-28: exactly this happened when a sync offer for the reader's
+      // own current position — a `position.ts` float32 defect, since fixed —
+      // was tapped, mistaken for a way to read its own truncated label).
+      // Defensive: with that defect fixed this should be rare, but any
+      // future same-place `jumpTo` (a bookmark on the current page, a TOC
+      // entry for the chapter you're already in) must not leave a
+      // meaningless undo behind either.
+      if (from && target === from) {
+        void controllerRef.current?.goTo(target);
+        return;
+      }
       if (from) {
         setReturnTo({ cfi: from, label: formatChapterLabel(chapterLabel) });
         turnsSinceJump.current = 0;

@@ -163,6 +163,12 @@
   --leaf-reader-bar-pad-y: var(--leaf-space-4);
   --leaf-reader-progress-w: min(420px, 40vw);
   --leaf-reader-progress-h: 3px;
+  /* How far the way-back / sync-offer chip (`JumpChip`) sits from the top of
+     the open-book frame. Framed (desktop), `--leaf-reader-viewer-pad-y`
+     (clamp 1.6rem–3rem) already clears the first line, so this floats over
+     the mat above the paper. See the full-bleed override below for the
+     phone case, which needs a SMALLER offset, not a larger one. */
+  --leaf-jump-chip-top: var(--leaf-space-4);
 
   /* --- Reader dock (design iteration 1, REVISED_PLAN §9 requirement 2) ------
      Geometry only; the dock's surface colours are per-theme, below. Motion
@@ -272,6 +278,25 @@
        it at zero and let the insets come from epub.js's own body padding plus
        the Margins setting, which are symmetric by construction. */
     --leaf-reader-viewer-pad-y: 0px;
+    /* Full-bleed zeroes `--leaf-reader-viewer-pad-y` (above) — the desktop
+       mat that used to hold the chip clear of the text is gone, so the
+       previous fixed offset (`--leaf-space-4`, 16px) landed the chip
+       squarely on the first line (a production defect, founder 2026-09-28,
+       on a 360px phone).
+       There is no dead space to move it INTO — full-bleed text starts at
+       the very top of the frame by design, so a taller offset does not
+       clear the text, it just trades which line(s) the chip's own 40px
+       height lands on (checked visually at 360px: `--leaf-space-6` still
+       covered the tail of line 1 AND all of line 2 — worse). The fix that
+       actually helped, checked the same way, was the opposite: shrink the
+       gap so the chip nestles directly under the top bar, in the sliver
+       that already exists between the bar and the frame, rather than
+       floating further down INTO the text. At `--leaf-space-1` (4px) the
+       chip sits almost entirely above line 1, leaving every full line of
+       prose readable underneath it — the best available position, not text-
+       free, since full-bleed leaves no gap this floating pill can occupy
+       without touching text on some line. */
+    --leaf-jump-chip-top: var(--leaf-space-1);
     /* Full-bleed means the page fills the screen — no cap, or the paper shows
        through as strips above and below. */
     --leaf-reader-frame-max-h: none;
