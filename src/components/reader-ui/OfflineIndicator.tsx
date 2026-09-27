@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
+import { useIsOffline } from "@/components/ui/useOnlineStatus";
 
 /**
  * OfflineIndicator — Stage 4 offline reading, part 3. A quiet, non-modal
@@ -31,12 +32,11 @@ import { useEffect, useState, useSyncExternalStore } from "react";
  * asymmetry means silently trusting "online" degrades gracefully (the worst
  * case is staying quiet a little too long, never crying wolf).
  *
- * Reads `navigator.onLine` via `useSyncExternalStore` rather than
- * `useState` + `useEffect` — the same pattern `ThemeProvider` already uses
- * for its own browser-only external state (`localStorage` / `<html
- * data-theme>`): no risk of the "setState synchronously in an effect"
- * cascading-render footgun, and `getServerSnapshot` makes the SSR/hydration
- * story explicit (always "online") instead of implicit in effect timing.
+ * Connectivity itself comes from `useIsOffline` (`@/components/ui/
+ * useOnlineStatus`) — extracted from this component for defect 3
+ * (`OfflineShelf` needed the exact same live signal); see that hook's own
+ * header for the `useSyncExternalStore` / SSR-snapshot reasoning, which is
+ * unchanged by the move.
  */
 
 export interface OfflineIndicatorProps {
@@ -45,29 +45,6 @@ export interface OfflineIndicatorProps {
    *  deck (and the top bar) do. Stays mounted rather than unmounting, same
    *  reasoning as `ReaderTopBar`: nothing here affects layout either way. */
   hidden?: boolean;
-}
-
-function subscribeToConnectivity(onChange: () => void): () => void {
-  window.addEventListener("online", onChange);
-  window.addEventListener("offline", onChange);
-  return () => {
-    window.removeEventListener("online", onChange);
-    window.removeEventListener("offline", onChange);
-  };
-}
-
-function isOfflineSnapshot(): boolean {
-  try {
-    return navigator.onLine === false;
-  } catch {
-    return false; // unknown — assume online rather than warning wrongly
-  }
-}
-
-/** SSR has no `navigator` at all — never guess "offline" before hydration,
- *  or the badge would flash on every normal, connected load. */
-function isOfflineServerSnapshot(): boolean {
-  return false;
 }
 
 /**
@@ -82,10 +59,10 @@ function isOfflineServerSnapshot(): boolean {
  * and reconsidered had come back for it. Nothing here is undoable and
  * nothing is lost by this pill retiring itself: the book keeps paginating
  * and saving locally with or without it on screen, and dropping offline
- * again later shows it again (see the `[offline]` effect below) — so unlike
- * `ReturnChip`, a clock costs this component nothing. Do not "harmonise"
- * these two by adding a timer to one or removing it from the other; they are
- * different in kind, not just in current tuning.
+ * again later shows it again (see the in-render transition handling below)
+ * — so unlike `ReturnChip`, a clock costs this component nothing. Do not
+ * "harmonise" these two by adding a timer to one or removing it from the
+ * other; they are different in kind, not just in current tuning.
  *
  * 6s, from the founder's 5–8s range: comfortably long enough to read the
  * ~40-character message once (the `aria-live="polite"` region also
@@ -131,11 +108,7 @@ function NoConnectionIcon() {
 }
 
 export function OfflineIndicator({ hidden = false }: OfflineIndicatorProps) {
-  const offline = useSyncExternalStore(
-    subscribeToConnectivity,
-    isOfflineSnapshot,
-    isOfflineServerSnapshot,
-  );
+  const offline = useIsOffline();
 
   // `presence` is this component's own lifecycle — not shown yet / shown /
   // fading out before unmount — kept separate from `offline` (which just

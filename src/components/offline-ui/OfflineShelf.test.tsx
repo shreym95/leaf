@@ -16,7 +16,7 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 
 const authState: { session: { user: { id: string } } | null } = {
   session: null,
@@ -46,11 +46,28 @@ function bytesOf(n: number): ArrayBuffer {
   return new ArrayBuffer(n);
 }
 
+/**
+ * `useIsOffline` reads `navigator.onLine`, and `beforeEach` below replaces
+ * `window.navigator` wholesale (`vi.stubGlobal`) with a plain object rather
+ * than the real `Navigator` instance, so `onLine` has to be an explicit own
+ * property on that stub (spreading the real `navigator` does NOT copy it —
+ * it's an accessor on `Navigator.prototype`, not an own property, so a bare
+ * `{ ...navigator }` silently drops it). This mutates that same stub object,
+ * same pattern as `OfflineIndicator.test.tsx`'s own `setOnLine`.
+ */
+function setOnLine(value: boolean) {
+  Object.defineProperty(window.navigator, "onLine", {
+    configurable: true,
+    value,
+  });
+}
+
 beforeEach(() => {
   (globalThis as unknown as { indexedDB: IDBFactory }).indexedDB =
     new IDBFactory();
   vi.stubGlobal("navigator", {
     ...navigator,
+    onLine: true,
     storage: {
       estimate: vi.fn(async () => ({ quota: 1024 * 1024 * 1024, usage: 0 })),
       persist: vi.fn(async () => true),
@@ -162,5 +179,87 @@ describe("OfflineShelf", () => {
       await screen.findByText(/sign in to see the books saved on this device/i),
     ).toBeTruthy();
     expect(screen.queryByRole("link", { name: /dracula/i })).toBeNull();
+  });
+
+  describe("the way out (defect 3)", () => {
+    it("offline, signed out: no link — just says the rest needs a connection", async () => {
+      setOnLine(false);
+      signOut();
+      render(<OfflineShelf />);
+
+      expect(
+        await screen.findByText(/sign in to see the books saved on this device/i),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/everything else here needs a connection/i),
+      ).toBeTruthy();
+      expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
+    });
+
+    it("offline, signed in with nothing cached: no link — just says the rest needs a connection", async () => {
+      setOnLine(false);
+      signInAs("user-a");
+      render(<OfflineShelf />);
+
+      expect(
+        await screen.findByText(/nothing is saved on this device yet/i),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/everything else here needs a connection/i),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("link", { name: /go to your library/i }),
+      ).toBeNull();
+    });
+
+    it("online, signed out: a primary action to /login", async () => {
+      setOnLine(true);
+      signOut();
+      render(<OfflineShelf />);
+
+      const link = await screen.findByRole("link", { name: /sign in/i });
+      expect(link).toHaveAttribute("href", "/login");
+      expect(
+        screen.queryByText(/everything else here needs a connection/i),
+      ).toBeNull();
+    });
+
+    it("online, signed in: a primary action to /library — a different destination than signed-out", async () => {
+      setOnLine(true);
+      signInAs("user-a");
+      render(<OfflineShelf />);
+
+      const link = await screen.findByRole("link", {
+        name: /go to your library/i,
+      });
+      expect(link).toHaveAttribute("href", "/library");
+    });
+
+    it("reacts live: the way out appears with no refresh once connectivity returns", async () => {
+      setOnLine(false);
+      signInAs("user-a");
+      render(<OfflineShelf />);
+
+      // Settled, offline: no link yet.
+      expect(
+        await screen.findByText(/nothing is saved on this device yet/i),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("link", { name: /go to your library/i }),
+      ).toBeNull();
+
+      // The network returns while sitting on this exact page — no remount.
+      await act(async () => {
+        setOnLine(true);
+        window.dispatchEvent(new Event("online"));
+      });
+
+      expect(
+        await screen.findByRole("link", { name: /go to your library/i }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText(/everything else here needs a connection/i),
+      ).toBeNull();
+    });
   });
 });
