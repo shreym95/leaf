@@ -14,8 +14,17 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({
     auth: {
       getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })),
+      getSession: vi.fn(async () => ({ data: { session: { user: { id: "u1" } } } })),
     },
   })),
+}));
+
+vi.mock("@/lib/offline/outbox", () => ({
+  cancelQueuedBookmarkCreate: vi.fn(async () => true),
+  classifyWriteFailure: vi.fn(() => "transport"),
+  enqueueBookmarkCreate: vi.fn(async () => {}),
+  enqueueBookmarkDelete: vi.fn(async () => {}),
+  resolveUserId: vi.fn(async () => "u1"),
 }));
 
 import {
@@ -24,6 +33,12 @@ import {
   listBookmarks,
 } from "@/lib/db/bookmarks";
 import type { Bookmark } from "@/lib/types";
+import {
+  cancelQueuedBookmarkCreate,
+  classifyWriteFailure,
+  enqueueBookmarkCreate,
+  enqueueBookmarkDelete,
+} from "@/lib/offline/outbox";
 import { manageBookmarks } from "./bookmarks";
 
 const ROW = (over: Partial<Bookmark> = {}): Bookmark => ({
@@ -39,6 +54,11 @@ const ROW = (over: Partial<Bookmark> = {}): Bookmark => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // `clearAllMocks` resets call history but not implementations set with
+  // `mockResolvedValue` / `mockReturnValue` — reset the outbox mocks to sane
+  // defaults so one test's failure-path setup can't leak into the next.
+  vi.mocked(classifyWriteFailure).mockReturnValue("transport");
+  vi.mocked(cancelQueuedBookmarkCreate).mockResolvedValue(true);
 });
 
 describe("create", () => {
@@ -81,7 +101,7 @@ describe("create", () => {
     );
   });
 
-  it("does not throw when the db write fails, and still tracks the bookmark locally", async () => {
+  it("does not throw when the db write fails, tracks the bookmark locally, and QUEUES the write for replay (was: silently dropped)", async () => {
     vi.mocked(createBookmark).mockRejectedValue(new Error("network down"));
     const mgr = manageBookmarks("book1");
 
@@ -89,6 +109,23 @@ describe("create", () => {
 
     expect(rec.cfi).toBe("cfi-y");
     expect(mgr.list()).toHaveLength(1);
+    expect(enqueueBookmarkCreate).toHaveBeenCalledWith("u1", {
+      localId: rec.id,
+      bookId: "book1",
+      cfi: "cfi-y",
+      label: null,
+      percent: null,
+    });
+  });
+
+  it("does NOT queue when the failure is a rejection (RLS / bad data), not a transport failure", async () => {
+    vi.mocked(classifyWriteFailure).mockReturnValue("rejected");
+    vi.mocked(createBookmark).mockRejectedValue({ code: "42501" });
+    const mgr = manageBookmarks("book1");
+
+    await mgr.create({ cfi: "cfi-z" });
+
+    expect(enqueueBookmarkCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -141,13 +178,39 @@ describe("remove", () => {
     expect(mgr.list()).toHaveLength(0);
   });
 
-  it("does not throw when the db delete fails", async () => {
+  it("does not throw when the db delete fails, and QUEUES the delete for replay (was: silently dropped)", async () => {
     vi.mocked(listBookmarks).mockResolvedValue([ROW()]);
     vi.mocked(deleteBookmark).mockRejectedValue(new Error("boom"));
     const mgr = manageBookmarks("book1");
     await mgr.restore();
 
     await expect(mgr.remove("bm-1")).resolves.toBeUndefined();
+    expect(mgr.list()).toHaveLength(0);
+    expect(enqueueBookmarkDelete).toHaveBeenCalledWith("u1", "bm-1");
+  });
+
+  it("does NOT queue a delete failure that is a rejection, not a transport failure", async () => {
+    vi.mocked(listBookmarks).mockResolvedValue([ROW()]);
+    vi.mocked(classifyWriteFailure).mockReturnValue("rejected");
+    vi.mocked(deleteBookmark).mockRejectedValue({ code: "42501" });
+    const mgr = manageBookmarks("book1");
+    await mgr.restore();
+
+    await mgr.remove("bm-1");
+
+    expect(enqueueBookmarkDelete).not.toHaveBeenCalled();
+  });
+
+  it("removing a bookmark that never synced (local id) cancels the queued create instead of deleting on the server", async () => {
+    vi.mocked(createBookmark).mockRejectedValue(new Error("offline"));
+    const mgr = manageBookmarks("book1");
+    const rec = await mgr.create({ cfi: "cfi-local" }); // create fails -> queued, local id kept
+
+    await mgr.remove(rec.id);
+
+    expect(cancelQueuedBookmarkCreate).toHaveBeenCalledWith("u1", rec.id);
+    expect(deleteBookmark).not.toHaveBeenCalled();
+    expect(enqueueBookmarkDelete).not.toHaveBeenCalled();
     expect(mgr.list()).toHaveLength(0);
   });
 });

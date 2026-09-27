@@ -45,7 +45,11 @@ vi.mock("@/reader/engine", () => ({
 }));
 
 vi.mock("@/reader/position", () => ({
-  trackPosition: vi.fn(() => ({ restore: h.restore, stop: h.stop })),
+  trackPosition: vi.fn(() => ({
+    restore: h.restore,
+    onSyncOffer: vi.fn(() => () => {}),
+    stop: h.stop,
+  })),
 }));
 
 vi.mock("@/lib/supabase/client", () => ({

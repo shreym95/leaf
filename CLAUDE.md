@@ -48,6 +48,13 @@ is the fastest way back into context. Delete it once its contents are stale or a
 
 Build: `npm run dev`  ·  Test: `npm test`  ·  Lint: `npm run lint`  ·  Types: `npm run typecheck`
 
+**Testing is tiered — read `docs/TESTING.md` before running anything.** Short version:
+a bounded change runs `npx vitest related --run <changed files>` plus typecheck and lint,
+never the full suite. The full suite runs **once per workstream**, by whoever integrates the
+branches, before the PR. Service workers, visuals, the epub.js iframe and mobile lifecycle
+are not testable in jsdom and need a real browser or device. A regression test must be
+proven to fail without its fix. Never edit an existing test to make it pass.
+
 Reference (untracked source of truth for look + logic, under `reference/`):
 approved v0.1 reader HTML, Python normalizer. Chapter fixtures in `src/normalizer/fixtures/`.
 

@@ -31,6 +31,15 @@ import {
 } from "@/lib/db/highlights";
 import type { Highlight } from "@/lib/types";
 import type { ReaderController } from "./engine";
+import {
+  cancelQueuedHighlightCreate,
+  classifyWriteFailure,
+  enqueueHighlightCreate,
+  enqueueHighlightDelete,
+  enqueueHighlightNote,
+  resolveUserId,
+} from "@/lib/offline/outbox";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Stable highlight colour names. Design layer maps name -> token -> CSS. */
 export const HIGHLIGHT_COLORS = ["copper", "sage", "sky", "rose"] as const;
@@ -127,16 +136,17 @@ export function manageHighlights(
   }
 
   async function auth(): Promise<{
-    supabase: ReturnType<typeof createClient>;
+    supabase: SupabaseClient;
     userId: string;
   } | null> {
     try {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
-      return { supabase, userId: user.id };
+      // `resolveUserId` falls back to the cached session (no network) if
+      // `getUser()` fails for being offline, so a write made offline can
+      // still be identified and queued rather than dropped outright.
+      const userId = await resolveUserId(supabase);
+      if (!userId) return null;
+      return { supabase, userId };
     } catch {
       return null;
     }
@@ -184,9 +194,20 @@ export function manageHighlights(
             a.supabase,
           );
           rec = toRecord(row);
-        } catch {
+        } catch (err) {
           // best-effort: keep the optimistic record (local id) so the
-          // highlight is still painted and listed this session
+          // highlight is still painted and listed this session. A
+          // connectivity failure is queued so it also survives a reload; a
+          // rejection (RLS, bad data) is dropped.
+          if (classifyWriteFailure(err) === "transport") {
+            await enqueueHighlightCreate(a.userId, {
+              localId: rec.id,
+              bookId,
+              cfiRange: input.cfiRange,
+              text: input.text,
+              color,
+            });
+          }
         }
       }
 
@@ -207,8 +228,13 @@ export function manageHighlights(
       if (a) {
         try {
           await updateHighlightNote(a.userId, id, note, a.supabase);
-        } catch {
-          // best-effort: the in-memory note stands for this session
+        } catch (err) {
+          // best-effort: the in-memory note stands for this session. A
+          // connectivity failure is queued so it survives a reload; a
+          // rejection is dropped.
+          if (classifyWriteFailure(err) === "transport") {
+            await enqueueHighlightNote(a.userId, id, note);
+          }
         }
       }
     },
@@ -221,12 +247,26 @@ export function manageHighlights(
       controller.removeHighlight(target.cfiRange);
       notify();
 
+      if (id.startsWith("local-")) {
+        // This highlight never made it past an earlier offline create —
+        // there is nothing server-side to delete. Cancel the still-queued
+        // create instead, so it never replays into a highlight the reader
+        // thought they'd already removed.
+        const a = await auth();
+        if (a) await cancelQueuedHighlightCreate(a.userId, id);
+        return;
+      }
+
       const a = await auth();
       if (a) {
         try {
           await deleteHighlight(a.userId, id, a.supabase);
-        } catch {
-          // best-effort
+        } catch (err) {
+          // best-effort: a connectivity failure is queued so the delete
+          // survives a reload; a rejection is dropped, not retried forever.
+          if (classifyWriteFailure(err) === "transport") {
+            await enqueueHighlightDelete(a.userId, id);
+          }
         }
       }
     },

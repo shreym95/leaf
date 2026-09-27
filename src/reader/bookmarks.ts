@@ -21,6 +21,14 @@ import {
   listBookmarks,
 } from "@/lib/db/bookmarks";
 import type { Bookmark } from "@/lib/types";
+import {
+  cancelQueuedBookmarkCreate,
+  classifyWriteFailure,
+  enqueueBookmarkCreate,
+  enqueueBookmarkDelete,
+  resolveUserId,
+} from "@/lib/offline/outbox";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface BookmarkRecord {
   id: string;
@@ -92,16 +100,17 @@ export function manageBookmarks(bookId: string): BookmarkManager {
   }
 
   async function auth(): Promise<{
-    supabase: ReturnType<typeof createClient>;
+    supabase: SupabaseClient;
     userId: string;
   } | null> {
     try {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
-      return { supabase, userId: user.id };
+      // `resolveUserId` falls back to the cached session (no network) if
+      // `getUser()` fails for being offline, so a write made offline can
+      // still be identified and queued rather than dropped outright.
+      const userId = await resolveUserId(supabase);
+      if (!userId) return null;
+      return { supabase, userId };
     } catch {
       return null;
     }
@@ -147,9 +156,19 @@ export function manageBookmarks(bookId: string): BookmarkManager {
             a.supabase,
           );
           rec = toRecord(row);
-        } catch {
+        } catch (err) {
           // best-effort: keep the optimistic record (local id) so the bookmark
-          // is still listed this session
+          // is still listed this session. A connectivity failure is queued so
+          // it also survives a reload; a rejection (RLS, bad data) is dropped.
+          if (classifyWriteFailure(err) === "transport") {
+            await enqueueBookmarkCreate(a.userId, {
+              localId: rec.id,
+              bookId,
+              cfi: input.cfi,
+              label: input.label ?? null,
+              percent: input.percent ?? null,
+            });
+          }
         }
       }
 
@@ -165,12 +184,26 @@ export function manageBookmarks(bookId: string): BookmarkManager {
       records = records.filter((r) => r.id !== id);
       notify();
 
+      if (id.startsWith("local-")) {
+        // This bookmark never made it past an earlier offline create — there
+        // is nothing server-side to delete. Cancel the still-queued create
+        // instead, so it never replays into a row the reader thought they'd
+        // already removed.
+        const a = await auth();
+        if (a) await cancelQueuedBookmarkCreate(a.userId, id);
+        return;
+      }
+
       const a = await auth();
       if (a) {
         try {
           await deleteBookmark(a.userId, id, a.supabase);
-        } catch {
-          // best-effort
+        } catch (err) {
+          // best-effort: a connectivity failure is queued so the delete
+          // survives a reload; a rejection is dropped, not retried forever.
+          if (classifyWriteFailure(err) === "transport") {
+            await enqueueBookmarkDelete(a.userId, id);
+          }
         }
       }
     },

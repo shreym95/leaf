@@ -25,10 +25,18 @@ import {
   type BookmarkManager,
   type BookmarkRecord,
 } from "@/reader/bookmarks";
+import {
+  readCachedBook,
+  updateCachedBookProgress,
+  writeCachedBook,
+} from "@/lib/offline/book-store";
+import { enforceOfflineOwner } from "@/lib/offline/owner";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
 import { ReturnChip } from "./ReturnChip";
+import { SyncOfferChip } from "./SyncOfferChip";
+import { OfflineIndicator } from "./OfflineIndicator";
 import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
 import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
@@ -41,6 +49,54 @@ import { useImmersive } from "./useImmersive";
  * tracker (`@/reader/position`) are style-agnostic — this shell is the only
  * seam between them and the design layer.
  */
+
+// Stage 4 offline reading, part 2: how often the *cached* book's `percent`
+// (read by the `/offline` shelf) is refreshed as the reader moves through the
+// book. 1500ms — matching `src/reader/position.ts`'s own debounce for the
+// real position write — deliberately, not coincidentally: it's a cadence
+// already proven cheap enough to run on every relocation without hammering
+// IndexedDB, and reusing it means the offline shelf's percent and the real
+// reading position go stale by about the same amount if a session ends
+// mid-debounce. This is a SEPARATE timer, not a hook into position.ts's
+// internal one (that file isn't ours to touch) — cosmetic data, its own
+// cheap, independent, best-effort write.
+const CACHE_PROGRESS_DEBOUNCE_MS = 1500;
+
+/** Must match `CACHE_READER_MESSAGE_TYPE` in `src/lib/offline/service-worker.ts`. */
+const CACHE_READER_MESSAGE_TYPE = "leaf-offline/cache-reader";
+
+/**
+ * Defect fix: a `/library` → `/reader/<id>` click is a Next soft (RSC)
+ * navigation, which the service worker deliberately never intercepts (see
+ * `isRscRequest` in service-worker.ts) — so nothing ever asked it to cache
+ * this reader's own document, and a reader who only ever clicks through from
+ * the library (never reloads) had no offline copy despite the worker itself
+ * working correctly. Once a book has finished opening, ask the worker to go
+ * fetch-and-cache its own document, matching the reload path that already
+ * worked.
+ *
+ * Fire-and-forget and completely best-effort: no controller yet (worker not
+ * registered — demo mode, non-production build, an unsupported browser), and
+ * no attempt at all while offline, where the fetch would just fail and there
+ * is nothing new to cache. Never throws, never surfaces anything to the
+ * reader.
+ */
+function requestReaderCache(bookId: string): void {
+  try {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return;
+    }
+    if (navigator.onLine === false) return;
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) return;
+    controller.postMessage({
+      type: CACHE_READER_MESSAGE_TYPE,
+      path: `/reader/${bookId}`,
+    });
+  } catch {
+    // Best-effort — never let this affect the reading session.
+  }
+}
 
 export interface ReaderShellInitialSettings {
   fontFamily: "serif" | "sans" | "legible";
@@ -129,6 +185,23 @@ export function ReaderShell({
     hereRef.current = here;
   }, [here]);
 
+  // ── Cross-device sync offer (offline defect fix, corrected) ────────────
+  // A further position found on another device is OFFERED, not applied —
+  // see `position.ts`'s `onSyncOffer` doc comment. Same page-turn-based
+  // lifetime as `returnTo` (declared further down, near the jump-back
+  // logic it belongs with), by design: the founder already settled that a
+  // clock-based dismissal is the wrong rule for this reader (it would
+  // retract a still-wanted offer/way-back before a reader who paused to
+  // read had finished), so this reuses the exact same behaviour rather
+  // than inventing a second one. Declared up here (not alongside `returnTo`)
+  // because the engine effect below subscribes to `onSyncOffer` and needs
+  // `setSyncOffer` in scope before it runs.
+  const [syncOffer, setSyncOffer] = useState<{
+    cfi: string;
+    label: string | null;
+  } | null>(null);
+  const turnsSinceSyncOffer = useRef(0);
+
   const { setTheme: applyChromeTheme } = useTheme();
 
   // Live settings from the store (hydrated below).
@@ -192,15 +265,51 @@ export function ReaderShell({
     let unsubSelected: (() => void) | undefined;
     let unsubHighlights: (() => void) | undefined;
     let unsubBookmarks: (() => void) | undefined;
+    let unsubSyncOffer: (() => void) | undefined;
+    // Stage 4 part 2 — debounced, best-effort cache-percent write. Scoped to
+    // this effect instance like the `unsub*` handles above, not a ref: it
+    // never needs to outlive this book's engine lifecycle.
+    let cacheProgressTimer: ReturnType<typeof setTimeout> | undefined;
 
     (async () => {
       try {
-        const res = await fetch(fileUrl);
-        if (!res.ok) {
-          throw new Error(`Couldn't download the book (HTTP ${res.status}).`);
-        }
-        const bytes = await res.arrayBuffer();
+        // Fresh per book-open: this effect can re-run without an unmount
+        // (bookId change), and a sync offer from the PREVIOUS book has no
+        // business surviving into this one.
+        setSyncOffer(null);
+        turnsSinceSyncOffer.current = 0;
+
+        // Ownership gate BEFORE the cache read, not merely at app boot. The
+        // boot guard mounts in the root layout, but React commits a deeper
+        // page's effects before an ancestor layout's — so on a hard
+        // navigation straight to a bookmarked `/reader/<id>` this effect can
+        // run first and serve one stale read out of a cache that is about to
+        // be purged. Awaiting the same idempotent guard here closes that
+        // window: if this device's cache belongs to someone else (or to
+        // nobody), it is gone before `readCachedBook` is allowed to look.
+        // Local-only — it reads the persisted session, never the network —
+        // so it costs no round trip on the reader's critical path.
+        await enforceOfflineOwner();
         if (cancelled) return;
+
+        // Cache-first: a book's bytes are immutable per `bookId` (a re-upload
+        // mints a new row and id — see `src/lib/storage.ts`), so a cache hit
+        // is always correct by construction. This also means a long-open tab
+        // whose 1-hour signed URL has expired reopens from cache instead of
+        // attempting a doomed fetch.
+        let bytes = await readCachedBook(bookId);
+        if (cancelled) return;
+        if (!bytes) {
+          const res = await fetch(fileUrl);
+          if (!res.ok) {
+            throw new Error(
+              `Couldn't download the book (HTTP ${res.status}).`,
+            );
+          }
+          bytes = await res.arrayBuffer();
+          if (cancelled) return;
+          void writeCachedBook(bookId, bytes, { title, author });
+        }
 
         // `bookId` keys the locations cache so progress is exact on reopen
         // instead of climbing from 0 while the table regenerates (D7).
@@ -233,6 +342,18 @@ export function ReaderShell({
           setAnnouncedPct((prev) =>
             prev === null || Math.abs(p - prev) >= 5 ? p : prev,
           );
+
+          // Cosmetic, best-effort: keep the offline shelf's percent from
+          // freezing at whatever it was when this book was first cached.
+          // `updateCachedBookProgress` already swallows its own errors and
+          // no-ops if the book isn't cached — this timer only throttles HOW
+          // OFTEN it's asked to, so a fast page-turner doesn't hit IndexedDB
+          // on every relocation.
+          if (cacheProgressTimer) clearTimeout(cacheProgressTimer);
+          cacheProgressTimer = setTimeout(() => {
+            cacheProgressTimer = undefined;
+            void updateCachedBookProgress(bookId, loc.percent);
+          }, CACHE_PROGRESS_DEBOUNCE_MS);
         });
 
         await controller.attach(viewerRef.current);
@@ -243,6 +364,20 @@ export function ReaderShell({
 
         const tracker = trackPosition(controller, bookId);
         trackerRef.current = tracker;
+        // A further position synced from another device is OFFERED, never
+        // applied silently (docs/REVISED_PLAN.md §8(c) — a passive prompt,
+        // not silent convergence; see position.ts's own doc comment on
+        // `onSyncOffer`). Subscribed before `restore()` is even called so
+        // there's no window where an unusually fast background reconcile
+        // could fire before anything is listening.
+        unsubSyncOffer = tracker.onSyncOffer((offer) => {
+          if (cancelled) return;
+          const label = formatChapterLabel(
+            controllerRef.current?.chapterLabelForCfi(offer.cfi) ?? null,
+          );
+          turnsSinceSyncOffer.current = 0;
+          setSyncOffer({ cfi: offer.cfi, label });
+        });
         await tracker.restore();
 
         // The book is open — read its table of contents for the dock's `≡`
@@ -278,7 +413,11 @@ export function ReaderShell({
         // highlight needs a touch-first design first — see docs/BACKLOG.md.
         // Re-enable by restoring `controller.onSelected(...)` here.
 
-        if (!cancelled) setLoad({ state: "ready" });
+        if (!cancelled) {
+          setLoad({ state: "ready" });
+          // Best-effort, online-only — see requestReaderCache's doc comment.
+          requestReaderCache(bookId);
+        }
       } catch (err) {
         if (cancelled) return;
         setLoad({
@@ -293,10 +432,12 @@ export function ReaderShell({
 
     return () => {
       cancelled = true;
+      if (cacheProgressTimer) clearTimeout(cacheProgressTimer);
       unsubRelocated?.();
       unsubSelected?.();
       unsubHighlights?.();
       unsubBookmarks?.();
+      unsubSyncOffer?.();
       highlightsRef.current?.stop();
       highlightsRef.current = null;
       bookmarksRef.current?.stop();
@@ -349,6 +490,8 @@ export function ReaderShell({
     if (!controller) return;
     turnsSinceJump.current += 1;
     if (turnsSinceJump.current > 8) setReturnTo(null);
+    turnsSinceSyncOffer.current += 1;
+    if (turnsSinceSyncOffer.current > 8) setSyncOffer(null);
     void (dir === "next" ? controller.next(source) : controller.prev(source));
   }, []);
 
@@ -388,6 +531,25 @@ export function ReaderShell({
     setReturnTo(null);
     void controllerRef.current?.goTo(back.cfi);
   }, [returnTo]);
+
+  // Explicit "no, not now" for the way-back chip — clears the offer WITHOUT
+  // navigating or otherwise disturbing the current position. Per-jump, never
+  // persisted: the very next jump brings the chip back regardless.
+  const dismissReturnTo = useCallback(() => setReturnTo(null), []);
+
+  // ── Accept / dismiss the cross-device sync offer ───────────────────────
+  // Accepting is itself a non-linear jump, so it goes through the SAME
+  // `jumpTo` chapter/bookmark navigation already uses — that's what leaves a
+  // working `ReturnChip` behind for free, exactly as undoable as any other
+  // jump in this reader.
+  const acceptSyncOffer = useCallback(() => {
+    const offer = syncOffer;
+    if (!offer) return;
+    setSyncOffer(null);
+    jumpTo(offer.cfi);
+  }, [syncOffer, jumpTo]);
+
+  const dismissSyncOffer = useCallback(() => setSyncOffer(null), []);
 
   // ── Bookmark / un-bookmark the page on screen ─────────────────────────
   // Placeholder control (see NotesPanel header). Matches the current page by
@@ -464,6 +626,11 @@ export function ReaderShell({
         onToggleImmersive={toggleImmersive}
       />
 
+      {/* Stage 4 part 3 — quiet, non-modal connectivity signal. Fades with
+          the top bar in fullscreen (same `hidden` condition) rather than
+          floating over the reclaimed screen. */}
+      <OfflineIndicator hidden={immersive && !deckOpen} />
+
       <SpreadFrame
         viewerRef={viewerRef}
         frameRef={frameRef}
@@ -474,7 +641,22 @@ export function ReaderShell({
         onNext={() => turnAndCloseDeck("next", "tap-next")}
       >
         {returnTo && (
-          <ReturnChip label={returnTo.label} onReturn={returnFromJump} />
+          <ReturnChip
+            label={returnTo.label}
+            onReturn={returnFromJump}
+            onDismiss={dismissReturnTo}
+          />
+        )}
+
+        {/* Suppressed while a `returnTo` chip is already showing — the two
+            share the same anchor point, and a reader already mid-undo of one
+            jump shouldn't be handed a second, unrelated prompt to parse. */}
+        {!returnTo && syncOffer && (
+          <SyncOfferChip
+            label={syncOffer.label}
+            onContinue={acceptSyncOffer}
+            onDismiss={dismissSyncOffer}
+          />
         )}
 
         {load.state === "error" && (

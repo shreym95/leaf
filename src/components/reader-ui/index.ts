@@ -11,6 +11,8 @@ export { ReaderTopBar } from "./ReaderTopBar";
 
 export { ReturnChip } from "./ReturnChip";
 export type { ReturnChipProps } from "./ReturnChip";
+export { SyncOfferChip } from "./SyncOfferChip";
+export type { SyncOfferChipProps } from "./SyncOfferChip";
 export { ReaderDock } from "./ReaderDock";
 export type { ReaderDockProps } from "./ReaderDock";
 export { TocPopover } from "./TocPopover";

@@ -2,6 +2,426 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — offline reading: sign-out purge destroyed the offline entry point (Claude, 2026-09-27)
+
+Real-device testing found: sign out, go offline, navigate to the app → the
+inline 503 fallback instead of `/offline`'s signed-out state. Cause: both
+purge paths (`purgeAllCaches()` in `service-worker.ts`'s
+`leaf-offline/purge` handler, and `purgeCacheStorage()` in `purge.ts`) deleted
+every cache prefixed `leaf-offline`, which includes `leaf-offline-offline`
+(`OFFLINE_CACHE`) — the precached, auth-free `/offline` document.
+`precacheOfflineShell()` only runs on `install`, so nothing repopulates it at
+runtime; signing out destroyed the one page the app can still show once
+offline.
+
+Fix: scoped both purge paths to `READER_CACHE` (`leaf-offline-reader`) only —
+the sole cache holding anything user-specific (authenticated `/reader/<id>`
+documents, each embedding a short-lived signed Storage URL). Verified
+`src/app/offline/page.tsx` / `OfflineShelf.tsx` render no server/user data
+(static prerendered shell; the book list is a client-side IndexedDB read),
+so `OFFLINE_CACHE`, `STATIC_CACHE` (public build assets) and `META_CACHE` (a
+build id string) are safe to leave alone. `service-worker.ts` gained a second,
+unscoped `purgeAllCaches()` kept only for the kill switch (`disableWorker`),
+which still drops every cache on purpose.
+
+Files: `src/lib/offline/service-worker.ts`, `src/lib/offline/purge.ts`,
+`src/lib/offline/purge.test.ts`.
+
+## Fix — offline restore: local jump must never wait on the network; a synced position is offered, never applied silently (Claude, 2026-09-27)
+
+Follow-up to the offline-restore fix below: real-device testing found the
+first version still blocked the reader. `restore()` read the local cache
+instantly (the whole point of it being synchronous `localStorage`), but then
+awaited the FULL server reconcile — `getSession()`, then `getReadingState()`
+— before ever calling `goTo`, so the reader still watched page 0 for however
+long that took (or, offline with a captive portal reporting `onLine: true`,
+indefinitely — there was no bound on that leg at all).
+
+- **`src/reader/position.ts`.** `restore()` is now two phases. Foreground
+  (awaited): a local hit jumps immediately, with no network involved at all;
+  only when there is NO local entry does this phase touch the server, and
+  even then it's bounded by a new `SERVER_LEG_TIMEOUT_MS` (4s) via a local
+  `withTimeout` helper (shaped after `lib/offline/purge.ts`'s
+  `resolveWithin`, not imported — that one discards the value, this one needs
+  it). Background (fire-and-forget, not awaited by `restore()`): if a local
+  jump just happened, the server is asked whether it has something further
+  along, skipped outright if `navigator.onLine === false`.
+- **Corrected mid-review: the background reconcile does NOT navigate.** A
+  silent second `goTo` for a server position nobody asked for is a
+  destructive, reader-initiated-by-nobody jump — worse than the bug it
+  replaced, and `docs/REVISED_PLAN.md` §8(c) already calls for a passive
+  prompt on cross-device sync, never silent convergence. Instead, a new
+  `PositionTracker.onSyncOffer` fires once when the server is strictly
+  further along (`pickFurthestPosition`, unchanged), so the reader chrome can
+  OFFER it. Suppressed if the tracker has since `stop()`-ped (reader tore
+  down or navigated away) or if the reader's own reading has already reached
+  or passed the offered position by the time the server answers.
+- **`src/reader/engine.ts`.** New `ReaderController.chapterLabelForCfi(cfi)`
+  — the same TOC lookup as `currentChapterLabel()`, but for an arbitrary CFI
+  via `book.spine.get(cfi)`, with no navigation. Needed to show the offer a
+  human chapter name instead of a raw CFI.
+- **`src/components/reader-ui/SyncOfferChip.tsx` (new).** The chrome for the
+  offer — "Continue from Ch. 12", dock tokens, dismisses on use or after a
+  handful of page turns (same lifetime rule as `ReturnChip`). A sibling of
+  `ReturnChip`, not a generalisation of it: the two point in opposite
+  directions (undo a jump you made vs. propose one nobody asked for), and
+  folding them together would blur `ReturnChip`'s own claim to being the
+  reader's ONLY undo. Accepting the offer goes through the exact same
+  `jumpTo` chapter/bookmark navigation already uses, which is what leaves a
+  working `ReturnChip` behind for free — accepting a sync is exactly as
+  undoable as any other jump.
+- **`src/components/reader-ui/JumpChip.tsx` (new).** Shared shell factored
+  out of `ReturnChip` for a separate, related fix: the founder found
+  `ReturnChip` too persistent and asked for an explicit × (not a timer — a
+  clock would retract the chip before a reader who paused to read had
+  finished, turning a safety net into a trap; the existing page-turn-based
+  clearing is the correct, behaviour-based rule and is unchanged).
+  `ReturnChip.onDismiss` and `SyncOfferChip.onDismiss` both render through
+  this shell: two sibling `<button>`s (never nested — invalid HTML, breaks
+  keyboard traversal), a hairline divider, one outer border/shadow so the
+  pair reads as one object. Dismissing never navigates and is never
+  persisted — the next jump brings the chip back regardless.
+
+Not yet verifiable outside a real browser: the two-phase timing itself
+(jsdom has no real network latency to race against) and the visual result of
+the two chips/dismiss control in day/night themes.
+
+## Fix — offline reading: two real-browser-only defects (Claude, 2026-09-27)
+
+Real-browser testing of a Vercel preview found two defects neither jsdom nor
+a code read had caught: opening a book from `/library` never cached its
+reader document at all, and an offline reopen always lost the reader's place.
+
+- **The reader document was never cached during normal use.** Clicking a book
+  in `/library` is a Next App Router *soft* navigation (an RSC fetch, not a
+  document `navigate`), which `service-worker.ts` deliberately never
+  intercepts (`isRscRequest`) — so nothing ever reached
+  `handleReaderNavigation` to populate `READER_CACHE` unless the reader
+  happened to hit a plain reload. Fix: once a book finishes opening online,
+  `ReaderShell` now posts a new `leaf-offline/cache-reader` message
+  (`bookId` → `/reader/<id>`) to the worker, which validates the path against
+  `READER_ROUTE_PATTERN`, fetches it same-origin/credentialed, and — only on
+  a genuine `response.ok` with no redirect — writes it into `READER_CACHE`
+  under `url.pathname`, the exact key `handleReaderNavigation` already reads.
+  Fire-and-forget, online-only, no reply, never surfaced to the reader.
+- **Reading position was lost offline (reopened at page 0).**
+  `position.ts`'s `restore()` called `supabase.auth.getUser()` then a
+  Postgres read, both network calls that throw offline; the `catch` returned
+  `false` with nothing local to fall back to. Fix: a new
+  `src/reader/position-cache.ts` mirrors `locations-cache.ts`'s conventions
+  (synchronous `localStorage`, versioned key, best-effort) to keep the last
+  CFI/percent/timestamp on-device, written on every position flush alongside
+  the existing server write (including the outbox-queued offline path).
+  `restore()` now reads local + server, uses `getSession()` (not `getUser()`)
+  for identity so it resolves with no network, and takes the **furthest**
+  of the two via `pickFurthestPosition`, which reuses
+  `isFurtherAlong` (`lib/offline/outbox.ts`, §8(b)) rather than a second copy
+  of the rule — so neither a stale server row nor a stale local entry can
+  drag a reader backwards, offline or on.
+
+Files: `src/lib/offline/service-worker.ts`, `src/components/reader-ui/ReaderShell.tsx`,
+`src/reader/position.ts`, `src/reader/position-cache.ts` (new).
+
+## Fix — offline reading: close the cross-user data exposure on a shared device (Claude, 2026-09-21)
+
+Confirmed HIGH-severity finding: `leaf-books`, `leaf-outbox` and the service
+worker's cached authenticated `/reader/<id>` documents only ever got purged by
+an explicit Sign out click or account deletion. Any session that ended
+without one — closed tab, closed browser, killed app, force-quit PWA — left
+all three intact, and `/offline` (deliberately auth-free, so an installed PWA
+still has somewhere to land with no network) would then hand a second person
+on the same device the first person's books, reading identity, and a live
+signed download URL, entirely offline and with no authentication at any step.
+
+Two-part fix, boot-time rather than a data re-key (re-keying `leaf-books` /
+`leaf-outbox` / the worker's caches per user is a larger refactor and out of
+scope here — this closes the exposure without it):
+
+- **`src/lib/offline/owner.ts` (new).** Reads the locally persisted Supabase
+  session — `getSession()`, never `getUser()`, so it works fully offline —
+  and compares its user id against a `localStorage` marker recording who this
+  device's offline caches were last claimed for. No session, or a session that
+  doesn't match the marker, calls the existing `purgeAllOfflineData()` and
+  reclaims the marker; a first-run marker for an already signed-in user is
+  claimed without purging. Never throws, idempotent, safe to call from more
+  than one place in the same boot.
+- **Mounted once, in the root layout (`src/app/layout.tsx`).** The root
+  layout is the one ancestor every route shares — `(chrome)`, `(reader)`, and
+  `/offline` itself, which sits outside both route groups — so this runs at
+  every fresh page load regardless of which of those a user (or the service
+  worker's offline fallback) lands on first.
+- **`OfflineShelf` (`src/components/offline-ui/OfflineShelf.tsx`) now gates
+  on a local session before listing anything.** It calls the same
+  `enforceOfflineOwner()` itself, awaited, rather than trusting that the root
+  layout's copy already finished — a deeper component's mount effect fires
+  before an ancestor layout's in React's commit order, so relying on that
+  alone would leave a race where the shelf's own read could land before the
+  boot purge does. With no local session it now shows an honest "Sign in to
+  see the books saved on this device" state instead of an empty-vs-populated
+  shelf either way.
+
+## Feature — offline reading, stage 4: the auth-free shelf, live progress, a connectivity signal (Claude, 2026-09-21)
+
+`src/app/manifest.ts` launches the installed PWA at `/library` — authenticated,
+per-user, `force-dynamic` content that must never be cached (a shared device
+must never serve one person's shelf, or stale auth state, to the next). A
+cold, offline launch therefore had no way in at all. Three independent fixes:
+
+- **`/offline` (new route, `src/app/offline/page.tsx` +
+  `src/components/offline-ui/OfflineShelf.tsx`).** A static, auth-free Server
+  Component — no `requireUser`, no cookies, no Supabase call — prerendered at
+  build time (`next build`'s route list marks it `○`, not `ƒ`). Its content
+  comes entirely from the client: `OfflineShelf` reads `listCachedBooks()`
+  straight out of IndexedDB and links each book to `/reader/<id>`, with an
+  honest empty state when nothing is cached yet.
+- **The service worker (`src/lib/offline/service-worker.ts`) now precaches
+  `/offline`** at `install` — the document plus every `/_next/static/*` chunk
+  its markup references, parsed out of the fetched HTML, so the route can
+  actually hydrate with no network — and intercepts `/library` navigations
+  network-first, **never caching the response**, falling back to the
+  precached shelf on failure. An uncached `/reader/<id>` navigation now
+  redirects to `/offline` instead of dead-ending on an inline 503: the reader
+  lands somewhere with a way forward (every other book this device does
+  have) rather than a page with none.
+- **`percent` was never written back.** `CachedBookSummary.percent` existed
+  but `ReaderShell` only ever set it on a cache MISS, so a book's offline-shelf
+  progress froze at whatever it was the day it was first cached. Added
+  `updateCachedBookProgress()` (`src/lib/offline/book-store.ts`) and call it
+  from the same `onRelocated` subscription that already drives the live
+  reading UI, debounced 1500ms — matching `src/reader/position.ts`'s own
+  cadence for the real position write, deliberately, so the two go stale by
+  about the same amount. Cosmetic and best-effort only: never throws, never
+  blocks rendering, and never touches `reading_state` or the outbox.
+- **`OfflineIndicator` (new, `src/components/reader-ui/OfflineIndicator.tsx`).**
+  A quiet, non-modal pill in the reader's top row — the empty middle between
+  `ReaderTopBar`'s Library link and its wordmark/fullscreen toggle — that
+  appears only while `navigator.onLine` is `false`. Built on
+  `useSyncExternalStore` (the same pattern `ThemeProvider` already uses for
+  its own browser-only state) rather than `useState` + `useEffect`, so there's
+  no hydration-mismatch risk and no synchronous `setState`-in-effect. Fades
+  (without unmounting) under the same `immersive && !deckOpen` condition as
+  `ReaderTopBar` itself.
+- Defect found in the existing design: `handleReaderNavigation`'s uncached-book
+  fallback was a dead-end inline 503 with no link anywhere on it — before
+  `/offline` existed there was nowhere to send a stranded reader, but leaving
+  it that way after Stage 4 would have shipped a known dead end on purpose.
+  It now redirects to `/offline`.
+
+## Fix — purge offline reading data on sign-out and account deletion (Claude, 2026-09-21)
+
+Offline reading (cached book bytes/metadata in `leaf-books`, queued writes in
+`leaf-outbox`, and authenticated reader documents in Cache Storage) put a
+user's library on disk in a way Leaf never previously did — and nothing
+purged any of it. All three purge mechanisms already existed
+(`purgeCachedBooks()`, `purgeOutbox()`, the service worker's
+`leaf-offline/purge` message) but had no caller, so a shared or handed-on
+device kept the previous reader's library indefinitely.
+
+- **`src/lib/offline/purge.ts` (new).** `purgeAllOfflineData()` runs all
+  three purges concurrently, never throws, and always settles within a
+  bounded timeout (1.5s worst case) even if a leg is unavailable or a storage
+  backend is blocked — safe to `await` from a flow that must never be
+  blocked or failed by a purge problem.
+- **Sign-out (`src/components/ui/AccountMenu.tsx`).** The purge is awaited
+  (bounded) before the sign-out form submits, so the navigation can't cut it
+  off mid-flight, and a second, idempotent safety-net purge runs whenever the
+  menu renders signed-out (covering a lost race, session expiry, or the
+  account-deletion flow below).
+- **Account deletion (`src/components/settings-ui/DeleteAccountDialog.tsx`).**
+  Purges once the server confirms deletion, before navigating to `/login` —
+  the stronger case, since that data must not survive at all.
+
+## Feature — a durable offline outbox for the four client-side writes (§8a+b, closes D8) (Claude, 2026-09-21)
+
+Reading position, bookmarks, highlights and reader settings all write straight
+from the browser Supabase client to Postgres, and all four silently dropped
+the write on any failure — offline, worst of all, since bookmarks and
+highlights had already shown the reader an optimistic record that then
+vanished forever on reload. This is Stage 3 of `docs/REVISED_PLAN.md` §8:
+implements (a) durable and (b) convergent; (c) — a live "continue on this
+device?" prompt — is still unscheduled.
+
+- **`src/lib/offline/outbox.ts` (new).** An append-only IndexedDB queue
+  (`leaf-outbox` — a separate database from the book store's `leaf-books`, so
+  the two agents' schemas can't collide), replayed on the `online` event and
+  on next load. Every storage operation degrades to "the write is dropped,
+  exactly like before" if IndexedDB is unavailable or blocked — same
+  conventions as `src/reader/locations-cache.ts`. A write is classified
+  `transport` (re-queued) or `rejected` (discarded, never retried forever) by
+  whether the error carries a structured Postgrest `code` — see the module
+  header for the reasoning and its limits.
+- **§8(b) furthest-position-wins.** Reading-position replay compares the
+  queued `percent` against the row's *current* `percent` (not against other
+  queued entries) and only overwrites when the queue is further along, with
+  `updated_at` as a tiebreak — a write queued an hour ago can no longer drag a
+  reader backwards on a device that has since read further.
+- **D8 fix.** `trackPosition` (`src/reader/position.ts`) now flushes on
+  `visibilitychange`→hidden and `pagehide` (not just `stop()`, which
+  backgrounding never triggers), registered on start and removed in `stop()`.
+  Neither `sendBeacon` nor a `keepalive` fetch can carry an authenticated
+  Supabase REST write without bypassing the shared browser client this agent
+  doesn't own, so the page-hide path skips the network entirely and enqueues
+  straight to the outbox — a local IndexedDB append has a real chance of
+  finishing before the tab dies, and survives if it doesn't.
+- **The four `catch {}` blocks now enqueue instead of dropping** —
+  `position.ts`, `bookmarks.ts`, `highlights.ts` (create/delete/note),
+  `reader-settings.ts` — on a transport failure only; a rejection still drops,
+  same as today. Optimistic UI is unchanged; the write now also survives a
+  reload. Deleting (or re-noting) a bookmark/highlight that never made it past
+  an offline create cancels the still-queued create instead of asking the
+  server to delete a row it never got.
+- **Known gap:** a note added to a highlight while its own create is still
+  queued (offline, before first sync) is itself queued against the
+  not-yet-real id and is discarded, unapplied, once the create replays under
+  a different id — same outcome as today (the note is lost), not a
+  regression, just not fully solved.
+- Online behaviour is unchanged: a successful write never touches the queue.
+- The outbox shares **one IndexedDB connection** rather than opening and closing
+  one per operation. Closing per call is what a shared handle replaces, and the
+  two together were silently fatal: the first `list()` closed the shared handle
+  and every later enqueue no-opped against a dead connection, so nothing was
+  ever queued.
+- **`purgeOutbox()`** — the queue holds reading positions and bookmark and
+  highlight text keyed by user id, so it must not outlive the session that
+  produced it. Called on sign-out and account deletion alongside
+  `purgeCachedBooks()` and the worker's `leaf-offline/purge`.
+- `src/lib/offline/outbox-idb.test.ts` covers the real IndexedDB-backed store —
+  round-trip, ordering, discard, connection reuse, absent storage, and purge.
+  The engine's own tests drive an in-memory store, which left the actual
+  `indexedDB` plumbing uncovered.
+
+## Feature — offline reading, stage 1: the service worker (Claude, 2026-09-21)
+
+`src/lib/offline/service-worker.ts` + `src/components/reader-ui/RegisterServiceWorker.tsx`,
+mounted from the reader layout. Goal: `/reader/<bookId>` loads with no network, for a book
+previously opened on this device. Self-contained (no imports from `src/`), root-scoped via
+Next's auto-injected `Service-Worker-Allowed` header (confirmed in a real build — see spike
+notes in the file). Fetch handler is an allowlist: only same-origin GETs to `/reader/<id>`
+navigations (network-first, cache-fallback, small inline "not available offline" response on a
+miss) and `/_next/static/*` (cache-first) are ever intercepted; `/api/*`, `/auth/*`,
+`/_next/image`, RSC payload fetches, and every other navigation (`/library`, `/settings`,
+`/login`, `/`) pass straight through untouched — a stale authenticated shell must never be
+servable outside the one route we've deliberately built for it.
+
+**Spike finding that reshaped the versioning design:** the plan was to bake
+`NEXT_PUBLIC_BUILD_ID` into the cache names so a deploy could drop stale caches by name.
+Turbopack compiles this file into a distinct "service worker" chunking context that does not
+support `process` as an external module — any `process.env.*` reference here fails the whole
+build (`the chunking context (unknown) does not support external modules (request:
+node:process)`). Adapted: cache names are fixed, and `RegisterServiceWorker.tsx` (an ordinary
+client component, where env inlining works normally) posts the build id to the worker at
+runtime; the worker compares it against a value it persists in its own cache storage and drops
+the reader/static caches on a mismatch. Verified end-to-end with Playwright.
+
+Security: the cached `/reader/<id>` document is authenticated content. The worker exposes
+`{ type: "leaf-offline/purge" }` (postMessage to the controller) to drop every cache it owns —
+wire this to sign-out in a later stage. Also ships a kill switch
+(`KILL_SWITCH_ENABLED` in `service-worker.ts`): flip it and the worker purges + unregisters
+itself on next activate.
+
+Verified in a real Chrome + `next start` build (jsdom can't do Service Worker / Cache Storage):
+registration at root scope, the `Service-Worker-Allowed` header, `/_next/static/*` cache
+population, offline cache-hit and cache-miss for `/reader/<id>`, non-reader routes failing
+honestly offline, the purge message, and build-id staleness purging — all via Playwright against
+a manually seeded cache (no Supabase session was available to open a real book end-to-end).
+Local `next build` needed a temporary `turbopack.root` override to work around this worktree's
+node_modules being a symlink to a sibling worktree (Turbopack treats that as outside the
+filesystem root); not needed on Vercel and not committed.
+- Cache writes are handed to the fetch event's `waitUntil` rather than left
+  dangling. The browser may terminate the worker as soon as the promise given
+  to `respondWith` settles, which would drop an in-flight `cache.put` and leave
+  the page permanently uncached — the one failure that would look like the
+  worker simply not working.
+
+## Added — book bytes cached in IndexedDB (Stage 2 offline reading)
+
+A book opened once now reopens instantly and works with no network: `ReaderShell`
+is cache-first — it checks the cache before ever calling `fetch`, and populates
+it on a miss.
+
+### Added
+- **`src/lib/offline/book-store.ts`** — book bytes in a dedicated `leaf-books`
+  IndexedDB database (`books` store keyed by `bookId`, `by-lastOpenedAt` index;
+  a single-row `meta` store keeping a running `totalBytes` so eviction never
+  needs a full cursor scan). Public surface is deliberately small:
+  `readCachedBook`, `writeCachedBook`, `listCachedBooks`, `purgeCachedBooks`.
+  Same conventions as `locations-cache.ts` — a support guard that survives SSR
+  and thrown/blocked storage, reads that never throw, fire-and-forget writes —
+  adapted to async.
+- **Eviction**: budget is `min(300MB, quota * 0.5)` from
+  `navigator.storage.estimate()`, falling back to 100MB when that API is
+  absent or throws. A book bigger than the budget alone is never cached. Over
+  budget, least-recently-opened books are evicted first (`by-lastOpenedAt`),
+  always skipping the book currently being written; if evicting everything
+  else still doesn't make room, the write is skipped silently rather than
+  breaking the budget. `navigator.storage.persist()` is requested best-effort
+  once per successful write.
+- `src/lib/offline/book-store.test.ts` — 16 tests: round-trip, miss, eviction
+  order and the never-evict-the-open-book rule, the oversized-skip and
+  still-doesn't-fit-after-eviction backstops, budget fallback (absent/throwing
+  `estimate()`, and the 300MB cap), `listCachedBooks` / `purgeCachedBooks`, and
+  unsupported/blocked storage degrading to an always-miss.
+- `fake-indexeddb` (devDependency) — jsdom has no IndexedDB, unlike the
+  `localStorage` `locations-cache.ts` already runs against.
+
+### Changed
+- **`ReaderShell`** now reads the cache before `fetch` and writes it (fire-and-forget)
+  on a miss, before handing bytes to `createReader`. Cache-first, not
+  network-first, deliberately: a book's bytes are immutable per `bookId` (a
+  re-upload mints a new row and id), so a hit is always correct by
+  construction — and it means a long-open tab whose 1-hour signed URL has
+  expired reopens from cache instead of attempting a doomed fetch. The
+  existing error state is unchanged when there is neither cache nor network.
+  3 new tests: cache hit skips `fetch`, cache miss fetches then populates, and
+  the no-cache-no-network error path.
+- **`locations-cache.ts`** header comment only (no code change) — points at
+  `book-store.ts` and records why the locations table stays on synchronous
+  `localStorage` rather than moving beside the bytes: an async IndexedDB read
+  lands a tick after the first `relocated` event and re-flashes 0%, the exact
+  bug D7 fixed.
+
+### Decisions
+- A cache read hands back a **copy** of the stored buffer (`.slice(0)`), and a
+  write stores a copy of the caller's buffer rather than the live reference —
+  the engine's zip parser goes on to read (and may write into or transfer)
+  the bytes ReaderShell just cached, and that must never reach back into what
+  stays cached for the next open.
+- Eviction accounts for the book being rewritten by backing its *old* size out
+  of the running total before checking against budget, so re-caching a book
+  with a new byte length (e.g. after a re-upload) doesn't double-count itself
+  as its own eviction target.
+- The store keeps **one IndexedDB connection** for the page rather than opening
+  a fresh one per call. A live handle blocks a later `DB_VERSION` upgrade with
+  `onblocked` — the very failure the open path already degrades on — so a
+  leaked handle per read would have made a future migration unrunnable. The
+  cached handle is dropped on `versionchange`/`close`, and is guarded by the
+  `IDBFactory` it was opened from, since a handle is only valid for its own
+  factory.
+
+## Fix — an unreachable auth server no longer 500s every protected route
+
+Found while mapping the code for offline reading. `updateSession` awaits
+`supabase.auth.getUser()` — a live call to Supabase's auth server on **every**
+request that carries a session cookie — with no `try/catch`. A Supabase outage, a
+DNS blip or a timeout therefore rejected the proxy, and `/library`, `/settings`
+and `/reader/*` all answered **500**.
+
+`src/lib/auth.ts` has always caught the same call and degraded to "signed out".
+The asymmetry was the bug: one layer treated an upstream failure as recoverable
+and the other let it take the app down.
+
+**A thrown call says nothing about the session, so it is now treated as unknown
+rather than as signed out:** the request passes through with the cookies it
+arrived with. It cannot leak a protected page — the page's own `requireUser`
+makes the same call server-side and redirects to `/login` if that also fails. It
+only stops a transient upstream failure becoming a hard error at the edge.
+
+### Also: the proxy had no tests at all
+`src/lib/supabase/middleware.test.ts` is new — signed-in passthrough, redirect
+with a preserved `next` param, the no-cookie fast path that skips the network
+entirely, and the outage case above. Verified the outage test fails without the
+fix rather than merely passing with it.
+
 ## Fix — the top bar's buttons work while the deck is open
 
 Founder, on a phone: in fullscreen with the dock open, Library and the

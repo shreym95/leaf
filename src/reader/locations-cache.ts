@@ -13,9 +13,11 @@
 //   - a book's bytes never change after upload (a re-upload mints a new row and
 //     a new `bookId`), so the id alone is a sound cache key;
 //   - it needs no migration and no server round-trip.
-// Phase 3 moves book bytes into IndexedDB (`docs/REVISED_PLAN.md` §5); the
-// locations table belongs beside them when that lands, and this module is the
-// only thing that has to change.
+// Book bytes now live in IndexedDB (`src/lib/offline/book-store.ts`, Stage 2 of
+// offline reading), but this table deliberately stays here rather than moving
+// beside them: IndexedDB is async, and an async read lands a tick after the
+// first `relocated` event, re-flashing 0% — the exact bug D7 fixed. Staying on
+// synchronous `localStorage` is what keeps that fix intact.
 //
 // Everything here is best-effort. A miss, a quota error, a browser with storage
 // disabled, or a corrupt entry must all degrade to "generate it again", never

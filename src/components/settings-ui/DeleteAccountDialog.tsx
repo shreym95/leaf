@@ -9,6 +9,7 @@ import {
   DialogTrigger,
   Button,
 } from "@/components/primitives";
+import { purgeAllOfflineData } from "@/lib/offline/purge";
 
 /**
  * DeleteAccountDialog — the irreversible "Delete account" flow (SPEC §9 M4).
@@ -19,6 +20,18 @@ import {
  * visible <label>, the destructive action is clearly worded, everything is
  * keyboard reachable. The confirm button stays disabled until the user types
  * DELETE exactly.
+ *
+ * Offline purge: the server-side delete removes the account and its rows/files,
+ * but a device can also hold offline reading data for this user (cached books,
+ * queued writes, cached reader pages — `src/lib/offline/purge.ts`), which the
+ * server cannot reach. Account deletion is the stronger case for purging this —
+ * unlike sign-out, that data must not survive at all — so once the server
+ * confirms deletion, `purgeAllOfflineData()` is awaited before navigating away.
+ * It never throws and always settles within its own bounded timeout, so this
+ * can't turn a successful deletion into a stuck "Deleting…" button. The
+ * sign-out AccountMenu also runs an idempotent safety-net purge whenever it
+ * renders signed out, which fires again here too once `router.refresh()` picks
+ * up the now-deleted session — a second, independent chance to catch this.
  */
 
 const CONFIRM_WORD = "DELETE";
@@ -71,6 +84,15 @@ export function DeleteAccountDialog() {
         return;
       }
       // Account is gone — leave settings and drop any cached per-user state.
+      // Awaited (but bounded — see the block comment above) so the purge gets
+      // to run before we navigate away, without risking a hung "Deleting…"
+      // button if storage is blocked or slow. `.catch` here is deliberate
+      // belt-and-suspenders: `purgeAllOfflineData` already never rejects, but
+      // without this, an unexpected rejection would fall into the `catch`
+      // below and misreport a successful deletion as "could not reach the
+      // server" instead of navigating away — deletion must not get stuck on
+      // a purge problem.
+      await purgeAllOfflineData().catch(() => undefined);
       router.replace("/login");
       router.refresh();
     } catch {
