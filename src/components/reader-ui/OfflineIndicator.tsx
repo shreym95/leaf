@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 /**
  * OfflineIndicator — Stage 4 offline reading, part 3. A quiet, non-modal
@@ -8,9 +8,11 @@ import { useSyncExternalStore } from "react";
  * working and its place is being kept locally, but the library needs a
  * connection to reach anything else.
  *
- * Renders nothing at all while online — "do not add clutter" (brief) means
- * the honest answer here is a single small element that only exists when it
- * has something to say.
+ * Renders nothing at all while online, and — since it auto-dismisses, see
+ * `AUTO_HIDE_MS` below — nothing once an offline period's own attention
+ * window has lapsed either. "Do not add clutter" (brief) means the honest
+ * answer here is a single small element that only exists when it has
+ * something to say, for as long as it has something to say.
  *
  * Placement: `ReaderTopBar` is `justify-between` — "Library" on the left,
  * the wordmark + fullscreen toggle on the right — leaving its middle
@@ -68,6 +70,48 @@ function isOfflineServerSnapshot(): boolean {
   return false;
 }
 
+/**
+ * The pill's own attention window: how long it stays up after each online →
+ * offline transition before it retires itself.
+ *
+ * This is a NOTIFICATION — "you went offline, here's what that means" — not
+ * a control, and that distinction is deliberate and load-bearing: contrast
+ * `ReturnChip` (see that file's own header, and `JumpChip.tsx`), which is
+ * the reader's one undo and therefore has NO timer, on purpose, because a
+ * clock would retract the way back before someone who jumped, read a page,
+ * and reconsidered had come back for it. Nothing here is undoable and
+ * nothing is lost by this pill retiring itself: the book keeps paginating
+ * and saving locally with or without it on screen, and dropping offline
+ * again later shows it again (see the `[offline]` effect below) — so unlike
+ * `ReturnChip`, a clock costs this component nothing. Do not "harmonise"
+ * these two by adding a timer to one or removing it from the other; they are
+ * different in kind, not just in current tuning.
+ *
+ * 6s, from the founder's 5–8s range: comfortably long enough to read the
+ * ~40-character message once (the `aria-live="polite"` region also
+ * announces it to a screen reader on the same transition, independent of how
+ * long the visual pill stays mounted), short enough not to linger
+ * meaningfully into the reading session it's interrupting — this is the
+ * least important surface in the reader and shouldn't overstay it.
+ */
+const AUTO_HIDE_MS = 6000;
+
+/**
+ * How long the DOM node lingers, invisible, after the auto-hide fade starts
+ * before actually unmounting — long enough for the CSS opacity transition
+ * below (`--leaf-dur-ui`, authored as 0.25s in `tokens.css`) to finish before
+ * the element disappears outright, so the pill fades rather than pops.
+ *
+ * Kept as a plain constant rather than read from the CSS variable at
+ * runtime (`getComputedStyle`, which needs a mounted element and a layout
+ * pass to be reliable) — if `--leaf-dur-ui` is ever retuned, update this to
+ * match. Safe either way: under `prefers-reduced-motion`, `--leaf-dur-ui`
+ * neutralises to `0s`, so the opacity flips to 0 instantly and this timer
+ * just delays the (already invisible, already `pointer-events-none`) node's
+ * removal from the DOM — never a visible difference.
+ */
+const FADE_OUT_MS = 250;
+
 function NoConnectionIcon() {
   return (
     <svg
@@ -93,13 +137,70 @@ export function OfflineIndicator({ hidden = false }: OfflineIndicatorProps) {
     isOfflineServerSnapshot,
   );
 
-  if (!offline) return null;
+  // `presence` is this component's own lifecycle — not shown yet / shown /
+  // fading out before unmount — kept separate from `offline` (which just
+  // mirrors `navigator.onLine` and stays `true` for the whole outage) so the
+  // pill can retire itself mid-outage instead of pinning up for the whole
+  // thing.
+  //
+  // The online→offline / offline→online transition itself is handled
+  // in-render, NOT in a `useEffect` — this is React's own sanctioned
+  // "adjusting state when a prop changes" pattern (a synchronous `setState`
+  // call during render, guarded by comparing against the previous value also
+  // held in state: https://react.dev/learn/you-might-not-need-an-effect
+  // #adjusting-some-state-when-a-prop-changes), not the "setState
+  // synchronously in an effect" cascading-render footgun this file's own
+  // header already calls out for `navigator.onLine` itself. React discards
+  // and immediately re-renders when the two disagree, so nothing ever paints
+  // a stale frame, and — critically for "hide immediately on reconnect" —
+  // there is no effect-scheduling delay between the browser's `online` event
+  // and the pill disappearing.
+  const [trackedOffline, setTrackedOffline] = useState(offline);
+  const [presence, setPresence] = useState<"hidden" | "shown" | "leaving">(
+    offline ? "shown" : "hidden",
+  );
+  if (offline !== trackedOffline) {
+    setTrackedOffline(offline);
+    setPresence(offline ? "shown" : "hidden");
+  }
+
+  // Auto-hide: once shown, retire to "leaving" after `AUTO_HIDE_MS` — set
+  // from inside the timer callback, i.e. "subscribe to an external system
+  // (the clock), call setState when it fires," the pattern effects are
+  // actually for, never a bare synchronous call in the effect body. Keyed on
+  // `presence` rather than `offline`: entering "shown" is what starts the
+  // clock, and it only enters "shown" fresh on an actual transition (the
+  // in-render adjustment above), so a steady offline period (or a steady
+  // online one) between re-renders never restarts it — exactly "show on each
+  // transition, then auto-hide" plus "drop again later, show again."
+  useEffect(() => {
+    if (presence !== "shown") return;
+    const hideTimer = window.setTimeout(
+      () => setPresence("leaving"),
+      AUTO_HIDE_MS,
+    );
+    return () => window.clearTimeout(hideTimer);
+  }, [presence]);
+
+  // Second stage: once the auto-hide fires, hold the (now invisible) node
+  // mounted just long enough for the opacity transition to finish, then drop
+  // it.
+  useEffect(() => {
+    if (presence !== "leaving") return;
+    const unmountTimer = window.setTimeout(
+      () => setPresence("hidden"),
+      FADE_OUT_MS,
+    );
+    return () => window.clearTimeout(unmountTimer);
+  }, [presence]);
+
+  if (presence === "hidden") return null;
 
   return (
     <div
       className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center [transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)]"
       style={{
-        opacity: hidden ? 0 : 1,
+        opacity: hidden || presence === "leaving" ? 0 : 1,
         paddingTop: `calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-top))`,
       }}
     >
