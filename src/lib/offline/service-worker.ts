@@ -147,10 +147,19 @@ const READER_ROUTE_PATTERN = /^\/reader\/[^/]+$/;
  *     source can't read `NEXT_PUBLIC_BUILD_ID` itself.
  *
  *   { type: "leaf-offline/purge" }
- *     Drop every cache this worker owns, unconditionally. Call this on
- *     sign-out: the authenticated `/reader/<id>` document must not outlive
- *     a sign-out, and a second user on the same device must never see the
- *     first user's cached pages.
+ *     Drop READER_CACHE only — the one cache that can hold anything
+ *     user-specific (authenticated `/reader/<id>` documents, each embedding
+ *     a short-lived signed Supabase Storage URL). Call this on sign-out: that
+ *     document must not outlive a sign-out, and a second user on the same
+ *     device must never see the first user's cached pages. OFFLINE_CACHE,
+ *     STATIC_CACHE and META_CACHE are deliberately left alone: none holds
+ *     anything user-specific, and OFFLINE_CACHE in particular is the offline
+ *     entry point back into the app (the precached `/offline` shelf) —
+ *     nothing repopulates it at runtime (`precacheOfflineShell` only runs on
+ *     `install`), so dropping it here left a signed-out, offline visitor
+ *     stuck on the inline `offlineFallbackResponse()` instead of the
+ *     `/offline` shelf's signed-out state. See `purgeAllCaches` (used only by
+ *     the kill switch) for the unscoped version.
  *
  *   { type: "leaf-offline/cache-reader", path: string }
  *     Best-effort: fetch `path` itself (same-origin, credentialed — the same
@@ -204,6 +213,25 @@ async function purgeContentCaches(): Promise<void> {
   await Promise.all([caches.delete(READER_CACHE), caches.delete(STATIC_CACHE)]);
 }
 
+/**
+ * Drops READER_CACHE only — the one cache that can hold anything
+ * user-specific. Used for the "leaf-offline/purge" message (sign-out /
+ * account deletion, via `src/lib/offline/purge.ts`). See that message's doc
+ * comment above for why OFFLINE_CACHE, STATIC_CACHE and META_CACHE are left
+ * alone, and `purgeAllCaches` below for the kill switch's unscoped version.
+ */
+async function purgeReaderCache(): Promise<void> {
+  await caches.delete(READER_CACHE);
+}
+
+/**
+ * Drops every cache this worker owns, unconditionally. Used only by the kill
+ * switch (`disableWorker`): a worker being retired for being broken should
+ * leave no trace at all, which is a different goal from the ordinary
+ * sign-out purge's scoping (`purgeReaderCache`) — a bad worker is exactly
+ * the situation where "trust that the other three caches are fine" is the
+ * assumption most likely to be wrong.
+ */
 async function purgeAllCaches(): Promise<void> {
   const keys = await caches.keys();
   await Promise.all(
@@ -485,6 +513,12 @@ async function precacheOfflineShell(): Promise<void> {
   }
 }
 
+/**
+ * Kill switch. Deliberately calls the UNSCOPED `purgeAllCaches` (every cache
+ * this worker owns), not `purgeReaderCache` — a worker being retired as
+ * broken should leave nothing behind, including OFFLINE_CACHE/STATIC_CACHE/
+ * META_CACHE, which the ordinary sign-out purge above keeps.
+ */
 async function disableWorker(): Promise<void> {
   await purgeAllCaches();
   await sw.registration.unregister();
@@ -546,7 +580,7 @@ sw.addEventListener("message", (event) => {
   if (data?.type === PURGE_MESSAGE_TYPE) {
     event.waitUntil(
       (async () => {
-        await purgeAllCaches();
+        await purgeReaderCache();
         await notifyClientsPurged();
       })()
     );
