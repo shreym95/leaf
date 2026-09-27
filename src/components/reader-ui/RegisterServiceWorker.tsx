@@ -9,9 +9,10 @@ const BUILD_ID_MESSAGE_TYPE = "leaf-offline/build-id";
 
 /**
  * Registers the offline reading service worker (Stage 1 of the offline
- * plan). Mounted from `src/app/(reader)/layout.tsx` as a sibling of
- * `children` — registration is scoped to the reader route, but the worker's
- * *reach* is root scope (`scope: "/"`), which Next's build grants it via an
+ * plan). Mounted app-wide from the root layout, `src/app/layout.tsx` — see
+ * the comment there for why it is no longer reader-only (a session that never
+ * opened a book never installed a worker). Its reach is root scope
+ * (`scope: "/"`), which Next's build grants it via an
  * auto-injected `Service-Worker-Allowed` header (see
  * `node_modules/next/dist/docs/01-app/02-guides/progressive-web-apps.md`).
  *
