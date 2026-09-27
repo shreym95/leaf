@@ -67,6 +67,14 @@ export interface ReaderController {
    *  a bookmark list renders without re-resolving CFIs. `undefined` when the
    *  TOC has no entry for the current section. */
   currentChapterLabel(): string | undefined;
+  /** Same TOC lookup as `currentChapterLabel()`, but for an ARBITRARY CFI
+   *  rather than the currently-rendered one — resolved via `book.spine.get`
+   *  (accepts a CFI string directly) without navigating anywhere. Needed for
+   *  the cross-device sync offer (`ReaderShell`'s `syncOffer` state), which
+   *  must show a human chapter label for a position the reader has NOT
+   *  jumped to (and may never). `undefined` under the same conditions as
+   *  `currentChapterLabel()`. */
+  chapterLabelForCfi(cfi: string): string | undefined;
   /** The EPUB's own table of contents, flattened to `{ href, label }` in
    *  reading order (nested `subitems` are walked depth-first). `goTo(entry.href)`
    *  navigates to it. Empty when the EPUB ships no navigation document or it
@@ -597,6 +605,17 @@ export async function createReader(
           | { start?: { href?: string } }
           | undefined;
         return chapterLabelForHref(book, here?.start?.href);
+      } catch {
+        return undefined;
+      }
+    },
+
+    chapterLabelForCfi(cfi: string): string | undefined {
+      try {
+        // `Spine.get` accepts a CFI string directly (it reads the CFI's own
+        // spine position) — no navigation, no rendition involved.
+        const section = book.spine?.get(cfi) as { href?: string } | null;
+        return chapterLabelForHref(book, section?.href ?? undefined);
       } catch {
         return undefined;
       }

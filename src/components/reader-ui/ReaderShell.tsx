@@ -35,6 +35,7 @@ import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
 import { ReturnChip } from "./ReturnChip";
+import { SyncOfferChip } from "./SyncOfferChip";
 import { OfflineIndicator } from "./OfflineIndicator";
 import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
@@ -184,6 +185,23 @@ export function ReaderShell({
     hereRef.current = here;
   }, [here]);
 
+  // ── Cross-device sync offer (offline defect fix, corrected) ────────────
+  // A further position found on another device is OFFERED, not applied —
+  // see `position.ts`'s `onSyncOffer` doc comment. Same page-turn-based
+  // lifetime as `returnTo` (declared further down, near the jump-back
+  // logic it belongs with), by design: the founder already settled that a
+  // clock-based dismissal is the wrong rule for this reader (it would
+  // retract a still-wanted offer/way-back before a reader who paused to
+  // read had finished), so this reuses the exact same behaviour rather
+  // than inventing a second one. Declared up here (not alongside `returnTo`)
+  // because the engine effect below subscribes to `onSyncOffer` and needs
+  // `setSyncOffer` in scope before it runs.
+  const [syncOffer, setSyncOffer] = useState<{
+    cfi: string;
+    label: string | null;
+  } | null>(null);
+  const turnsSinceSyncOffer = useRef(0);
+
   const { setTheme: applyChromeTheme } = useTheme();
 
   // Live settings from the store (hydrated below).
@@ -247,6 +265,7 @@ export function ReaderShell({
     let unsubSelected: (() => void) | undefined;
     let unsubHighlights: (() => void) | undefined;
     let unsubBookmarks: (() => void) | undefined;
+    let unsubSyncOffer: (() => void) | undefined;
     // Stage 4 part 2 — debounced, best-effort cache-percent write. Scoped to
     // this effect instance like the `unsub*` handles above, not a ref: it
     // never needs to outlive this book's engine lifecycle.
@@ -254,6 +273,12 @@ export function ReaderShell({
 
     (async () => {
       try {
+        // Fresh per book-open: this effect can re-run without an unmount
+        // (bookId change), and a sync offer from the PREVIOUS book has no
+        // business surviving into this one.
+        setSyncOffer(null);
+        turnsSinceSyncOffer.current = 0;
+
         // Ownership gate BEFORE the cache read, not merely at app boot. The
         // boot guard mounts in the root layout, but React commits a deeper
         // page's effects before an ancestor layout's — so on a hard
@@ -339,6 +364,20 @@ export function ReaderShell({
 
         const tracker = trackPosition(controller, bookId);
         trackerRef.current = tracker;
+        // A further position synced from another device is OFFERED, never
+        // applied silently (docs/REVISED_PLAN.md §8(c) — a passive prompt,
+        // not silent convergence; see position.ts's own doc comment on
+        // `onSyncOffer`). Subscribed before `restore()` is even called so
+        // there's no window where an unusually fast background reconcile
+        // could fire before anything is listening.
+        unsubSyncOffer = tracker.onSyncOffer((offer) => {
+          if (cancelled) return;
+          const label = formatChapterLabel(
+            controllerRef.current?.chapterLabelForCfi(offer.cfi) ?? null,
+          );
+          turnsSinceSyncOffer.current = 0;
+          setSyncOffer({ cfi: offer.cfi, label });
+        });
         await tracker.restore();
 
         // The book is open — read its table of contents for the dock's `≡`
@@ -398,6 +437,7 @@ export function ReaderShell({
       unsubSelected?.();
       unsubHighlights?.();
       unsubBookmarks?.();
+      unsubSyncOffer?.();
       highlightsRef.current?.stop();
       highlightsRef.current = null;
       bookmarksRef.current?.stop();
@@ -450,6 +490,8 @@ export function ReaderShell({
     if (!controller) return;
     turnsSinceJump.current += 1;
     if (turnsSinceJump.current > 8) setReturnTo(null);
+    turnsSinceSyncOffer.current += 1;
+    if (turnsSinceSyncOffer.current > 8) setSyncOffer(null);
     void (dir === "next" ? controller.next(source) : controller.prev(source));
   }, []);
 
@@ -489,6 +531,25 @@ export function ReaderShell({
     setReturnTo(null);
     void controllerRef.current?.goTo(back.cfi);
   }, [returnTo]);
+
+  // Explicit "no, not now" for the way-back chip — clears the offer WITHOUT
+  // navigating or otherwise disturbing the current position. Per-jump, never
+  // persisted: the very next jump brings the chip back regardless.
+  const dismissReturnTo = useCallback(() => setReturnTo(null), []);
+
+  // ── Accept / dismiss the cross-device sync offer ───────────────────────
+  // Accepting is itself a non-linear jump, so it goes through the SAME
+  // `jumpTo` chapter/bookmark navigation already uses — that's what leaves a
+  // working `ReturnChip` behind for free, exactly as undoable as any other
+  // jump in this reader.
+  const acceptSyncOffer = useCallback(() => {
+    const offer = syncOffer;
+    if (!offer) return;
+    setSyncOffer(null);
+    jumpTo(offer.cfi);
+  }, [syncOffer, jumpTo]);
+
+  const dismissSyncOffer = useCallback(() => setSyncOffer(null), []);
 
   // ── Bookmark / un-bookmark the page on screen ─────────────────────────
   // Placeholder control (see NotesPanel header). Matches the current page by
@@ -580,7 +641,22 @@ export function ReaderShell({
         onNext={() => turnAndCloseDeck("next", "tap-next")}
       >
         {returnTo && (
-          <ReturnChip label={returnTo.label} onReturn={returnFromJump} />
+          <ReturnChip
+            label={returnTo.label}
+            onReturn={returnFromJump}
+            onDismiss={dismissReturnTo}
+          />
+        )}
+
+        {/* Suppressed while a `returnTo` chip is already showing — the two
+            share the same anchor point, and a reader already mid-undo of one
+            jump shouldn't be handed a second, unrelated prompt to parse. */}
+        {!returnTo && syncOffer && (
+          <SyncOfferChip
+            label={syncOffer.label}
+            onContinue={acceptSyncOffer}
+            onDismiss={dismissSyncOffer}
+          />
         )}
 
         {load.state === "error" && (
