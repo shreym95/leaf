@@ -11,6 +11,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { OfflineOwnerGuard } from "@/components/offline-ui/OfflineOwnerGuard";
+import { RegisterServiceWorker } from "@/components/reader-ui/RegisterServiceWorker";
 
 /* Fonts — the `variable` names are a contract with src/design/tokens.css. */
 
@@ -112,6 +113,16 @@ export default function RootLayout({
             previous user's cached books on the device for whoever is signed
             in next time it boots. See src/lib/offline/owner.ts. */}
         <OfflineOwnerGuard />
+        {/* App-wide, NOT reader-only. It lived in `(reader)/layout.tsx` when
+            the reader was the only screen meant to work offline. Once
+            `/offline` and the `/library` fallback existed that scoping was
+            wrong: a session that never opened a book never installed a
+            worker, so nothing could serve them and `precacheOfflineShell`
+            never ran. `manifest.ts` starts the installed app at `/library`,
+            which is exactly that case. Mounting here — the only common
+            ancestor of the chrome routes, the reader, and `/offline` —
+            changes WHEN the worker installs, never what it intercepts. */}
+        <RegisterServiceWorker />
         {/* Chrome lives in the route-group layouts, not here: the reader
             (src/app/(reader)) renders full-bleed with its own immersive bars
             and no app NavBar (SPEC §8). */}

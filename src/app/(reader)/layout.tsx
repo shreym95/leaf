@@ -11,7 +11,6 @@
  * positioned against this container, so the page reclaims their height instead
  * of merely painting over it.
  */
-import { RegisterServiceWorker } from "@/components/reader-ui/RegisterServiceWorker";
 
 export default function ReaderLayout({
   children,
@@ -24,7 +23,6 @@ export default function ReaderLayout({
       style={{ background: "var(--leaf-reader-surface)" }}
     >
       {children}
-      <RegisterServiceWorker />
     </div>
   );
 }
