@@ -8,22 +8,31 @@
  * `node_modules/next/dist/docs/01-app/02-guides/progressive-web-apps.md`).
  *
  * Goal: a navigation to `/reader/<bookId>` succeeds with no network, for a
- * book previously opened on this device. Stage 4 adds one more goal: an
- * installed PWA opened with no network at all (its `start_url` is
- * `/library`, an authenticated page this worker must never cache — see
- * `handleLibraryNavigation`) lands on the auth-free `/offline` shelf instead
- * of a dead page.
+ * book previously opened on this device — served AT ITS OWN ADDRESS, no
+ * redirect. That's the one exception, and the whole point of the feature.
  *
- * Offline-polish pass adds a third, narrower goal: ANY other same-origin
- * navigation that fails offline (`/login` while signed out, `/settings`, a
- * typed URL, `/`) also lands on the `/offline` shelf instead of the
- * browser's own raw connection-error page — see `handleUncachedNavigation`
- * and the fetch handler's final `request.mode === "navigate"` branch. This
- * is NOT a new cache entry in the allowlist below: those routes stay
+ * Every other navigation that fails offline — an uncached `/reader/<id>`,
+ * `/library`, `/login`, `/settings`, `/`, or anything else — lands on ONE
+ * address, `/offline`, via a real redirect (302), so the address bar always
+ * matches what's actually on screen. (An earlier version served the
+ * `/offline` shelf's HTML IN PLACE for every route but the reader, so a
+ * failed `/library` navigation still read "/library" in the address bar —
+ * two different addresses for the same page. Fixed: one mechanism, one
+ * address, for every failed navigation.) This also covers the installed
+ * PWA's `start_url` (`/library`, an authenticated page this worker must
+ * never cache) landing somewhere useful on a cold, offline launch.
+ *
+ * See `respondToFailedNavigation` — the single place that decides "redirect
+ * to `/offline`, or the 503 floor if even that isn't cached" — and the fetch
+ * handler's final `request.mode === "navigate"` branch, which is what routes
+ * every navigation not otherwise handled through it. This is NOT a new cache
+ * entry in the allowlist below: `/library`, `/login`, `/settings`, etc. stay
  * completely uncached (network-first, nothing ever written to any cache for
- * them), and a non-navigation request (a script, an image, a fetch) is
- * untouched by this — it's gated on navigation mode alone, checked last,
- * after every route that DOES get its own caching behaviour above it.
+ * them) — a failed navigation to one of them changes what the browser DOES
+ * with the failure, never what gets stored. A non-navigation request (a
+ * script, an image, a fetch) is untouched by any of this — it's gated on
+ * navigation mode alone, checked last, after every route that DOES get its
+ * own caching behaviour above it.
  *
  * ---------------------------------------------------------------------------
  * SPIKE FINDING — process.env is unusable in this file
@@ -295,20 +304,31 @@ function offlineFallbackResponse(): Response {
 }
 
 /**
- * Redirects an uncached reader navigation to the offline shelf instead of
- * dead-ending on an inline 503 (the pre-Stage-4 behaviour). `/offline` lists
- * every OTHER book this device does have, so a reader who lands on one
- * uncached book — a cold-boot deep link, a shared/typed URL, a book opened on
- * a different device — gets somewhere useful instead of a page with no way
- * out. A 302 (not a served copy of the `/offline` document) so the address
- * bar and history reflect where the reader actually ended up; the browser's
- * follow-up navigation to `/offline` is a SEPARATE fetch event, handled below
- * by `handleOfflineShellNavigation`, which is what actually serves it from
- * cache. Built from `sw.location.origin` rather than a bare relative path:
- * `Response.redirect` resolves relative to the WORKER SCRIPT's own URL, not
- * page root, and that's an unnecessary place for this to be wrong.
+ * The single "this navigation failed" response — every caller below that
+ * can't serve its own request (an uncached `/reader/<id>`, or any other
+ * navigation at all: `/library`, `/login`, `/settings`, `/`, ...) ends up
+ * here. Redirects to `/offline` ONLY when that shell is actually sitting in
+ * `OFFLINE_CACHE`; otherwise falls straight to `offlineFallbackResponse()`'s
+ * 503 floor, with no redirect at all.
+ *
+ * That check is what rules out a redirect loop. `/offline` is precached at
+ * `install` (`precacheOfflineShell`) before this worker ever starts
+ * intercepting fetches — but installing this very worker while ALREADY
+ * offline can itself fail that precache, and unconditionally redirecting
+ * anyway would hand the browser a second navigation, to a route this worker
+ * still can't serve, which would recurse into this exact function again.
+ * Checking the cache first means that second navigation never happens: the
+ * caller gets the 503 floor directly, in one hop, from wherever it was.
+ *
+ * `Response.redirect` needs an absolute URL, built from `sw.location.origin`
+ * — the WORKER SCRIPT's own URL — rather than a bare relative path (which
+ * would resolve relative to that same worker-script URL, not page root, and
+ * that's an unnecessary place for this to be wrong).
  */
-function redirectToOfflineShelf(): Response {
+async function respondToFailedNavigation(): Promise<Response> {
+  const cache = await caches.open(OFFLINE_CACHE);
+  const cached = await cache.match(OFFLINE_PATH);
+  if (!cached) return offlineFallbackResponse();
   return Response.redirect(
     new URL(OFFLINE_PATH, sw.location.origin).toString(),
     302
@@ -334,6 +354,17 @@ function isRscRequest(request: Request, url: URL): boolean {
  */
 type KeepAlive = (promise: Promise<unknown>) => void;
 
+/**
+ * `/reader/<bookId>` navigations — the ONE address that does NOT redirect to
+ * `/offline` when this worker can actually answer it. Online, a straight
+ * network fetch (cached opportunistically for later offline use, same as
+ * ever). Offline, whatever this device already has cached under
+ * `url.pathname` — served AT THAT SAME ADDRESS, so a cached book keeps
+ * opening exactly where it always has. Only when there's truly nothing
+ * cached for THIS specific book does it fall through to
+ * `respondToFailedNavigation()` and become an address-bar-changing redirect,
+ * same as every other failed navigation.
+ */
 async function handleReaderNavigation(
   request: Request,
   url: URL,
@@ -349,7 +380,7 @@ async function handleReaderNavigation(
   } catch {
     const cached = await cache.match(url.pathname);
     if (cached) return cached;
-    return redirectToOfflineShelf();
+    return respondToFailedNavigation();
   }
 }
 
@@ -414,73 +445,45 @@ async function handleStaticAsset(
 }
 
 /**
- * Network-first, writing NOTHING to any cache, falling back to the precached
- * `/offline` shelf on failure (the inline 503 floor if even that isn't
- * cached — see `offlineFallbackResponse`). Shared by every same-origin
- * navigation that must stay completely uncached: `/library` below
- * (authenticated, per-user content) and, since the offline-polish pass,
- * `handleUncachedNavigation` (every OTHER navigation not otherwise handled —
- * `/login`, `/settings`, `/`, ...). Deliberately does not know or care WHICH
- * route it was called for: the whole point of both callers is "this route is
- * never cached," so there is exactly one code path that can write to a
- * cache here, and it doesn't.
+ * Every same-origin navigation that isn't `/reader/<id>` (the cached case is
+ * handled separately above — this function is also what an UNCACHED reader
+ * navigation ends up needing, via `respondToFailedNavigation`, but never
+ * calls it directly) or `/offline` itself: `/library`, `/login`, `/settings`,
+ * `/`, and anything added later. One function for all of them, because they
+ * all want exactly the same thing — try the network, write NOTHING to any
+ * cache either way (`/library`, `/login` and `/settings` are all
+ * authenticated / session-sensitive content, most not even in this file's
+ * allowlist deliberately — see the fetch handler's own comment on that — and
+ * this adds no exception), and on failure hand off to
+ * `respondToFailedNavigation()`: redirect to `/offline` if it's cached, else
+ * the 503 floor. (`/library` used to get its own near-identical function,
+ * back when it was the only route besides the reader that needed this; the
+ * offline-polish pass generalized it to every other navigation too, and
+ * keeping a separate `/library`-only wrapper past that point would just have
+ * been the same code twice.)
+ *
+ * The caller (the fetch handler) is what scopes this to actual navigations
+ * only (`request.mode === "navigate"`); this function has no opinion on that.
  */
-async function networkFirstNoCacheWithOfflineFallback(
-  request: Request
-): Promise<Response> {
+async function handleNavigation(request: Request): Promise<Response> {
   try {
     return await fetch(request);
   } catch {
-    const cache = await caches.open(OFFLINE_CACHE);
-    const cached = await cache.match(OFFLINE_PATH);
-    if (cached) return cached;
-    return offlineFallbackResponse();
+    return respondToFailedNavigation();
   }
 }
 
 /**
- * `/library` navigations — Stage 4. `/library` is authenticated, per-user
- * content (`force-dynamic`, reads the session cookie), so caching it — even
- * for a moment, even for "just this session" — risks a shared device serving
- * one person's shelf, or stale auth state, to whoever opens Leaf next. Falls
- * back to the precached `/offline` shelf on failure, which is what actually
- * solves the "installed PWA opens `/library` with no network" problem the
- * manifest's `start_url` creates. See `networkFirstNoCacheWithOfflineFallback`
- * for the (shared, uncached) mechanics.
- */
-async function handleLibraryNavigation(request: Request): Promise<Response> {
-  return networkFirstNoCacheWithOfflineFallback(request);
-}
-
-/**
- * Every same-origin navigation that isn't `/reader/<id>`, `/library`, or
- * `/offline` itself — `/login`, `/settings`, `/`, and anything added later.
- * Offline-polish defect fix: previously these fell all the way through to
- * the network with no interception at all, so a failed navigation surfaced
- * the browser's own raw connection-error page instead of anything Leaf
- * controls.
- *
- * Same shape as `handleLibraryNavigation` and for the same reason these
- * routes must stay uncached: `/login` and `/settings` are exactly as
- * session-sensitive as `/library`, most of them are NOT even in this file's
- * allowlist deliberately (see the fetch handler's own comment on that), and
- * nothing about this changes that — this only softens a network failure into
- * the offline shell, it does not add a single byte to any cache. The caller
- * (the fetch handler) is what keeps this scoped to actual navigations only
- * (`request.mode === "navigate"`); this function itself has no opinion on
- * that, same as `handleLibraryNavigation` doesn't either.
- */
-async function handleUncachedNavigation(request: Request): Promise<Response> {
-  return networkFirstNoCacheWithOfflineFallback(request);
-}
-
-/**
  * A direct navigation to `/offline` itself — typed, bookmarked, reached via
- * `redirectToOfflineShelf`, or the PWA's own `start_url` if that's ever
- * pointed here. Network-first so an online visit always sees the current
+ * `respondToFailedNavigation`'s redirect, or the PWA's own `start_url` if
+ * that's ever pointed here. NEVER redirected itself — this is the floor
+ * every other failed navigation lands on, so it has nowhere further to
+ * redirect to. Network-first so an online visit always sees the current
  * build (and keeps the cache fresh for next time, `keepAlive`d exactly like
  * `handleReaderNavigation`'s cache write); offline, serves the copy
- * `precacheOfflineShell` put there at `install`.
+ * `precacheOfflineShell` put there at `install`, or the inline 503 floor if
+ * even that isn't cached (installing this very worker while already
+ * offline).
  */
 async function handleOfflineShellNavigation(
   request: Request,
@@ -546,7 +549,7 @@ async function precacheStaticAssetsReferencedBy(html: string): Promise<void> {
  * to control the page. Entirely best-effort: a failure here (installing this
  * very worker while already offline, most plausibly) leaves `/offline`
  * without a precached fallback until the next successful install or online
- * visit — `handleLibraryNavigation` and `handleOfflineShellNavigation` both
+ * visit — `respondToFailedNavigation` and `handleOfflineShellNavigation` both
  * already degrade further to `offlineFallbackResponse()` for exactly that
  * case.
  */
@@ -663,6 +666,13 @@ sw.addEventListener("fetch", (event) => {
   // this guard is the mechanism.
   if (url.origin !== sw.location.origin) return;
 
+  // `/auth/*` navigations happen only mid-OAuth (the provider redirect back
+  // to Supabase's callback route, which then redirects again into the app) —
+  // a flow that needs network by definition, since it's exchanging a code
+  // with Supabase's auth server. Redirecting a failed leg of THAT to
+  // `/offline` would just swap one non-working mid-flow state for another,
+  // and would risk this worker ever standing in the middle of a cookie
+  // exchange it has no business touching. Left excluded, same as `/api/*`.
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
 
   // RSC payload fetches: let them fail naturally offline so Next's router
@@ -680,18 +690,10 @@ sw.addEventListener("fetch", (event) => {
     return;
   }
 
-  // /library — Stage 4. Network-first, response NEVER cached (see
-  // `handleLibraryNavigation`'s doc comment); falls back to the precached
-  // `/offline` shelf on failure instead of the browser's own offline error
-  // page, which is what makes the PWA's `start_url` survive a cold, offline
-  // launch.
-  if (request.mode === "navigate" && url.pathname === "/library") {
-    event.respondWith(handleLibraryNavigation(request));
-    return;
-  }
-
-  // /offline itself — Stage 4. Reached directly, or via the redirect from an
-  // uncached reader navigation / the /library fallback above.
+  // /offline itself — Stage 4. Reached directly, or via
+  // `respondToFailedNavigation`'s redirect from every other failed
+  // navigation below (including an uncached reader page). NEVER itself
+  // redirected — see `handleOfflineShellNavigation`'s doc comment.
   if (request.mode === "navigate" && url.pathname === OFFLINE_PATH) {
     event.respondWith(
       handleOfflineShellNavigation(request, (p) => event.waitUntil(p))
@@ -705,18 +707,19 @@ sw.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Every other same-origin navigation (/settings, /login, /, ...) —
-  // offline-polish defect fix. Gated on `request.mode === "navigate"` ALONE,
-  // with no pathname check: this is not a new allowlist entry and adds no
-  // new caching (see `handleUncachedNavigation`'s doc comment) — it only
-  // means a failed navigation to one of these routes gets the precached
-  // `/offline` shelf instead of the browser's own raw connection-error page.
-  // A non-navigation request to some other, non-allowlisted path (a script,
-  // an image, a plain `fetch`) is NOT a "navigate" request and falls through
-  // to the network untouched below, exactly as before — it must never
-  // receive an HTML body it isn't expecting.
+  // Every other same-origin navigation — `/library`, `/login`, `/settings`,
+  // `/`, and anything else. Gated on `request.mode === "navigate"` ALONE,
+  // with no pathname check: this is not an allowlist and adds no new caching
+  // (see `handleNavigation`'s doc comment) — a failed navigation here
+  // redirects to the precached `/offline` shelf (or the 503 floor if even
+  // that isn't cached), same one address every failed navigation ends up at,
+  // rather than serving anything in place at the original URL. A
+  // non-navigation request to some other, non-allowlisted path (a script, an
+  // image, a plain `fetch`) is NOT a "navigate" request and falls through to
+  // the network untouched below, exactly as before — it must never receive a
+  // redirect or an HTML body meant for a page.
   if (request.mode === "navigate") {
-    event.respondWith(handleUncachedNavigation(request));
+    event.respondWith(handleNavigation(request));
     return;
   }
 

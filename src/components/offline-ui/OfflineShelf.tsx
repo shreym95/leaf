@@ -46,29 +46,35 @@ import { enforceOfflineOwner, getLocalSessionUserId } from "@/lib/offline/owner"
  * ---------------------------------------------------------------------------
  * `/offline` used to be a dead end: no nav, no header, nothing on the page
  * links anywhere but a cached book's own reader route. Reached via the
- * service worker's `/library` (and, since defect 2, any other route's)
- * fallback, a reader whose connection has since returned had no way off this
- * page short of editing the URL bar by hand.
+ * service worker's redirect from any failed navigation, a reader whose
+ * connection has since returned had no way off this page short of editing
+ * the URL bar by hand.
  *
- * Two different fixes for two different states, because they need different
- * things:
- *   - OFFLINE, the cached-book list above already IS the way out — every
- *     entry links to `/reader/<id>`, and those work with no network. What was
- *     missing was honesty that everything else on the site needs a
- *     connection this device doesn't have right now, so `WayOut` says that
- *     plainly instead of offering a link that would just fail when tapped.
- *   - ONLINE, a real link finally works, so `WayOut` renders one: to
- *     `/library` if this device has a local session (the real shelf is one
- *     tap away), or `/login` if it doesn't (nothing else here is reachable
- *     until that happens). Session presence is already known by then — it's
- *     exactly `state.phase === "ready"` vs `"signed-out"` — so this reuses
- *     that rather than calling `getLocalSessionUserId()` a second time.
+ * Signed IN (`state.phase === "ready"`): the cached-book list above already
+ * IS the way out — every entry links to `/reader/<id>`, and those work with
+ * no network. `GoToLibrary` adds a link to `/library` once online (nothing to
+ * offer offline beyond the books already listed: `/library` itself would
+ * just redirect right back here).
+ *
+ * Signed OUT (`state.phase === "signed-out"`): signing in is the ONLY way off
+ * this page, so — per the founder's brief — the control for it is ALWAYS
+ * visible, online or off, never hidden. `SignInControl` renders:
+ *   - ONLINE: a real `<Link href="/login">`.
+ *   - OFFLINE: the same-looking control, but disabled and non-navigating,
+ *     with a one-line honest reason ("Sign in needs a connection."). A live
+ *     `<Link>` here would be dishonest either way it failed: as a soft
+ *     (RSC) navigation it just throws in the browser console, and as a hard
+ *     navigation it would round-trip through the service worker's own
+ *     redirect and land right back on THIS page — see the module comment
+ *     above. Rendering it disabled instead of omitting it is the point: the
+ *     reader always sees where they're headed, they just can't get there yet.
  *
  * `useIsOffline` (extracted from `OfflineIndicator`, which had the identical
- * `navigator.onLine` / `useSyncExternalStore` need) makes this reactive: a
- * reader sitting on this exact page when the network returns sees the link
- * appear on its own, no refresh, because the connectivity read is live, not
- * a one-time check alongside the session check above.
+ * `navigator.onLine` / `useSyncExternalStore` need) makes both of the above
+ * reactive: a reader sitting on this exact page when the network returns
+ * sees the real link appear (and `SignInControl` become clickable) with no
+ * refresh, because the connectivity read is live, not a one-time check
+ * alongside the session check above.
  */
 
 type State =
@@ -88,28 +94,53 @@ function progressLabel(percent: number | undefined): string {
 }
 
 /**
- * The way out — see the module header's "the way out" section. Only ever
- * rendered while online (the caller decides that); `hasLocalSession` is the
- * caller's already-known `state.phase === "ready"`, not a second session
- * check.
+ * The way out for a SIGNED-IN reader — see the module header. Only ever
+ * rendered while online (the caller decides that): offline, the cached-book
+ * list above is already the way out, and `/library` itself would just
+ * redirect straight back here.
  */
-function WayOut({ hasLocalSession }: { hasLocalSession: boolean }) {
+function GoToLibrary() {
   return (
     <Button asChild variant="primary" className="self-start">
-      <Link href={hasLocalSession ? "/library" : "/login"}>
-        {hasLocalSession ? "Go to your library" : "Sign in"}
-      </Link>
+      <Link href="/library">Go to your library</Link>
     </Button>
   );
 }
 
-/** Offline counterpart to `WayOut`: plain text, no link — a link that just
- *  fails when tapped is worse than none (see the module header). */
+/** Offline counterpart to `GoToLibrary`: plain text, no link — a link that
+ *  just fails when tapped is worse than none (see the module header). */
 function NeedsConnectionNote() {
   return (
     <p className="font-ui text-faint [font-size:var(--leaf-text-xs)]">
       Everything else here needs a connection.
     </p>
+  );
+}
+
+/**
+ * The way out for a SIGNED-OUT reader — see the module header's "signed out"
+ * section. Unlike `GoToLibrary`, this is ALWAYS rendered, online or off:
+ * signing in is the only way off this page for a signed-out visitor, so it
+ * must never disappear. Offline it renders disabled with a short, honest
+ * reason instead of a link that would just bounce back to this same page.
+ */
+function SignInControl({ offline }: { offline: boolean }) {
+  if (offline) {
+    return (
+      <div className="flex flex-col items-start gap-[var(--leaf-space-2)]">
+        <Button variant="primary" className="self-start" disabled>
+          Sign in
+        </Button>
+        <p className="font-ui text-faint [font-size:var(--leaf-text-xs)]">
+          Sign in needs a connection.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <Button asChild variant="primary" className="self-start">
+      <Link href="/login">Sign in</Link>
+    </Button>
   );
 }
 
@@ -158,11 +189,7 @@ export function OfflineShelf() {
         <p className="font-ui text-ink-mid [font-size:var(--leaf-text-base)] [line-height:var(--leaf-leading-body)]">
           Sign in to see the books saved on this device.
         </p>
-        {offline ? (
-          <NeedsConnectionNote />
-        ) : (
-          <WayOut hasLocalSession={false} />
-        )}
+        <SignInControl offline={offline} />
       </div>
     );
   }
@@ -207,7 +234,7 @@ export function OfflineShelf() {
           ))}
         </ul>
       )}
-      {offline ? <NeedsConnectionNote /> : <WayOut hasLocalSession />}
+      {offline ? <NeedsConnectionNote /> : <GoToLibrary />}
     </div>
   );
 }

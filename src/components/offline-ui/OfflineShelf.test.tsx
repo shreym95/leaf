@@ -182,7 +182,16 @@ describe("OfflineShelf", () => {
   });
 
   describe("the way out (defect 3)", () => {
-    it("offline, signed out: no link — just says the rest needs a connection", async () => {
+    // CONTRACT CHANGE (offline-address fix): a signed-out visitor used to get
+    // NO sign-in control at all while offline (just the generic "everything
+    // else needs a connection" line) — the founder's brief for this fix
+    // requires the sign-in control to be ALWAYS visible for a signed-out
+    // reader, online or off, since it's their only way off this page. Offline
+    // it must be honest instead of hidden: present, but disabled, with a
+    // specific reason, and never an active link (a real `/login` link tapped
+    // offline would round-trip through the service worker and land right
+    // back on `/offline`).
+    it("offline, signed out: the sign-in control is visible but disabled, with a reason", async () => {
       setOnLine(false);
       signOut();
       render(<OfflineShelf />);
@@ -190,10 +199,42 @@ describe("OfflineShelf", () => {
       expect(
         await screen.findByText(/sign in to see the books saved on this device/i),
       ).toBeTruthy();
-      expect(
-        screen.getByText(/everything else here needs a connection/i),
-      ).toBeTruthy();
+
+      // Present, but not a working link.
       expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
+      const button = screen.getByRole("button", { name: /sign in/i });
+      expect(button).toBeDisabled();
+      expect(screen.getByText(/sign in needs a connection/i)).toBeTruthy();
+    });
+
+    it("online, signed out, then offline: the sign-in link becomes disabled with no remount", async () => {
+      setOnLine(true);
+      signOut();
+      render(<OfflineShelf />);
+
+      expect(
+        await screen.findByRole("link", { name: /sign in/i }),
+      ).toHaveAttribute("href", "/login");
+
+      await act(async () => {
+        setOnLine(false);
+        window.dispatchEvent(new Event("offline"));
+      });
+
+      expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
+      expect(
+        await screen.findByRole("button", { name: /sign in/i }),
+      ).toBeDisabled();
+
+      // And back online, live, no refresh — the moment connectivity returns.
+      await act(async () => {
+        setOnLine(true);
+        window.dispatchEvent(new Event("online"));
+      });
+
+      expect(
+        await screen.findByRole("link", { name: /sign in/i }),
+      ).toHaveAttribute("href", "/login");
     });
 
     it("offline, signed in with nothing cached: no link — just says the rest needs a connection", async () => {
