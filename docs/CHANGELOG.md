@@ -2,6 +2,65 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Fix — offline restore: local jump must never wait on the network; a synced position is offered, never applied silently (Claude, 2026-09-27)
+
+Follow-up to the offline-restore fix below: real-device testing found the
+first version still blocked the reader. `restore()` read the local cache
+instantly (the whole point of it being synchronous `localStorage`), but then
+awaited the FULL server reconcile — `getSession()`, then `getReadingState()`
+— before ever calling `goTo`, so the reader still watched page 0 for however
+long that took (or, offline with a captive portal reporting `onLine: true`,
+indefinitely — there was no bound on that leg at all).
+
+- **`src/reader/position.ts`.** `restore()` is now two phases. Foreground
+  (awaited): a local hit jumps immediately, with no network involved at all;
+  only when there is NO local entry does this phase touch the server, and
+  even then it's bounded by a new `SERVER_LEG_TIMEOUT_MS` (4s) via a local
+  `withTimeout` helper (shaped after `lib/offline/purge.ts`'s
+  `resolveWithin`, not imported — that one discards the value, this one needs
+  it). Background (fire-and-forget, not awaited by `restore()`): if a local
+  jump just happened, the server is asked whether it has something further
+  along, skipped outright if `navigator.onLine === false`.
+- **Corrected mid-review: the background reconcile does NOT navigate.** A
+  silent second `goTo` for a server position nobody asked for is a
+  destructive, reader-initiated-by-nobody jump — worse than the bug it
+  replaced, and `docs/REVISED_PLAN.md` §8(c) already calls for a passive
+  prompt on cross-device sync, never silent convergence. Instead, a new
+  `PositionTracker.onSyncOffer` fires once when the server is strictly
+  further along (`pickFurthestPosition`, unchanged), so the reader chrome can
+  OFFER it. Suppressed if the tracker has since `stop()`-ped (reader tore
+  down or navigated away) or if the reader's own reading has already reached
+  or passed the offered position by the time the server answers.
+- **`src/reader/engine.ts`.** New `ReaderController.chapterLabelForCfi(cfi)`
+  — the same TOC lookup as `currentChapterLabel()`, but for an arbitrary CFI
+  via `book.spine.get(cfi)`, with no navigation. Needed to show the offer a
+  human chapter name instead of a raw CFI.
+- **`src/components/reader-ui/SyncOfferChip.tsx` (new).** The chrome for the
+  offer — "Continue from Ch. 12", dock tokens, dismisses on use or after a
+  handful of page turns (same lifetime rule as `ReturnChip`). A sibling of
+  `ReturnChip`, not a generalisation of it: the two point in opposite
+  directions (undo a jump you made vs. propose one nobody asked for), and
+  folding them together would blur `ReturnChip`'s own claim to being the
+  reader's ONLY undo. Accepting the offer goes through the exact same
+  `jumpTo` chapter/bookmark navigation already uses, which is what leaves a
+  working `ReturnChip` behind for free — accepting a sync is exactly as
+  undoable as any other jump.
+- **`src/components/reader-ui/JumpChip.tsx` (new).** Shared shell factored
+  out of `ReturnChip` for a separate, related fix: the founder found
+  `ReturnChip` too persistent and asked for an explicit × (not a timer — a
+  clock would retract the chip before a reader who paused to read had
+  finished, turning a safety net into a trap; the existing page-turn-based
+  clearing is the correct, behaviour-based rule and is unchanged).
+  `ReturnChip.onDismiss` and `SyncOfferChip.onDismiss` both render through
+  this shell: two sibling `<button>`s (never nested — invalid HTML, breaks
+  keyboard traversal), a hairline divider, one outer border/shadow so the
+  pair reads as one object. Dismissing never navigates and is never
+  persisted — the next jump brings the chip back regardless.
+
+Not yet verifiable outside a real browser: the two-phase timing itself
+(jsdom has no real network latency to race against) and the visual result of
+the two chips/dismiss control in day/night themes.
+
 ## Fix — offline reading: two real-browser-only defects (Claude, 2026-09-27)
 
 Real-browser testing of a Vercel preview found two defects neither jsdom nor

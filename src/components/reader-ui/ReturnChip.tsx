@@ -1,5 +1,7 @@
 "use client";
 
+import { JumpChip } from "./JumpChip";
+
 /**
  * ReturnChip — the way back from a jump.
  *
@@ -13,48 +15,54 @@
  * chapter and bookmark navigation safely. It is also the prerequisite for ever
  * adding a drag-to-seek track, which is far more destructive again.
  *
- * Presentational + token-driven; it borrows the dock's surface so the reader
- * reads it as the same layer of chrome, not a notification.
+ * Presentational + token-driven; it borrows the dock's surface (via
+ * `JumpChip`, its shared shell with `SyncOfferChip`) so the reader reads it
+ * as the same layer of chrome, not a notification.
+ *
+ * Dismissal: clears on use (tapping the return action) or after a handful of
+ * page turns (`ReaderShell` owns that count) — the founder found it
+ * persistent otherwise, so `onDismiss` adds an explicit × for "no, not now"
+ * without waiting on either of those. NOT a clock: a timer short enough to
+ * matter would retract the way back before a reader who jumped, read a page,
+ * and reconsidered had finished reading it — turning a safety net into a
+ * trap. `onDismiss` is optional so existing callers with nothing to dismiss
+ * (and the tests that predate it) keep working with just the one button.
  */
 
 export interface ReturnChipProps {
   /** Where the reader jumped FROM, already formatted for display. */
   label: string | null;
   onReturn: () => void;
+  /** Explicit "no, not now" — dismissal is per-jump, never persisted; the
+   *  next jump brings the chip back regardless of an earlier dismissal. */
+  onDismiss?: () => void;
 }
 
-export function ReturnChip({ label, onReturn }: ReturnChipProps) {
+export function ReturnChip({ label, onReturn, onDismiss }: ReturnChipProps) {
   return (
-    <button
-      type="button"
-      onClick={onReturn}
-      aria-label={label ? `Return to ${label}` : "Return to where you were"}
-      className="absolute left-1/2 top-[var(--leaf-space-4)] z-30 flex -translate-x-1/2 items-center gap-[var(--leaf-space-2)] border px-[var(--leaf-space-4)] font-mono uppercase outline-none [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-wide)] [transition:background_var(--leaf-dur-ui)_var(--leaf-ease)] hover:[background:var(--leaf-dock-hover)] focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
-      style={{
-        background: "var(--leaf-dock-bg)",
-        borderColor: "var(--leaf-dock-border)",
-        color: "var(--leaf-dock-text)",
-        boxShadow: "var(--leaf-dock-shadow)",
-        height: "var(--leaf-dock-h)",
-        borderRadius: "var(--leaf-dock-radius)",
-      }}
-    >
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-[calc(var(--leaf-dock-icon)-4px)] w-[calc(var(--leaf-dock-icon)-4px)]"
-      >
-        <path d="M9 14 4 9l5-5" />
-        <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
-      </svg>
-      <span className="max-w-[18ch] truncate">
-        {label ? `Back to ${label}` : "Back"}
-      </span>
-    </button>
+    <JumpChip
+      icon={
+        <svg
+          aria-hidden
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-[calc(var(--leaf-dock-icon)-4px)] w-[calc(var(--leaf-dock-icon)-4px)]"
+        >
+          <path d="M9 14 4 9l5-5" />
+          <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+        </svg>
+      }
+      label={label ? `Back to ${label}` : "Back"}
+      ariaLabel={label ? `Return to ${label}` : "Return to where you were"}
+      onActivate={onReturn}
+      onDismiss={onDismiss}
+      dismissAriaLabel={
+        label ? `Dismiss return to ${label}` : "Dismiss return to where you were"
+      }
+    />
   );
 }

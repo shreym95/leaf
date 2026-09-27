@@ -26,6 +26,46 @@ describe("ReturnChip", () => {
     await user.click(screen.getByRole("button", { name: "Return to Ch. 4" }));
     expect(onReturn).toHaveBeenCalledTimes(1);
   });
+
+  it("renders no dismiss control when onDismiss is omitted", () => {
+    render(<ReturnChip label="Ch. 4" onReturn={() => {}} />);
+    // Exactly the one (return) button — the pre-dismiss shape, unchanged.
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("offers an explicit dismiss (×) that says what it dismisses", async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+    render(
+      <ReturnChip label="Ch. 4" onReturn={() => {}} onDismiss={onDismiss} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss return to Ch. 4" }),
+    );
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("dismissing does not call onReturn — it must not navigate or disturb the position", async () => {
+    const user = userEvent.setup();
+    const onReturn = vi.fn();
+    render(
+      <ReturnChip label="Ch. 4" onReturn={onReturn} onDismiss={() => {}} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss return to Ch. 4" }),
+    );
+    expect(onReturn).not.toHaveBeenCalled();
+  });
+
+  it("the return control still works, unchanged, alongside the dismiss control", async () => {
+    const user = userEvent.setup();
+    const onReturn = vi.fn();
+    render(
+      <ReturnChip label="Ch. 4" onReturn={onReturn} onDismiss={() => {}} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Return to Ch. 4" }));
+    expect(onReturn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("formatChapterLabel", () => {

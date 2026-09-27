@@ -38,6 +38,7 @@ const { book, rendition, ePubFn } = vi.hoisted(() => {
       percentageFromCfi: vi.fn(() => 0.5),
     },
     navigation: { toc: [] as unknown[] },
+    spine: { get: vi.fn((_target: string) => null as { href?: string } | null) },
     renderTo: vi.fn((_el: unknown, _opts: Record<string, unknown>) => rendition),
     destroy: vi.fn(),
   };
@@ -234,6 +235,35 @@ describe("wiring", () => {
     } finally {
       book.navigation.toc = [];
     }
+  });
+
+  it("chapterLabelForCfi() resolves an ARBITRARY CFI's chapter without navigating", async () => {
+    book.navigation.toc = [
+      { href: "text/part0007.html", label: "Chapter 7" },
+    ];
+    book.spine.get.mockReturnValue({ href: "text/part0007.html" });
+    try {
+      const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+      await reader.attach(document.createElement("div"));
+
+      expect(reader.chapterLabelForCfi("epubcfi(/6/14!/4/2/1:0)")).toBe(
+        "Chapter 7",
+      );
+      // No navigation happened — this is a pure lookup.
+      expect(rendition.display).not.toHaveBeenCalledWith(
+        "epubcfi(/6/14!/4/2/1:0)",
+      );
+    } finally {
+      book.navigation.toc = [];
+      book.spine.get.mockReturnValue(null);
+    }
+  });
+
+  it("chapterLabelForCfi() is undefined when the spine has nothing for that CFI", async () => {
+    book.spine.get.mockReturnValue(null);
+    const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+    await reader.attach(document.createElement("div"));
+    expect(reader.chapterLabelForCfi("epubcfi(/6/999!/4)")).toBeUndefined();
   });
 
   it("toc() flattens the EPUB navigation depth-first, trimming labels", async () => {

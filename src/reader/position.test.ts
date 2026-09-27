@@ -39,7 +39,11 @@ import {
   getCachedUserId,
 } from "@/lib/offline/outbox";
 import type { ReaderController } from "./engine";
-import { pickFurthestPosition, trackPosition } from "./position";
+import {
+  pickFurthestPosition,
+  SERVER_LEG_TIMEOUT_MS,
+  trackPosition,
+} from "./position";
 import { writeCachedPosition } from "./position-cache";
 
 type RelocatedCb = (loc: { cfi: string; percent: number }) => void;
@@ -351,7 +355,40 @@ describe("restore merges local + server (defect: offline restore lost position)"
     expect(c.goTo).toHaveBeenCalledWith("epubcfi(/6/99!/4/2/1:0)");
   });
 
-  it("prefers the server position when it is further along than the local cache", async () => {
+  it("navigates locally WITHOUT waiting on the server leg to resolve (regression: offline showed page 0 for ~5s)", async () => {
+    vi.useFakeTimers();
+    // Never resolves — simulates a captive portal / dead upstream link that
+    // `navigator.onLine` cannot detect (see `isPlausiblyOnline`'s comment).
+    vi.mocked(getReadingState).mockImplementation(() => new Promise(() => {}));
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.5,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+    const ok = await tracker.restore();
+
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("local-cfi");
+    expect(c.goTo).toHaveBeenCalledTimes(1);
+
+    // Let the bounded background reconcile time out; it must not throw, hang
+    // this test, or navigate again.
+    await vi.advanceTimersByTimeAsync(SERVER_LEG_TIMEOUT_MS);
+    expect(c.goTo).toHaveBeenCalledTimes(1);
+
+    tracker.stop();
+    vi.useRealTimers();
+  });
+
+  it("offers, but does NOT apply, a server position that is further along than the local cache", async () => {
+    // Corrected behaviour: a silent second `goTo` for a server position
+    // nobody asked for is a destructive, reader-initiated-by-nobody jump
+    // (docs/REVISED_PLAN.md §8(c) — a passive prompt, never silent
+    // convergence). The local jump happens and stays; the server's further
+    // position is only ever surfaced via `onSyncOffer`.
     vi.mocked(getReadingState).mockResolvedValue({
       book_id: "book1",
       user_id: "u1",
@@ -366,10 +403,157 @@ describe("restore merges local + server (defect: offline restore lost position)"
     });
 
     const c = makeController();
-    const ok = await trackPosition(c, "book1").restore();
+    const tracker = trackPosition(c, "book1");
+    const offers: { cfi: string }[] = [];
+    tracker.onSyncOffer((offer) => offers.push(offer));
+
+    const ok = await tracker.restore();
 
     expect(ok).toBe(true);
-    expect(c.goTo).toHaveBeenCalledWith("server-cfi");
+    expect(c.goTo).toHaveBeenCalledWith("local-cfi");
+
+    await vi.waitFor(() => expect(offers).toEqual([{ cfi: "server-cfi" }]));
+
+    // Never a second navigation for it — only the offer.
+    expect(c.goTo).toHaveBeenCalledTimes(1);
+    expect(c.goTo).not.toHaveBeenCalledWith("server-cfi");
+
+    tracker.stop();
+  });
+
+  it("does not offer a server position that is equal to or behind the local cache", async () => {
+    vi.mocked(getReadingState).mockResolvedValue({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "server-cfi",
+      percent: 0.2,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.9,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+    const onOffer = vi.fn();
+    tracker.onSyncOffer(onOffer);
+
+    const ok = await tracker.restore();
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("local-cfi");
+
+    // Let any background work finish, then confirm total silence: no offer,
+    // no second navigation — this is the common path and must stay quiet.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    expect(onOffer).not.toHaveBeenCalled();
+    expect(c.goTo).toHaveBeenCalledTimes(1);
+
+    tracker.stop();
+  });
+
+  it("does not surface an offer once the tracker has been stopped before the server responds", async () => {
+    // Cancellation: the reader tore the view down (or navigated away) before
+    // the background reconcile heard back — a late reply must not conjure a
+    // chip for a view that no longer exists.
+    let resolveReadingState: (row: {
+      book_id: string;
+      user_id: string;
+      cfi: string;
+      percent: number;
+      updated_at: string;
+    }) => void = () => {};
+    vi.mocked(getReadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReadingState = resolve;
+        }),
+    );
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.1,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+    const onOffer = vi.fn();
+    tracker.onSyncOffer(onOffer);
+
+    const ok = await tracker.restore();
+    expect(ok).toBe(true);
+    expect(c.goTo).toHaveBeenCalledWith("local-cfi");
+    vi.mocked(c.goTo).mockClear();
+
+    // Torn down before the server ever answers.
+    tracker.stop();
+
+    resolveReadingState({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "server-cfi",
+      percent: 0.9,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onOffer).not.toHaveBeenCalled();
+    expect(c.goTo).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the offer if the reader's own reading has already reached the offered position", async () => {
+    // The reader kept turning pages while the background reconcile was in
+    // flight and got there themselves — surfacing "continue from here" for
+    // somewhere they already are (or have passed) would be stale, unwanted
+    // interruption, not news.
+    let resolveReadingState: (row: {
+      book_id: string;
+      user_id: string;
+      cfi: string;
+      percent: number;
+      updated_at: string;
+    }) => void = () => {};
+    vi.mocked(getReadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReadingState = resolve;
+        }),
+    );
+    writeCachedPosition("book1", {
+      cfi: "local-cfi",
+      percent: 0.1,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    const c = makeController();
+    const tracker = trackPosition(c, "book1");
+    const onOffer = vi.fn();
+    tracker.onSyncOffer(onOffer);
+
+    const ok = await tracker.restore();
+    expect(ok).toBe(true);
+
+    // The reader reads on, past where the server (about to answer) is.
+    c._emit({ cfi: "further-cfi", percent: 0.95 });
+
+    resolveReadingState({
+      book_id: "book1",
+      user_id: "u1",
+      cfi: "server-cfi",
+      percent: 0.9,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onOffer).not.toHaveBeenCalled();
+
+    tracker.stop();
   });
 
   it("prefers the local cache when it is further along than the server", async () => {

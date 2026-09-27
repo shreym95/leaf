@@ -26,9 +26,14 @@ const h = vi.hoisted(() => ({
   attach: vi.fn(async () => {}),
   goTo: vi.fn(async () => {}),
   currentChapterLabel: vi.fn((): string | undefined => undefined),
+  chapterLabelForCfi: vi.fn((_cfi: string): string | undefined => undefined),
   toc: vi.fn(() => [] as { href: string; label: string }[]),
   onRelocated: vi.fn((_cb: (loc: unknown) => void) => () => {}),
   restore: vi.fn(async () => true),
+  // Default: nobody ever calls back (no sync offer fires) — the existing
+  // tests exercise none of this. Individual tests override with
+  // `mockImplementation` to capture and invoke the callback.
+  onSyncOffer: vi.fn((_cb: (offer: { cfi: string }) => void) => () => {}),
   stop: vi.fn(),
 }));
 
@@ -39,6 +44,7 @@ vi.mock("@/reader/engine", () => ({
     prev: h.prev,
     goTo: h.goTo,
     currentChapterLabel: h.currentChapterLabel,
+    chapterLabelForCfi: h.chapterLabelForCfi,
     toc: h.toc,
     relayout: h.relayout,
     applySettings: h.applySettings,
@@ -49,7 +55,11 @@ vi.mock("@/reader/engine", () => ({
 }));
 
 vi.mock("@/reader/position", () => ({
-  trackPosition: vi.fn(() => ({ restore: h.restore, stop: h.stop })),
+  trackPosition: vi.fn(() => ({
+    restore: h.restore,
+    onSyncOffer: h.onSyncOffer,
+    stop: h.stop,
+  })),
 }));
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -102,6 +112,8 @@ beforeEach(() => {
   // individual tests override.
   h.toc.mockReturnValue([]);
   h.currentChapterLabel.mockReturnValue(undefined);
+  h.chapterLabelForCfi.mockReturnValue(undefined);
+  h.onSyncOffer.mockImplementation((_cb: (offer: { cfi: string }) => void) => () => {});
   useReaderSettings.setState({ ...READER_SETTINGS_DEFAULTS });
   // Default: a cache miss, so the existing fetch-driven tests keep working
   // unchanged. Individual tests override with a resolved value for a hit.
@@ -307,6 +319,48 @@ describe("ReaderShell — settings reach the engine", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /^Return to/ })).toBeNull(),
     );
+  });
+
+  it("dismissing the way-back chip hides it without navigating, and a later jump brings it back", async () => {
+    // The founder found the chip persistent and asked for an explicit ×
+    // (not a clock — a timeout would retract it while still wanted). This is
+    // that control, exercised end-to-end through the shell.
+    h.toc.mockReturnValue([{ href: "ch2.html", label: "Chapter 2" }]);
+    h.currentChapterLabel.mockReturnValue("4");
+    let emit: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await act(async () => {
+      emit?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.34 });
+    });
+
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("button", { name: "Chapter 2" }));
+
+    await screen.findByRole("button", { name: "Return to Ch. 4" });
+    h.goTo.mockClear();
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss return to Ch. 4" }),
+    );
+
+    // Gone, and dismissing is not itself a navigation.
+    expect(screen.queryByRole("button", { name: /^Return to/ })).toBeNull();
+    expect(h.goTo).not.toHaveBeenCalled();
+
+    // Per-jump, not permanent: jumping again brings it straight back.
+    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    await user.click(screen.getByRole("button", { name: "Table of contents" }));
+    await user.click(screen.getByRole("button", { name: "Chapter 2" }));
+    expect(
+      await screen.findByRole("button", { name: "Return to Ch. 4" }),
+    ).toBeTruthy();
   });
 
   it("does not dismiss the deck when the top bar itself is pressed", async () => {
@@ -546,5 +600,124 @@ describe("ReaderShell — the offline cache is gated on ownership", () => {
     await ready();
 
     expect(order).toEqual(["guard", "read"]);
+  });
+});
+
+describe("ReaderShell — cross-device sync offer (corrected: offered, never applied silently)", () => {
+  it("surfaces an offer instead of navigating when the background reconcile finds a further position", async () => {
+    let emit: ((offer: { cfi: string }) => void) | undefined;
+    h.onSyncOffer.mockImplementation((cb: (offer: { cfi: string }) => void) => {
+      emit = cb;
+      return () => {};
+    });
+    h.chapterLabelForCfi.mockReturnValue("Chapter 12");
+
+    renderShell();
+    await ready();
+    h.goTo.mockClear();
+
+    act(() => {
+      emit?.({ cfi: "server-cfi" });
+    });
+
+    expect(
+      await screen.findByRole("button", { name: /^Continue from Chapter 12/i }),
+    ).toBeTruthy();
+    // Never a silent navigation for it.
+    expect(h.goTo).not.toHaveBeenCalled();
+  });
+
+  it("does not render an offer when the background reconcile never calls back (server not further along)", async () => {
+    renderShell();
+    await ready();
+
+    expect(
+      screen.queryByRole("button", { name: /^Continue from/i }),
+    ).toBeNull();
+  });
+
+  it("accepting the offer navigates, and leaves a working ReturnChip behind", async () => {
+    let emit: ((offer: { cfi: string }) => void) | undefined;
+    h.onSyncOffer.mockImplementation((cb: (offer: { cfi: string }) => void) => {
+      emit = cb;
+      return () => {};
+    });
+    h.chapterLabelForCfi.mockReturnValue("Chapter 12");
+    h.currentChapterLabel.mockReturnValue("4");
+    let relocate: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      relocate = cb;
+      return () => {};
+    });
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+
+    // The reader is somewhere before the offer ever shows up.
+    await act(async () => {
+      relocate?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.34 });
+    });
+
+    act(() => {
+      emit?.({ cfi: "server-cfi" });
+    });
+    const offerBtn = await screen.findByRole("button", {
+      name: /^Continue from Chapter 12/i,
+    });
+    h.goTo.mockClear();
+    await user.click(offerBtn);
+
+    expect(h.goTo).toHaveBeenCalledWith("server-cfi");
+    // The offer is gone, replaced by the way back to where accepting it
+    // jumped FROM — accepting is itself a non-linear jump, undoable like any
+    // other (reuses the same `jumpTo`/`returnTo` machinery as a TOC jump).
+    expect(
+      screen.queryByRole("button", { name: /^Continue from/i }),
+    ).toBeNull();
+    expect(
+      await screen.findByRole("button", { name: "Return to Ch. 4" }),
+    ).toBeTruthy();
+  });
+
+  it("dismissing the offer clears it without navigating or disturbing the position", async () => {
+    let emit: ((offer: { cfi: string }) => void) | undefined;
+    h.onSyncOffer.mockImplementation((cb: (offer: { cfi: string }) => void) => {
+      emit = cb;
+      return () => {};
+    });
+    h.chapterLabelForCfi.mockReturnValue("Chapter 12");
+
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    h.goTo.mockClear();
+
+    act(() => {
+      emit?.({ cfi: "server-cfi" });
+    });
+    const dismissBtn = await screen.findByRole("button", {
+      name: /Dismiss continue from Chapter 12 offer/i,
+    });
+    await user.click(dismissBtn);
+
+    expect(
+      screen.queryByRole("button", { name: /^Continue from/i }),
+    ).toBeNull();
+    expect(h.goTo).not.toHaveBeenCalled();
+  });
+
+  it("does not throw or update state if the offer arrives after the shell has torn down", async () => {
+    let emit: ((offer: { cfi: string }) => void) | undefined;
+    h.onSyncOffer.mockImplementation((cb: (offer: { cfi: string }) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
+    const { unmount } = renderShell();
+    await ready();
+    unmount();
+
+    expect(() => emit?.({ cfi: "server-cfi" })).not.toThrow();
   });
 });
