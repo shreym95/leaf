@@ -165,6 +165,43 @@ function purgeServiceWorkerCaches(): Promise<void> {
 }
 
 /**
+ * Reading-position and locations tables kept in `localStorage` by
+ * `src/reader/position-cache.ts` and `src/reader/locations-cache.ts`. Both
+ * are keyed `leaf:<name>:v<n>:<bookId>` and hold per-user reading data — how
+ * far through a book someone got — so they must not outlive the session that
+ * produced it any more than the book bytes do.
+ *
+ * Swept by prefix rather than by book id: the ids of the books this device
+ * cached are exactly what is being deleted alongside, so there is nothing
+ * left to enumerate them with.
+ */
+const LOCAL_READING_PREFIXES = ["leaf:position:v", "leaf:locations:v"];
+
+function purgeLocalReadingState(): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && LOCAL_READING_PREFIXES.some((p) => key.startsWith(p))) {
+        doomed.push(key);
+      }
+    }
+    // Collected first, then removed: removing during the scan shifts the
+    // indices underneath it and silently skips entries.
+    for (const key of doomed) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // Keep going — one failure must not strand the rest.
+      }
+    }
+  } catch {
+    // Storage blocked or unavailable; nothing to purge.
+  }
+}
+
+/**
  * Purge every trace of the signed-in user's offline data from this device:
  * cached book bytes/metadata (`leaf-books`), queued outbox writes
  * (`leaf-outbox`), and the service worker's cached reader documents — the
@@ -184,6 +221,9 @@ export async function purgeAllOfflineData(): Promise<void> {
     purgeServiceWorkerCaches().catch(() => undefined),
     purgeCacheStorage().catch(() => undefined),
   ]).then(() => undefined);
+
+  // Synchronous and local — no reason to race it against the timeout below.
+  purgeLocalReadingState();
 
   await resolveWithin(legs, OVERALL_TIMEOUT_MS);
 }
