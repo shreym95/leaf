@@ -146,8 +146,20 @@ export function SpreadFrame({
           </span>
         )}
 
+        {/* Opaque, not a transparent label over the viewer: `loading` is only
+            ever true once ReaderShell has decided the open is slow enough to
+            be worth announcing (see its SHOW_LOADING_* constants), and by
+            then epub.js may already have painted a page underneath — possibly
+            the wrong one, if position-restore hasn't landed yet. `bg-page`
+            fully covers it either way, so the message and the book's prose
+            are never both visible — no fade in/out, matching the no-fade
+            decision on page turns above (an opacity dip read as text flicker
+            there; the same risk applies to prose suddenly showing through). */}
         {loading && (
-          <p className="absolute inset-0 z-10 flex items-center justify-center font-mono uppercase text-faint [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-label)]">
+          <p
+            role="status"
+            className="absolute inset-0 z-10 flex items-center justify-center bg-page font-mono uppercase text-faint [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-label)]"
+          >
             Opening the book…
           </p>
         )}

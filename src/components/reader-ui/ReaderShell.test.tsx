@@ -475,6 +475,112 @@ describe("ReaderShell — cache-first book bytes (Stage 2 offline reading)", () 
   });
 });
 
+// Drains pending microtasks (chained promise resolutions) WITHOUT touching
+// the fake-timer clock — the mocked pipeline below has no real timers of its
+// own, so this is enough to let it run to completion while keeping the
+// 250ms/500ms show/hide timers exactly where the test put them.
+async function flushMicrotasks(times = 30) {
+  for (let i = 0; i < times; i++) {
+    await Promise.resolve();
+  }
+}
+
+describe("ReaderShell — the opening message doesn't flash or overlap (founder report, 2026-10-01)", () => {
+  // Mirrors ReaderShell's own SHOW_LOADING_DELAY_MS / SHOW_LOADING_MIN_VISIBLE_MS.
+  const SHOW_DELAY_MS = 250;
+  const MIN_VISIBLE_MS = 500;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("never shows the message when the whole pipeline resolves before the show-delay (fast/cached open)", async () => {
+    renderShell();
+
+    // Immediately after mount, before even the first microtask flushes: the
+    // old implementation rendered the message synchronously from the very
+    // first paint (`loading: load.state === "loading"`, true from the
+    // initial `useState`) — exactly the flash a fast/cached open must never
+    // produce. Fixed behaviour waits for the show-delay before ever setting
+    // `showLoadingMessage`, so nothing is on screen yet.
+    expect(screen.queryByText("Opening the book…")).toBeNull();
+
+    // The default mocks resolve the entire pipeline on chained microtasks
+    // alone — no real timers — mirroring a cache hit on an already-open book.
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(h.attach).toHaveBeenCalled();
+    expect(h.restore).toHaveBeenCalled();
+
+    // Let real time pass well beyond the show-delay. The pending show-timer
+    // must already have been cancelled the moment the load reached "ready",
+    // so nothing appears even now.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHOW_DELAY_MS + 1000);
+    });
+    expect(screen.queryByText("Opening the book…")).toBeNull();
+  });
+
+  it("shows the message for a slow open, and keeps it up for the minimum read time even once loading finishes", async () => {
+    // `mockImplementationOnce`, not `mockImplementation` — the shared
+    // `beforeEach` only clears call history, not implementations (see its own
+    // comment above), so a standing override here would hang every later
+    // test's pipeline on this same never-resolving promise.
+    let resolveOwner!: () => void;
+    owner.enforceOfflineOwner.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOwner = resolve;
+        }),
+    );
+
+    renderShell();
+
+    // Still blocked on the ownership guard, short of the show-delay — no
+    // message yet (otherwise every open would flash it).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHOW_DELAY_MS - 1);
+    });
+    expect(screen.queryByText("Opening the book…")).toBeNull();
+
+    // Crosses the show-delay while still loading — it appears.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByText("Opening the book…")).toBeInTheDocument();
+
+    // Unblock the rest of the (mocked, effectively instant) pipeline almost
+    // immediately — well inside the minimum-visible window.
+    await act(async () => {
+      resolveOwner();
+      await flushMicrotasks();
+    });
+    expect(h.attach).toHaveBeenCalled();
+    expect(h.restore).toHaveBeenCalled();
+    // The pipeline is done, but the message must not be yanked away before
+    // it has been up long enough to actually read — it must not overlap the
+    // book either way, since it stays an OPAQUE cover the whole time.
+    expect(screen.getByText("Opening the book…")).toBeInTheDocument();
+
+    // Short of the minimum-visible window (shown at 250ms, due at 750ms).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIN_VISIBLE_MS - 2);
+    });
+    expect(screen.getByText("Opening the book…")).toBeInTheDocument();
+
+    // The minimum-visible window elapses — only now does it go.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
+    });
+    expect(screen.queryByText("Opening the book…")).toBeNull();
+  });
+});
+
 describe("ReaderShell — cached percent stays fresh (Stage 4 offline reading, part 2)", () => {
   it("debounces the cache-percent write instead of writing on every relocation", async () => {
     let emit: ((loc: unknown) => void) | undefined;

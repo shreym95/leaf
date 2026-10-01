@@ -62,6 +62,31 @@ import { useImmersive } from "./useImmersive";
 // cheap, independent, best-effort write.
 const CACHE_PROGRESS_DEBOUNCE_MS = 1500;
 
+// Defect fix (founder, 2026-10-01): "Opening the book…" was tied to
+// `load.state === "loading"`, which only flips once the ENTIRE pipeline
+// finishes — bytes, engine creation, first paint, locations, position
+// restore, highlight/bookmark subscriptions. On an already-cached book that
+// whole chain can resolve in well under 100ms, but the message still painted
+// (briefly) over prose that was already on screen, because `attach()`
+// paints chapter one via `rendition.display()` long before `restore()` has
+// finished deciding whether to re-`goTo` a saved CFI elsewhere in the book.
+// Hiding the message at FIRST paint instead would dodge the overlap but
+// trade it for a worse one: the reader would briefly see chapter one, then
+// get yanked to their actual saved position once `restore()` lands. So the
+// message stays an OPAQUE cover (see SpreadFrame's `bg-page`) for the whole
+// `loading` window rather than a transparent label — nothing under it can
+// ever show through, painted or not — and these two constants decide only
+// whether/how long that cover is allowed to be visible:
+//   - never show it for an open that finishes inside this delay (below
+//     ~200ms a reader perceives the open as instant; a flash here reads as
+//     a glitch, not a status update) — a cached/fast open typically clears
+//     the whole pipeline well inside this window;
+//   - once shown, never flicker it away before this minimum has elapsed —
+//     "Opening the book…" takes under a second to read; showing it for less
+//     would strobe.
+const SHOW_LOADING_DELAY_MS = 250;
+const SHOW_LOADING_MIN_VISIBLE_MS = 500;
+
 /** Must match `CACHE_READER_MESSAGE_TYPE` in `src/lib/offline/service-worker.ts`. */
 const CACHE_READER_MESSAGE_TYPE = "leaf-offline/cache-reader";
 
@@ -138,6 +163,66 @@ export function ReaderShell({
   const trackerRef = useRef<PositionTracker | null>(null);
 
   const [load, setLoad] = useState<LoadState>({ state: "loading" });
+
+  // ── "Opening the book…" visibility (see SHOW_LOADING_* above) ──────────
+  // Derived from `load.state`, not equal to it: the overlay needs its own
+  // show/hide timing so a fast open never flashes it and a slow one doesn't
+  // strobe it away. `timers.shownAt` (a ref, not state) is how the hide path
+  // knows whether the message ever actually appeared.
+  const [showLoadingMessage, setShowLoadingMessage] = useState(false);
+  const loadingTimersRef = useRef<{
+    showTimer?: ReturnType<typeof setTimeout>;
+    hideTimer?: ReturnType<typeof setTimeout>;
+    shownAt?: number;
+  }>({});
+
+  // Arms once per open (same key as the engine effect below). If the whole
+  // pipeline finishes before this fires, it's cleared by `finishLoadingMessage`
+  // and the message never appears at all.
+  useEffect(() => {
+    const timers = loadingTimersRef.current;
+    timers.showTimer = setTimeout(() => {
+      timers.shownAt = Date.now();
+      setShowLoadingMessage(true);
+    }, SHOW_LOADING_DELAY_MS);
+    return () => clearTimeout(timers.showTimer);
+  }, [fileUrl, bookId]);
+
+  // Called SYNCHRONOUSLY at the exact call sites that resolve `load` to
+  // "ready" or "error" (not from a separate effect reacting to `load.state`).
+  // That matters: epub.js paints chapter one straight into the DOM — no
+  // React render involved — well before `load` ever reaches a terminal
+  // state, so by the time this runs the page is usually already sitting
+  // behind the (opaque) overlay. A `useEffect` keyed on `load.state` would
+  // still be correct eventually, but React doesn't run passive effects until
+  // after the browser has painted the "ready" commit — one extra frame where
+  // `load.state` is "ready" and the overlay hasn't been told to go yet. That
+  // frame is real: a throttled-fetch test caught the overlay and the book's
+  // text sharing exactly one sampled frame when this was effect-driven.
+  // Calling this inline, right where `setLoad` is called, lets React 18's
+  // automatic batching fold both state updates into the same commit instead.
+  const finishLoadingMessage = useCallback(() => {
+    const timers = loadingTimersRef.current;
+    clearTimeout(timers.showTimer);
+    clearTimeout(timers.hideTimer);
+    if (timers.shownAt == null) {
+      // The show-delay never fired — fast/cached open, nothing to hide.
+      return;
+    }
+    const elapsed = Date.now() - timers.shownAt;
+    if (elapsed >= SHOW_LOADING_MIN_VISIBLE_MS) {
+      setShowLoadingMessage(false);
+      return;
+    }
+    // Shown too recently to hide without strobing — the book is already
+    // fully ready and sitting (still covered) behind the overlay, so the
+    // remaining wait costs nothing but time to read three words.
+    timers.hideTimer = setTimeout(
+      () => setShowLoadingMessage(false),
+      SHOW_LOADING_MIN_VISIBLE_MS - elapsed,
+    );
+  }, []);
+
   const [percent, setPercent] = useState(0);
   // Coarse progress for the polite live region — only whole 5% steps, so a
   // screen reader hears "N% read" roughly once per several pages, not on every
@@ -415,6 +500,7 @@ export function ReaderShell({
 
         if (!cancelled) {
           setLoad({ state: "ready" });
+          finishLoadingMessage();
           // Best-effort, online-only — see requestReaderCache's doc comment.
           requestReaderCache(bookId);
         }
@@ -427,6 +513,7 @@ export function ReaderShell({
               ? err.message
               : "This book could not be opened.",
         });
+        finishLoadingMessage();
       }
     })();
 
@@ -648,7 +735,7 @@ export function ReaderShell({
       <SpreadFrame
         viewerRef={viewerRef}
         frameRef={frameRef}
-        loading={load.state === "loading"}
+        loading={showLoadingMessage}
         folioLeft={folio.left}
         folioRight={folio.right}
         onPrev={() => turnAndCloseDeck("prev", "tap-prev")}
