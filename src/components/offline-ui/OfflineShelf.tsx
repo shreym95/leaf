@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/primitives";
 import { useIsOffline } from "@/components/ui/useOnlineStatus";
 import {
@@ -75,12 +76,141 @@ import { enforceOfflineOwner, getLocalSessionUserId } from "@/lib/offline/owner"
  * sees the real link appear (and `SignInControl` become clickable) with no
  * refresh, because the connectivity read is live, not a one-time check
  * alongside the session check above.
+ *
+ * ---------------------------------------------------------------------------
+ * Auto-forward on load (offline-forward fix) — and why it is NOT an
+ * `online`-event handler
+ * ---------------------------------------------------------------------------
+ * The way-out link above fixed "stuck here with no exit." It didn't fix the
+ * next complaint: land here, the connection comes back, refresh — and the
+ * reader is still looking at `/offline` with nothing carrying them onward.
+ *
+ * The fix is in the mount effect below, and it is deliberately narrow:
+ *
+ *   - FRESH LOAD with a working connection → forward immediately
+ *     (`/library` if a local session exists, else `/login`).
+ *   - Already sitting on this exact page when connectivity RETURNS
+ *     mid-view → do nothing. The reader stays put; the live link/button
+ *     above (driven by `useIsOffline`) is what appears for them to choose.
+ *
+ * Those are NOT the same code path, and must never become one. The
+ * mechanism that keeps them apart: the forward check lives inside the mount
+ * effect, which has an EMPTY dependency array and therefore runs its body
+ * exactly once per mount. It closes over `offline` from that single render,
+ * so it only ever sees "was the connection up at load" — a later `online`
+ * event re-renders the component (and updates the live `offline` value the
+ * JSX below reads) but does NOT re-invoke this effect. There is no separate
+ * `online`-event listener anywhere in this file for the forward itself; if
+ * someone "simplifies" this into one (e.g. moves the check into a
+ * `useEffect(() => {...}, [offline])`, or adds a `window.addEventListener
+ * ("online", forward)`), it will yank a reader mid-read the instant their
+ * connection blips back, which is exactly the regression this comment exists
+ * to prevent. If that ever needs to change, it's a product decision, not a
+ * refactor — ask the founder first.
+ *
+ * Ordering: the forward decision is made AFTER `getLocalSessionUserId()`
+ * resolves, not before. Forwarding to `/login` just because the (fast,
+ * local-only, no-network) session check hadn't finished yet would send a
+ * signed-in reader to the wrong place for no reason — see the task brief.
+ *
+ * Loop safety (the main risk here): `navigator.onLine === true` is not a
+ * guarantee (`useIsOffline`'s own header — a captive portal reports
+ * "online"). If this forward's target can't actually load, here is exactly
+ * what happens and what stops it from looping forever:
+ *
+ *   1. `router.replace()` is a soft, client-side (RSC) navigation. On a
+ *      genuine network failure, Next does NOT just drop it — see
+ *      `node_modules/next/dist/client/components/router-reducer/
+ *      fetch-server-response.js`: the fetch's `catch` block logs
+ *      "Falling back to browser navigation" and returns the target URL as a
+ *      plain string, which the router reducer then turns into a real,
+ *      hard (MPA) navigation to that URL.
+ *   2. That hard navigation is a genuine `request.mode === "navigate"`
+ *      fetch, which `src/lib/offline/service-worker.ts` DOES intercept
+ *      (`isRscRequest` deliberately excludes only the first, soft attempt —
+ *      see that function's own comment, which documents this exact
+ *      two-step handoff). Offline, it fails, and
+ *      `respondToFailedNavigation()` 302-redirects it straight back to
+ *      `/offline`.
+ *   3. That lands here again, fresh — a brand-new mount, so this effect
+ *      runs its once-per-mount check again. Without anything else, step 1
+ *      would repeat: `navigator.onLine` is still (falsely) `true`, so it
+ *      would try to forward again, bounce again, forever.
+ *
+ *   What actually stops it: before attempting a forward, this effect reads
+ *   (and unconditionally clears) a small `sessionStorage` timestamp
+ *   (`FORWARD_ATTEMPT_KEY`) left by the PREVIOUS attempt, if any. If that
+ *   timestamp is recent (within `BOUNCE_WINDOW_MS`), this load is treated as
+ *   the bounce-back from that attempt — the forward is skipped entirely and
+ *   the page renders normally (signed-in/signed-out UI, manual link and
+ *   all), exactly as if this feature didn't exist. Tab-scoped
+ *   (`sessionStorage`, not `localStorage`) so it can never affect another
+ *   tab or persist across browser restarts, and self-clearing — a
+ *   SUCCESSFUL forward leaves a stale timestamp behind that nothing ever
+ *   reads again until it's already outside `BOUNCE_WINDOW_MS`, at which
+ *   point the next `/offline` load treats it as stale, consumes it, and
+ *   forwards normally. Net effect: at most ONE bounce, ever, per
+ *   connectivity false-positive — never an infinite loop, and never a
+ *   permanent block on a later, legitimate forward.
+ *
+ * Navigation method: `router.replace`, not `router.push`. A reader who just
+ * got auto-forwarded to `/library` or `/login` must not be able to press
+ * Back and land on a now-stale `/offline` — `replace` swaps the history
+ * entry instead of adding to it, so Back skips over it entirely.
  */
 
 type State =
   | { phase: "loading" }
   | { phase: "signed-out" }
   | { phase: "ready"; books: CachedBookSummary[] };
+
+/** Tab-scoped (not `localStorage` — see the module header's "loop safety"
+ *  section for why that matters) marker of the last auto-forward attempt. */
+const FORWARD_ATTEMPT_KEY = "leaf:offline-forward-attempt:v1";
+
+/** Generous on purpose: a dead captive-portal connection can take a while to
+ *  fail outright (no explicit timeout on the underlying fetch — see the
+ *  module header), and the bounce path is fetch → MPA fallback → service
+ *  worker redirect → fresh load, several hops. Erring long costs nothing (a
+ *  stale entry just gets treated as a legitimate new attempt); erring short
+ *  risks treating a real bounce as a fresh, independent load and forwarding
+ *  into a second bounce. */
+const BOUNCE_WINDOW_MS = 30_000;
+
+/**
+ * Reads, and unconditionally clears, the forward-attempt marker. Returns
+ * `true` only when one was present AND recent enough to be THIS load
+ * bouncing back from that attempt (see module header) — never throws;
+ * blocked/unavailable `sessionStorage` degrades to "no marker," same
+ * philosophy as the rest of the offline stack (`owner.ts`).
+ */
+function consumeRecentForwardAttempt(): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    const raw = window.sessionStorage.getItem(FORWARD_ATTEMPT_KEY);
+    if (raw === null) return false;
+    window.sessionStorage.removeItem(FORWARD_ATTEMPT_KEY);
+    const attemptedAt = Number(raw);
+    return (
+      Number.isFinite(attemptedAt) &&
+      Date.now() - attemptedAt < BOUNCE_WINDOW_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort, silent on failure — same reasoning as `owner.ts`'s own
+ *  marker writes: the worst case of a failed write is one extra bounce, not
+ *  a broken render. */
+function markForwardAttempt(): void {
+  try {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(FORWARD_ATTEMPT_KEY, String(Date.now()));
+  } catch {
+    // Nothing more to do — see above.
+  }
+}
 
 /** `UNREAD` / `NN% READ` / `FINISHED` — mirrors the shelf's own convention
  *  (`src/components/library-ui/BookCard.tsx`) so the offline shelf reads as
@@ -147,6 +277,7 @@ function SignInControl({ offline }: { offline: boolean }) {
 export function OfflineShelf() {
   const [state, setState] = useState<State>({ phase: "loading" });
   const offline = useIsOffline();
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +287,23 @@ export function OfflineShelf() {
       await enforceOfflineOwner();
       const userId = await getLocalSessionUserId();
       if (cancelled) return;
+
+      // Auto-forward — FRESH LOAD ONLY. See the module header's "Auto-forward
+      // on load" section for the full reasoning (why this runs after the
+      // session check, why `offline` here is a one-time mount reading and
+      // never a live one, and what stops a false "online" reading from
+      // looping forever). `userId` is already known at this point, so the
+      // signed-in case doesn't need to wait on `listCachedBooks()` below.
+      if (!offline && !consumeRecentForwardAttempt()) {
+        markForwardAttempt();
+        router.replace(userId ? "/library" : "/login");
+        // No `return` — see the module header's "loop safety": this is a
+        // fire-and-forget nudge, not a gate. Falling through to render the
+        // normal signed-in/signed-out UI below means that even a SILENTLY
+        // failed forward (the captive-portal case) still leaves the reader
+        // on a working page with a real, manually-clickable way out, never
+        // stuck on "Checking this device…" forever.
+      }
 
       if (!userId) {
         setState({ phase: "signed-out" });
@@ -168,6 +316,10 @@ export function OfflineShelf() {
     return () => {
       cancelled = true;
     };
+    // Mount-only, intentionally — see the module header: re-running this
+    // effect on a later connectivity change is exactly the bug this feature
+    // exists to avoid, so `offline` and `router` are deliberately not deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (state.phase === "loading") {
