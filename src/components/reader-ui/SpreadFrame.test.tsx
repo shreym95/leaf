@@ -74,3 +74,24 @@ describe("SpreadFrame tap zones", () => {
     }
   });
 });
+
+describe("SpreadFrame opening message (overlap fix, 2026-10-01)", () => {
+  it("renders nothing when not loading", () => {
+    renderFrame({ loading: false });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText("Opening the book…")).toBeNull();
+  });
+
+  it("covers the frame opaquely rather than floating transparently over it", () => {
+    // Regression: the message used to have no background at all, so once
+    // epub.js had painted a page underneath (which can happen before the
+    // caller's `loading` flips false) the words sat directly on top of the
+    // book's prose. `bg-page` makes the message an opaque cover instead, so
+    // whatever is under it — painted or not — can never show through.
+    renderFrame({ loading: true });
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Opening the book…");
+    expect(status.className).toContain("bg-page");
+    expect(status.className).toContain("inset-0");
+  });
+});
