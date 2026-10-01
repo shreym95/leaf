@@ -30,6 +30,14 @@ vi.mock("@/lib/supabase/client", () => ({
   })),
 }));
 
+// Auto-forward (offline-forward fix): every render now calls `useRouter()`,
+// so every test in this file needs it mocked, not just the ones about
+// forwarding — same pattern as `EmptyState.test.tsx`.
+const h = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: h.replace, push: vi.fn() }),
+}));
+
 import { OfflineShelf } from "./OfflineShelf";
 import { writeCachedBook } from "@/lib/offline/book-store";
 import { enforceOfflineOwner } from "@/lib/offline/owner";
@@ -74,6 +82,8 @@ beforeEach(() => {
     },
   });
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  h.replace.mockClear();
   signOut();
 });
 
@@ -300,6 +310,75 @@ describe("OfflineShelf", () => {
       ).toBeTruthy();
       expect(
         screen.queryByText(/everything else here needs a connection/i),
+      ).toBeNull();
+      // The whole point of this fix: connectivity returning WHILE already
+      // sitting on the page must never trigger the auto-forward — only a
+      // fresh load does. See the describe block below for that behavior.
+      expect(h.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("auto-forward on load (offline-forward fix)", () => {
+    // Contract change: before this fix, a fresh load of `/offline` while
+    // online just sat there showing the manual link (see the "the way out"
+    // tests above, none of which needed to change — the forward below is
+    // fire-and-forget and never blocks rendering, specifically so a reader
+    // still lands on a working page if the forward itself silently fails;
+    // see OfflineShelf's module header "loop safety"). Now a FRESH load with
+    // a working connection also fires `router.replace` automatically. A
+    // reader already on the page when connectivity returns mid-view must
+    // NOT be forwarded — that's covered by "reacts live" above, which
+    // asserts `h.replace` is never called in that case.
+
+    it("fresh load, online, signed in: forwards to /library", async () => {
+      setOnLine(true);
+      signInAs("user-a");
+      render(<OfflineShelf />);
+
+      await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/library"));
+    });
+
+    it("fresh load, online, signed out: forwards to /login", async () => {
+      setOnLine(true);
+      signOut();
+      render(<OfflineShelf />);
+
+      await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/login"));
+    });
+
+    it("fresh load, offline: never forwards", async () => {
+      setOnLine(false);
+      signInAs("user-a");
+      render(<OfflineShelf />);
+
+      expect(
+        await screen.findByText(/nothing is saved on this device yet/i),
+      ).toBeTruthy();
+      expect(h.replace).not.toHaveBeenCalled();
+    });
+
+    it("doesn't forward a second time if the target bounced straight back (loop safety)", async () => {
+      // Simulates landing back on /offline moments after this same tab
+      // already tried to forward — the service-worker-redirect bounce
+      // described in OfflineShelf's module header. The marker is tab-scoped
+      // sessionStorage, written by the attempt that (per this scenario)
+      // just failed and bounced.
+      window.sessionStorage.setItem(
+        "leaf:offline-forward-attempt:v1",
+        String(Date.now()),
+      );
+      setOnLine(true);
+      signInAs("user-a");
+      render(<OfflineShelf />);
+
+      // Give any (incorrect) forward a chance to happen before asserting
+      // it didn't.
+      await screen.findByText(/nothing is saved on this device yet/i);
+      expect(h.replace).not.toHaveBeenCalled();
+      // And the marker is consumed either way, so a later, truly fresh load
+      // isn't permanently blocked.
+      expect(
+        window.sessionStorage.getItem("leaf:offline-forward-attempt:v1"),
       ).toBeNull();
     });
   });
