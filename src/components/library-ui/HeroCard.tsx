@@ -80,10 +80,15 @@ export function splitHeroBook(
 export function HeroCard({ book }: HeroCardProps) {
   const initial = book.title.trim().charAt(0).toUpperCase() || "?";
 
+  // Capped at 99 unless the book is recorded as finished (same rule as
+  // BookCard): a book that is not finished never reads "100%" here either.
   const pct =
     book.percent == null
       ? null
-      : Math.min(100, Math.max(0, Math.round(book.percent * 100)));
+      : Math.min(
+          isBookFinished(book) ? 100 : 99,
+          Math.max(0, Math.round(book.percent * 100)),
+        );
 
   return (
     <section

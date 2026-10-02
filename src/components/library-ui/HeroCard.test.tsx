@@ -148,6 +148,20 @@ describe("HeroCard", () => {
     ).toHaveAttribute("aria-valuenow", "0");
   });
 
+  it("caps an unfinished book at 99%, text and progressbar (same rule as BookCard)", () => {
+    render(<HeroCard book={makeBook({ status: "reading", percent: 1 })} />);
+    expect(screen.getByText("99%")).toBeInTheDocument();
+    expect(screen.queryByText("100%")).toBeNull();
+    expect(
+      screen.getByRole("progressbar", { name: "Reading progress" }),
+    ).toHaveAttribute("aria-valuenow", "99");
+  });
+
+  it("lets a book recorded as finished read 100%", () => {
+    render(<HeroCard book={makeBook({ status: "finished", percent: 1 })} />);
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
   it("shows the whole cover, never a crop (DEFECTS D3)", () => {
     render(
       <HeroCard book={makeBook({ coverUrl: "https://example.com/c.jpg" })} />,
