@@ -22,6 +22,7 @@ import {
   enqueueReadingState,
   getCachedUserId,
   isFurtherAlong,
+  resolveUserId,
 } from "@/lib/offline/outbox";
 import {
   readCachedPosition,
@@ -281,17 +282,20 @@ export function trackPosition(
     let supabase: ReturnType<typeof createClient> | undefined;
     try {
       supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return; // signed out — nothing to scope the write to
-      await upsertReadingState(user.id, bookId, toWrite, supabase);
+      // `resolveUserId` falls back to the cached session when the Auth
+      // server is unreachable (auth-js resolves, not throws, offline), so
+      // the transport failure below can still be queued.
+      const userId = await resolveUserId(supabase);
+      if (!userId) return; // signed out — nothing to scope the write to
+      await upsertReadingState(userId, bookId, toWrite, supabase);
     } catch (err) {
       // Position sync is best-effort: a failed write must never interrupt
       // reading. A connectivity failure is queued so the write survives a
       // reload (outbox.ts, §8a); a non-network rejection (RLS, bad data) is
       // dropped — retrying it forever would never succeed.
       if (!supabase || classifyWriteFailure(err) !== "transport") return;
+      // Still re-checked against the cached session (not the id the write
+      // used): queuing is only ever for the locally signed-in session.
       const userId = await getCachedUserId(supabase);
       if (!userId) return;
       await enqueueReadingState(userId, bookId, toWrite);
