@@ -484,3 +484,132 @@ describe("relocation cause and atEnd", () => {
     expect(seen.map((s) => s.atEnd)).toEqual([true, false]);
   });
 });
+
+// A `next()` that cannot move, at the end of the book. epub.js's own `atEnd`
+// can stay false on the true last page (its page arithmetic floors the scroll
+// offset, so a page a pixel short of its boundary reads as the one before it),
+// which left the reader tapping at nothing: no end-of-book panel, no finish.
+describe("a next() that cannot move", () => {
+  type Here = {
+    start: { cfi: string; index: number; displayed: { page: number; total: number } };
+    end: { index: number };
+  };
+  const hereAt = (cfi: string, index: number, endIndex = index): Here => ({
+    start: { cfi, index, displayed: { page: 18, total: 19 } },
+    end: { index: endIndex },
+  });
+
+  let here: Here;
+  const realLocation = rendition.currentLocation.getMockImplementation();
+
+  beforeEach(() => {
+    here = hereAt("epubcfi(/6/8!/4/2/118/1:0)", 3);
+    rendition.currentLocation.mockImplementation(() => here as never);
+    (book.spine as unknown as { last: () => { index: number } }).last = () => ({
+      index: 3,
+    });
+    delete (rendition as { manager?: unknown }).manager;
+  });
+
+  afterEach(() => {
+    if (realLocation) rendition.currentLocation.mockImplementation(realLocation);
+    delete (book.spine as unknown as { last?: unknown }).last;
+    delete (rendition as { manager?: unknown }).manager;
+  });
+
+  async function setup() {
+    const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+    const seen: { cause?: string; atEnd?: boolean; cfi: string }[] = [];
+    reader.onRelocated((loc) =>
+      seen.push({ cause: loc.cause, atEnd: loc.atEnd, cfi: loc.cfi }),
+    );
+    await reader.attach(document.createElement("div"));
+    await Promise.resolve();
+    seen.length = 0;
+    const relocated = rendition.on.mock.calls.find(
+      (c) => c[0] === "relocated",
+    )![1] as (loc: unknown) => void;
+    // epub.js reports the unchanged position, atEnd absent (the bug).
+    const fire = (extra: Record<string, unknown> = {}, h: Here = here) =>
+      relocated({ ...h, ...extra });
+    return { reader, seen, fire };
+  }
+
+  it("in the last linear section reports atEnd, and the relocation carries atEnd + cause next", async () => {
+    const { reader, seen, fire } = await setup();
+    const result = await reader.next();
+    expect(result).toEqual({ moved: false, atEnd: true });
+    fire();
+    expect(seen).toEqual([
+      { cause: "next", atEnd: true, cfi: "epubcfi(/6/8!/4/2/118/1:0)" },
+    ]);
+  });
+
+  it("keeps reporting atEnd for duplicates at that position, and drops it once the reader moves", async () => {
+    const { reader, seen, fire } = await setup();
+    await reader.next();
+    fire(); // the turn's relocation
+    fire(); // scroll-settle duplicate, epub.js still says no atEnd
+    expect(seen.map((s) => s.atEnd)).toEqual([true, true]);
+
+    // A jump / resize lands somewhere else: the end no longer applies.
+    fire({}, hereAt("epubcfi(/6/8!/4/2/60/1:0)", 3));
+    expect(seen.map((s) => s.atEnd)).toEqual([true, true, false]);
+    fire(); // and back at the old position it is NOT revived
+    expect(seen.map((s) => s.atEnd)).toEqual([true, true, false, false]);
+  });
+
+  it("mid-book is not an ending: no atEnd on the result or the relocation", async () => {
+    here = hereAt("epubcfi(/6/4!/4/2/10/1:0)", 1);
+    const { reader, seen, fire } = await setup();
+    const result = await reader.next();
+    expect(result).toEqual({ moved: false, atEnd: false });
+    fire();
+    expect(seen.map((s) => [s.cause, s.atEnd])).toEqual([["next", false]]);
+  });
+
+  it("a stall on the second-to-last page of the last section is not an ending", async () => {
+    // Geometry says a page remains: scroll is 2 pages from the section's end.
+    (rendition as { manager?: unknown }).manager = {
+      container: { scrollLeft: 17 * 409, scrollWidth: 20 * 409 },
+      layout: { delta: 409 },
+    };
+    const { reader, seen, fire } = await setup();
+    const result = await reader.next();
+    expect(result).toEqual({ moved: false, atEnd: false });
+    fire();
+    expect(seen.map((s) => s.atEnd)).toEqual([false]);
+  });
+
+  it("recognises the true last page even when the scroll offset is a pixel short", async () => {
+    (rendition as { manager?: unknown }).manager = {
+      container: { scrollLeft: 19 * 409 - 1, scrollWidth: 20 * 409 },
+      layout: { delta: 409 },
+    };
+    const { reader } = await setup();
+    expect(await reader.next()).toEqual({ moved: false, atEnd: true });
+  });
+
+  it("a turn that moves is unchanged: moved, no atEnd, epub.js's own flag passes through", async () => {
+    const { reader, seen, fire } = await setup();
+    const next = hereAt("epubcfi(/6/8!/4/2/120/1:0)", 3);
+    rendition.next.mockImplementationOnce(async () => {
+      here = next;
+    });
+    expect(await reader.next()).toEqual({ moved: true, atEnd: false });
+    fire({}, next);
+    fire({ atEnd: true }, next);
+    expect(seen.map((s) => [s.cause, s.atEnd])).toEqual([
+      ["next", false],
+      ["other", true],
+    ]);
+  });
+
+  it("an unreadable position is never reported as a stall", async () => {
+    const { reader } = await setup();
+    rendition.currentLocation.mockImplementation(() => {
+      throw new Error("mid-transition");
+    });
+    expect(await reader.next()).toEqual({ moved: true, atEnd: false });
+  });
+});

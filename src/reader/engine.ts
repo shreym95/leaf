@@ -66,9 +66,26 @@ export interface ReaderLocation {
 
 export type ReaderLocationCause = "next" | "prev" | "jump" | "other";
 
+/** What a `next()` turn amounted to. */
+export interface ReaderTurnResult {
+  /**
+   * False when the turn demonstrably left the reader where they were (the start
+   * CFI is unchanged). True when it moved, and also when the engine could not
+   * tell — "unknown" is never reported as a stall.
+   */
+  moved: boolean;
+  /**
+   * True when this turn could not move because the book is over: the position
+   * is unchanged AND the reader is on the last page of the last linear spine
+   * section. The relocation that follows carries `atEnd: true`, `cause: "next"`.
+   * Never true mid-book — a stall earlier in the book is not an ending.
+   */
+  atEnd: boolean;
+}
+
 export interface ReaderController {
   attach(container: HTMLElement): Promise<void>; // renderTo + display + locations.generate
-  next(): Promise<void>;
+  next(): Promise<ReaderTurnResult>;
   prev(): Promise<void>;
   goTo(target: string): Promise<void>; // CFI or spine href
   /** Best-effort chapter title for the current position, from the EPUB's own
@@ -243,6 +260,73 @@ function sectionIndexOf(rendition: unknown): number | undefined {
 }
 
 /**
+ * The CFI at the start of what is on screen right now, or undefined when
+ * epub.js cannot say (it throws mid-transition).
+ */
+function startCfiOf(rendition: unknown): string | undefined {
+  try {
+    const here = (
+      rendition as { currentLocation?: () => unknown } | undefined
+    )?.currentLocation?.() as { start?: { cfi?: string } } | undefined;
+    const cfi = here?.start?.cfi;
+    return typeof cfi === "string" && cfi ? cfi : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether the rendition is showing the last page of the last LINEAR spine
+ * section. Used only after a `next()` that could not move, to tell "the book is
+ * over" from "the turn stalled somewhere in the middle" (D2).
+ *
+ * epub.js's own `atEnd` compares `displayed.page` with `totalPages`, and that
+ * arithmetic floors the scroll offset — a page that sits a pixel short of its
+ * boundary reads as the one before it, so `atEnd` can stay false on the true
+ * last page. So this asks the geometry instead, the way `undriftForNextPage`
+ * does: the last section is the one on screen, and the scroll offset is within
+ * a page of the section's end. Where the geometry is unavailable, the section
+ * check alone decides.
+ */
+function isOnLastPageOfBook(rendition: unknown, spine: unknown): boolean {
+  let lastIndex: number | undefined;
+  try {
+    const last = (spine as { last?: () => { index?: number } | undefined } | undefined)?.last?.();
+    lastIndex = typeof last?.index === "number" ? last.index : undefined;
+  } catch {
+    lastIndex = undefined;
+  }
+  if (lastIndex === undefined) return false;
+
+  let shownIndex: number | undefined;
+  try {
+    const here = (
+      rendition as { currentLocation?: () => unknown } | undefined
+    )?.currentLocation?.() as
+      | { start?: { index?: number }; end?: { index?: number } }
+      | undefined;
+    // The LAST visible section, as epub.js's own atEnd rule reads it.
+    shownIndex = here?.end?.index ?? here?.start?.index;
+  } catch {
+    shownIndex = undefined;
+  }
+  if (shownIndex !== lastIndex) return false;
+
+  const manager = (
+    rendition as {
+      manager?: { container?: HTMLElement; layout?: { delta?: number } };
+    } | undefined
+  )?.manager;
+  const container = manager?.container;
+  const delta = manager?.layout?.delta;
+  if (!container || typeof delta !== "number" || !(delta > 0)) return true;
+  const pages = Math.round(container.scrollWidth / delta);
+  const index = Math.round(container.scrollLeft / delta);
+  if (!Number.isFinite(pages) || !Number.isFinite(index)) return true;
+  return index >= pages - 1;
+}
+
+/**
  * A rough 0..1 position from the spine alone, for the window before the
  * locations table exists (DEFECTS.md D7).
  *
@@ -364,8 +448,21 @@ export async function createReader(
   // settling consumes `pending`, so the later duplicates find none.
   // Each call gets its OWN object, so a slow earlier call settling cannot mark
   // a newer navigation as settled.
-  type PendingNav = { cause: "next" | "prev" | "jump"; settled: boolean };
+  //
+  // `reachedEnd` is set on a `next()` that could not move at the end of the
+  // book: the relocation that settles it then reports `atEnd` whatever epub.js
+  // computed, because epub.js's page arithmetic can miss the true last page.
+  type PendingNav = {
+    cause: "next" | "prev" | "jump";
+    settled: boolean;
+    reachedEnd?: boolean;
+  };
   let pending: PendingNav | undefined;
+  // The position an unmoving next() declared to be the end. Relocations at that
+  // same position (scroll-settle duplicates, the locations-ready relocation)
+  // keep reporting `atEnd`, so the end-of-book panel is not closed by a
+  // duplicate that epub.js itself does not flag. Any other position drops it.
+  let forcedEndCfi: string | undefined;
 
   function beginNav(cause: PendingNav["cause"]): PendingNav {
     const nav: PendingNav = { cause, settled: false };
@@ -464,10 +561,21 @@ export async function createReader(
       }
     }
 
+    let atEnd = loc?.atEnd === true;
     let cause: ReaderLocationCause = "other";
     if (!synthetic && pending?.settled) {
       cause = pending.cause;
+      if (pending.reachedEnd) {
+        atEnd = true;
+        forcedEndCfi = cfi;
+      }
       pending = undefined;
+    }
+    if (!atEnd && forcedEndCfi !== undefined) {
+      if (cfi === forcedEndCfi) atEnd = true;
+      else forcedEndCfi = undefined;
+    } else if (atEnd && forcedEndCfi !== undefined && cfi !== forcedEndCfi) {
+      forcedEndCfi = undefined;
     }
 
     emit({
@@ -476,7 +584,7 @@ export async function createReader(
       estimated,
       displayedPage: page,
       totalPages,
-      atEnd: loc?.atEnd === true,
+      atEnd,
       cause,
     });
   }
@@ -592,13 +700,28 @@ export async function createReader(
         });
     },
 
-    async next(): Promise<void> {
+    async next(): Promise<ReaderTurnResult> {
       const nav = beginNav("next");
       let ok = false;
       try {
         undriftForNextPage(rendition);
+        // Measured AFTER the undrift, which can itself nudge the scroll offset.
+        const before = startCfiOf(rendition);
         await rendition?.next();
         ok = true;
+
+        // epub.js resolves a turn it could not make exactly like one it made,
+        // and re-reports the unchanged position. Its own `atEnd` can stay false
+        // on the true last page (see `isOnLastPageOfBook`), so a turn that
+        // goes nowhere in the last section is how the end is recognised.
+        const after = startCfiOf(rendition);
+        const moved = !(before !== undefined && after !== undefined && before === after);
+        if (!moved && isOnLastPageOfBook(rendition, book.spine)) {
+          nav.reachedEnd = true;
+          forcedEndCfi = after;
+          return { moved: false, atEnd: true };
+        }
+        return { moved, atEnd: false };
       } finally {
         endNav(nav, ok);
       }

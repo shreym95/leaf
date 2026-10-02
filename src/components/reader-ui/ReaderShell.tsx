@@ -638,7 +638,9 @@ export function ReaderShell({
   // the one place the end-of-book panel is gated:
   //   - panel open: previous closes it (staying on the last page), next does
   //     nothing, and neither reaches the engine;
-  //   - on the last page: next opens the panel instead of turning.
+  //   - on the last page: next opens the panel instead of turning — either
+  //     because the latest relocation had `atEnd`, or because the engine's own
+  //     `next()` reports it could not move at the end of the book.
   const closeEndPanel = useCallback(
     (restoreFocus: boolean) => {
       if (!endPanelOpenRef.current) return;
@@ -664,8 +666,25 @@ export function ReaderShell({
       if (turnsSinceJump.current > 8) setReturnTo(null);
       turnsSinceSyncOffer.current += 1;
       if (turnsSinceSyncOffer.current > 8) setSyncOffer(null);
-      void (dir === "next" ? controller.next() : controller.prev());
-      },
+      if (dir === "prev") {
+        void controller.prev();
+        return;
+      }
+      // A next the engine could not make because the book is over opens the
+      // panel on THIS tap. epub.js's `atEnd` can stay false on the true last
+      // page, so `atEndRef` alone would leave the reader tapping at nothing.
+      void Promise.resolve(controller.next()).then(
+        (result) => {
+          if (controllerRef.current !== controller) return;
+          if (result?.atEnd === true && !endPanelOpenRef.current) {
+            setEndPanelOpen(true);
+          }
+        },
+        () => {
+          // a rejected turn moved nowhere; nothing to open
+        },
+      );
+    },
     [closeEndPanel, setEndPanelOpen],
   );
 

@@ -377,3 +377,63 @@ describe("end-of-book panel — content and state", () => {
     expect(document.querySelector("time")).not.toBeNull();
   });
 });
+
+// epub.js's `atEnd` can stay false on the true last page. The engine's own
+// next() then reports that it could not move because the book is over, and the
+// FIRST such tap must open the panel — not leave the reader tapping at nothing.
+describe("end-of-book panel — a next the engine could not make", () => {
+  const stalledAtEnd = () =>
+    h.next.mockResolvedValueOnce({ moved: false, atEnd: true } as unknown as undefined);
+
+  it("opens the panel on the first tap, though no relocation ever said atEnd", async () => {
+    renderShell();
+    await opened();
+    await at("next", 0.99, false); // epub.js did not flag the last page
+    stalledAtEnd();
+
+    nextTap();
+
+    expect(await screen.findByRole("region", PANEL)).toBeTruthy();
+    expect(h.next).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays open for the relocation that follows, and that relocation finishes the book", async () => {
+    renderShell();
+    await opened();
+    await at("next", 0.97, false);
+    stalledAtEnd();
+    nextKey();
+    await screen.findByRole("region", PANEL);
+
+    await at("next", 0.97, true); // the engine's relocation for that turn
+
+    expect(panel()).not.toBeNull();
+    await waitFor(() => expect(h.recordFinished).toHaveBeenCalledWith("book-1"));
+  });
+
+  it("a next that moved opens nothing", async () => {
+    renderShell();
+    await opened();
+    await at("next", 0.5, false);
+    h.next.mockResolvedValueOnce({ moved: true, atEnd: false } as unknown as undefined);
+
+    nextTap();
+
+    await waitFor(() => expect(h.next).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(panel()).toBeNull();
+  });
+
+  it("a next that stalled mid-book opens nothing", async () => {
+    renderShell();
+    await opened();
+    await at("next", 0.5, false);
+    h.next.mockResolvedValueOnce({ moved: false, atEnd: false } as unknown as undefined);
+
+    nextTap();
+
+    await waitFor(() => expect(h.next).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(panel()).toBeNull();
+  });
+});
