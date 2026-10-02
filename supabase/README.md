@@ -1,11 +1,11 @@
 # Supabase — Leaf database layer
 
 The canonical schema lives in [`migrations/0001_init.sql`](./migrations/0001_init.sql):
-all five tables (`profiles`, `books`, `reading_state`, `highlights`,
-`reader_settings`; `bookmarks` follows in `0005`), owner-only RLS on every one,
-the signup trigger that seeds
+the core tables (`profiles`, `books`, `reading_state`, `highlights`,
+`reader_settings`), owner-only RLS on every one, the signup trigger that seeds
 `profiles` + `reader_settings`, and the private `epubs` Storage bucket with
-per-user-folder policies.
+per-user-folder policies. `bookmarks` (0005) and `finished_at` on books (0007) are
+applied in later migrations.
 
 ## Run it (once, against a fresh project)
 
@@ -88,12 +88,13 @@ that later marks it "applied" after a hand-run is harmless.
 ### Order dependency
 
 If the project is ever rebuilt from scratch, the migrations must run in
-filename order: `0001` → `0002` → `0003` → `0004` → `0005` → `0006`. `0004`
-alters CHECK constraints created in `0001` and will fail against a database that
-has not run `0001`; `0005` (the `bookmarks` table) references `books` and
+filename order: `0001` → `0002` → `0003` → `0004` → `0005` → `0006` → `0007`.
+`0004` alters CHECK constraints created in `0001` and will fail against a database
+that has not run `0001`; `0005` (the `bookmarks` table) references `books` and
 `auth.users`; `0006` narrows the theme set `0004` widened, and moves any `sepia`
 rows to `day` before it tightens the constraint — order matters inside that file
-too. `supabase db push` against a fresh project handles the ordering itself.
+too; `0007` adds the `finished_at` column and its CHECK constraint. `supabase db push`
+against a fresh project handles the ordering itself.
 
 `0005_bookmarks.sql` is a hand-apply like the others: Dashboard → SQL Editor →
 paste → Run. Its `create table` is not `if not exists` (same as `0001`), so a

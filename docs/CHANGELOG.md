@@ -2,6 +2,67 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — finished books: detection, end panel, Completed Books (Claude, 2026-10-02)
+
+Reaching the end of a book used to do nothing; a finished book stayed pinned as
+"Continue reading" forever.
+
+- **Detection** (`src/reader/completion.ts`). A book is finished when the reader
+  reaches the last page *by turning pages*: epub.js `atEnd` is the trigger and
+  percent ≥ 90% only a sanity check, since `percentageFromCfi` rarely reaches 1.0.
+  Jumps never finish a book; a skip ahead (contents, search, bookmark) from below
+  90% blocks it, and the earliest skip point is remembered. The sync-offer jump and
+  the restore landing are trusted; the return chip deliberately is not. The engine
+  now tags every relocation with `atEnd` and its `cause` (next / prev / jump / other).
+- **Storage.** Migration `0007` adds `books.finished_at` and the CHECK
+  `books_finished_consistent` (status `'finished'` exactly when `finished_at` is
+  set). Writes go through `src/reader/book-status.ts` → the outbox (new
+  `book-status` kind, latest intent wins); the finish write only touches rows with
+  `finished_at is null`, so the first finish date sticks.
+- **One rule.** Finished means `status === 'finished'` everywhere
+  (`src/lib/books/finished.ts`) — no percent rule, so "Mark as unread" works. A
+  not-finished card caps at 99% READ; COMPLETED only when finished.
+- **Library.** "Continue reading" never shows a finished book. Finished books leave
+  the grid for a collapsed "Completed Books · N" line below the shelf
+  (`CompletedBooks.tsx`), text-only rows with the finish date; absent when empty.
+- **End panel** (`EndOfBookPanel.tsx`). Appears only when the reader turns *past*
+  the last page, replacing the page rather than covering prose: "Finished" or "The
+  end", Back to library, Back to the last page, Mark as unread / Mark as finished
+  (the manual override for what the conservative rule misses).
+- The `?debug=1` D2 probe is removed (D2 confirmed on device).
+
+## Fix — offline writes and long offline sessions (Claude, 2026-10-02)
+
+Two auth-js behaviours the offline code had assumed wrongly, both measured in
+`node_modules/@supabase/auth-js`:
+
+- **`getUser()` resolves `{ user: null, error }` offline; it never throws.** So
+  `resolveUserId` and `position.ts`'s flush treated "offline" as "signed out" and
+  dropped bookmark, highlight and position writes instead of queueing them. A
+  retryable fetch error now falls back to the cached identity.
+- **`getSession()` needs the network once the access token expires (~1h).** It
+  resolves `{ session: null, error }` when refresh fails offline, which
+  `enforceOfflineOwner()` read as a sign-out — so about an hour into a flight,
+  opening a book **purged every cached book**. `src/lib/offline/identity.ts` adds an
+  "unverifiable" state (refresh failed retryably, session still stored): no purge,
+  and the owner marker supplies the id. A real sign-out still purges.
+
+## Fix — day `--leaf-rule` clears 3:1 on paper too (Claude, 2026-10-02)
+
+Day `--leaf-rule` measured 2.84:1 on `--leaf-paper` (the library ground); now
+`#867650` (3.46 on page, 3.15 on paper). Asserted in `tokens.test.ts`.
+
+## Fix — opening message, offline page, sync offers (Claude, 2026-09-28 – 10-01)
+
+- **"Opening the book…" no longer overlaps text.** The overlay is opaque
+  (`bg-page`), appears only after 250ms, and stays at least 500ms once shown, so a
+  fast offline open never flashes it over painted prose.
+- **`/offline` forwards on.** A fresh load of `/offline` that has a connection goes
+  to `/library` (signed in) or `/login` (signed out), with a 30s bounce guard.
+- **No spurious "Continue at" offers.** Postgres `real` is float32, so the server
+  copy of your own position read as slightly ahead; the offer now needs ≥0.5% and a
+  different CFI. Only one jump chip shows at a time, each with a dismiss button.
+
 ## Fix — offline reading: sign-out purge destroyed the offline entry point (Claude, 2026-09-27)
 
 Real-device testing found: sign out, go offline, navigate to the app → the

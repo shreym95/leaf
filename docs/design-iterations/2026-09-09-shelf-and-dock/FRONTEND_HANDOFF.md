@@ -32,9 +32,9 @@ To eliminate visual contradictions between resting and opened states, the dock s
 }
 
 /* ==========================================================================
-   Light / Sepia Theme (Warm Fine-Press Laid Paper + Solid Charcoal Dock)
+   Light / Day Theme (Warm Fine-Press Laid Paper + Solid Charcoal Dock)
    ========================================================================== */
-[data-theme="sepia"], [data-theme="day"] {
+[data-theme="day"] {
   /* Canvas Surfaces */
   --leaf-bg-paper: #f2ece0;          /* Surrounding canvas */
   --leaf-bg-page: #f8f4eb;           /* Book card & page canvas */
@@ -602,7 +602,7 @@ The Library view organizes the user's reading collection into two primary sectio
 The Reader interface is designed with editorial precision:
 1. **Strict Single-Page Pagination:** `html, body` and `.page-frame` use `overflow: hidden`. The reading text terminates safely **above the bottom margin safe zone** with zero overlap.
 2. **Zero Live Page Blur:** **Never apply `backdrop-filter: blur(...)` to reading prose or controls.** Opening docks, scrubbing progress, and adjusting font sizes leaves the underlying page text 100% sharp and readable.
-3. **Cohesive Solid Flat Material:** Both the persistent dock and opened split pods share the **exact same flat dark charcoal surface (`#1f1a16`)** in light/sepia mode and **matte black (`#1c1713`)** in dark/night mode.
+3. **Cohesive Solid Flat Material:** Both the persistent dock and opened split pods share the **exact same flat dark charcoal surface (`#1f1a16`)** in day mode and **matte black (`#1c1713`)** in night mode.
 4. **Dock System States:**
    - **State 1: Persistent Resting Dock (3+1 Horizontal Elements):** Chapter badge, flat hairline progress bar, percent badge, and 2-slider adjustment vector settings button.
    - **State 2: Expanded Two-Tier Split Pod Dock:** Tier 1 progress island + Tier 2 split pods (Theme Slider, Font Stepper, Table of Contents, Close).
@@ -1365,7 +1365,7 @@ const LeafReader = (() => {
     isNight = !isNight;
     themeSwitch.classList.toggle('night-active', isNight);
     themeSwitch.setAttribute('aria-checked', isNight ? 'true' : 'false');
-    document.documentElement.setAttribute('data-theme', isNight ? 'night' : 'sepia');
+    document.documentElement.setAttribute('data-theme', isNight ? 'night' : 'day');
   }
 
   // --- 3. Live Font Stepper (Zero Blur, Zero DOM Reload) ---

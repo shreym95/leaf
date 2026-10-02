@@ -1,7 +1,7 @@
 # Leaf
 
 A calm web e-reader for public-domain classics and your own DRM-free EPUBs.
-Real epub.js pagination, fine-press typography, Day/Sepia/Night themes, synced library.
+Real epub.js pagination, fine-press typography, Day/Night themes, synced library.
 
 All project documentation lives in [`docs/`](./docs) — see
 [`docs/README.md`](./docs/README.md) for the map. Most-used:
