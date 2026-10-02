@@ -45,6 +45,12 @@ export interface Book {
   /** When the reader hid this from the shelf (0003). Null = visible. */
   archived_at: string | null;
   status: BookStatus;
+  /**
+   * When the reader reached the end (0007). Null = not finished. Always set
+   * together with `status = 'finished'` — the DB enforces it
+   * (`books_finished_consistent`), so a write sets both or neither.
+   */
+  finished_at: string | null;
   added_at: string;
 }
 

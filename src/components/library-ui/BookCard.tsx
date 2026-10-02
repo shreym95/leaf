@@ -44,11 +44,13 @@ export function BookCard({ book }: BookCardProps) {
       ? null
       : Math.min(100, Math.max(0, Math.round(book.percent * 100)));
   const stateLabel =
-    pct == null || pct === 0
-      ? "UNREAD"
-      : pct >= 100
-        ? "COMPLETED"
-        : `${pct}% READ`;
+    book.status === "finished"
+      ? "COMPLETED"
+      : pct == null || pct === 0
+        ? "UNREAD"
+        : pct >= 100
+          ? "COMPLETED"
+          : `${pct}% READ`;
 
   return (
     <article className="relative h-full hover:z-10">

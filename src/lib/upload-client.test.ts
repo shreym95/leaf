@@ -25,6 +25,7 @@ const BOOK: Book = {
   cover_url: null,
   archived_at: null,
   status: "reading",
+  finished_at: null,
   added_at: "2026-08-29T00:00:00Z",
 };
 

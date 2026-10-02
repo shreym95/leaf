@@ -90,6 +90,7 @@ function toLibraryBook(spec: DemoSpec, index: number): LibraryBook {
       : new Date(NOW - spec.lastReadDaysAgo * DAY_MS).toISOString();
   // Never-opened books fall back to newest-added first — space them a day apart.
   const addedAt = new Date(NOW - (index + 1) * DAY_MS).toISOString();
+  const finished = spec.percent != null && spec.percent >= 1;
   const book: Book = {
     id: spec.id,
     user_id: DEMO_USER_ID,
@@ -101,7 +102,9 @@ function toLibraryBook(spec: DemoSpec, index: number): LibraryBook {
     cover_path: spec.cover ? `demo/covers/${spec.cover}` : null,
     cover_url: null,
     archived_at: spec.archived ? new Date(NOW - 90 * DAY_MS).toISOString() : null,
-    status: spec.percent != null && spec.percent >= 1 ? "finished" : "reading",
+    status: finished ? "finished" : "reading",
+    // `books_finished_consistent` (0007): finished exactly when finished_at is set.
+    finished_at: finished ? (lastReadAt ?? new Date(NOW).toISOString()) : null,
     added_at: addedAt,
   };
   return {

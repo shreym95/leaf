@@ -17,6 +17,7 @@ function makeBook(overrides: Partial<LibraryBook> = {}): LibraryBook {
     archived_at: null,
     added_at: "2026-01-01T00:00:00Z",
     status: "reading",
+    finished_at: null,
     percent: 0.74,
     lastReadAt: "2026-09-01T00:00:00Z",
     coverUrl: null,

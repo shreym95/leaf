@@ -20,6 +20,7 @@ function makeBook(overrides: Partial<LibraryBook> = {}): LibraryBook {
     archived_at: null,
     added_at: "2026-01-01T00:00:00Z",
     status: "reading",
+    finished_at: null,
     percent: null,
     lastReadAt: null,
     coverUrl: null,
@@ -63,6 +64,21 @@ describe("BookCard", () => {
 
   it("labels a finished book COMPLETED", () => {
     render(<BookCard book={makeBook({ percent: 1 })} />);
+    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
+  });
+
+  it("labels a book marked finished COMPLETED even when the saved position is short of the end", () => {
+    // Back matter keeps `percent` below 100 on a book that really was finished;
+    // the recorded status, not the position, is what the shelf trusts.
+    render(
+      <BookCard
+        book={makeBook({
+          status: "finished",
+          finished_at: "2026-10-02T10:00:00Z",
+          percent: 0.96,
+        })}
+      />,
+    );
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
