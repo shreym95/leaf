@@ -4,7 +4,8 @@ Things deliberately deferred. Not bugs — decisions to revisit, with the eviden
 that prompted them. See `SPEC.md` §9 for the milestone plan.
 
 `REVISED_PLAN.md` §7 reconciles this list with the next design phase: the **shelf
-redesign** and **highlight creation** are scheduled there (Phases 1 and 2);
+redesign** is scheduled there (Phase 1; **highlight creation**, Phase 2, has since been
+dropped — see the end of this file);
 **ratings**, **custom domain**, **hairline contrast**, **privacy email** and the
 **hand-applied migrations** are not, and stay open here.
 
@@ -67,33 +68,6 @@ forgotten.
 `/privacy` still says `[your contact email]`. Low priority (founder's call) but
 it is the last thing that would embarrass a real launch.
 
-### Highlight creation — currently DISABLED, needs a touch-first design
-
-**Observed (founder, M4):** intrusive, didn't work properly, and would not go
-away on its own. Removed rather than left in — see CHANGELOG.
-
-The popover opened on *any* text selection, sat over the page, and had no
-dismissal path except picking a colour or pressing `Esc` (which a phone does not
-have). On touch, where selection is easy to trigger by accident, that made the
-reader feel broken.
-
-**Still working, untouched:** existing highlights render in the book, and the
-notes panel reads, annotates, jumps to and deletes them. Only *creating* one from
-a selection is gone. The whole data path (`src/reader/highlights.ts`,
-`highlights` table, RLS, CFI round-trip) is intact and tested — this is a UI
-problem, not a data one.
-
-**Interaction decided (founder, 2026-08-31)** — see `REVISED_PLAN.md` §4C:
-highlighting is an **explicit mode**, off by default, entered from a reader top-bar
-control. Off, nothing listens to selection at all, so copying a word or looking up
-its meaning behaves natively — that was the actual complaint, not the popover's
-looks. On, a selection highlights in the active colour and a bottom ribbon offers
-the four colours and a note. Long-press was rejected: on touch it *is* the native
-selection gesture. `-webkit-touch-callout` is suppressed only while the mode is on.
-
-Re-enable point is marked in `ReaderShell` where `controller.onSelected(...)`
-was wired.
-
 ### `--leaf-rule` hairline contrast
 
 The hairline rule sits at roughly 1.5:1 against its background — deliberate (it is
@@ -135,3 +109,7 @@ already set; the domain line is the part only a custom domain fixes.
 
 Steps 1–2 alone give a branded app URL; step 3 is what changes the Google
 screen.
+
+## Dropped
+
+- Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
