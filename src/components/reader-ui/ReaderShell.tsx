@@ -663,8 +663,9 @@ export function ReaderShell({
     const back = returnTo;
     if (!back) return;
     setReturnTo(null);
-    // Going back to where the reader was is not a skip ahead.
-    completionRef.current?.markTrusted();
+    // Deliberately NOT vouched for: "back to" may be a place the reader only
+    // reached by skipping ahead. Returning to genuine ground is recognised by
+    // the completion rule's own return margin.
     void controllerRef.current?.goTo(back.cfi);
   }, [returnTo]);
 

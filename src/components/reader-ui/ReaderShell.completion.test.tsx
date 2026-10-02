@@ -253,11 +253,10 @@ describe("ReaderShell — which jumps are vouched for", () => {
     expect(h.recordFinished).toHaveBeenCalledTimes(1);
   });
 
-  it("taking the way back is vouched for: returning clears a skip even to a spot short of where it began", async () => {
+  it("taking the way back to genuine ground clears a skip", async () => {
     // furthest 0.30 -> contents jump to 0.34 (not a skip) -> contents jump to
-    // 0.93 (a skip, from 0.30) -> the chip returns to 0.34, which is not within
-    // the return margin of 0.30 and so only counts because the return is vouched
-    // for.
+    // 0.93 (a skip, from 0.30) -> the chip returns to 0.34, within the return
+    // margin of 0.30, so the skip is cleared without the return being trusted.
     h.restore.mockResolvedValue(false);
     const user = userEvent.setup();
     renderShell();
@@ -277,5 +276,27 @@ describe("ReaderShell — which jumps are vouched for", () => {
     await at("next", 0.99, true);
 
     expect(h.recordFinished).toHaveBeenCalledTimes(1);
+  });
+
+  it("taking the way back to a place reached by skipping does NOT finish the book", async () => {
+    // 30% -> contents jump to 93% (skip) -> contents jump to 50% -> the chip
+    // offers "back to" 93%. Returning there must not launder the skip.
+    h.restore.mockResolvedValue(false);
+    const user = userEvent.setup();
+    renderShell();
+    await opened();
+    await at("next", 0.3);
+
+    await jumpFromContents(user, "Chapter 9");
+    await at("jump", 0.93);
+    await jumpFromContents(user, "Chapter 2");
+    await at("jump", 0.5);
+
+    await user.click(await screen.findByRole("button", { name: /^Return to/ }));
+    expect(h.goTo).toHaveBeenLastCalledWith("cfi@0.93");
+    await at("jump", 0.93);
+    await at("next", 0.99, true);
+
+    expect(h.recordFinished).not.toHaveBeenCalled();
   });
 });

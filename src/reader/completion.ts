@@ -41,11 +41,13 @@ export const SKIP_AHEAD_MARGIN = 0.05;
 
 /**
  * A jump back to within this of where the reader skipped from counts as
- * "returned to where they were", clearing the skip. Narrower than the skip
- * margin on purpose: coming back should land at (not merely near) the point
- * they left, via the return chip or the same chapter's contents entry.
+ * "returned to where they were", clearing the skip. The same width as the skip
+ * margin, deliberately: a landing that close to the skip point would not have
+ * counted as a skip ahead of it in the first place. This is what lets the
+ * return chip work WITHOUT being trusted — it brings a reader back to genuine
+ * ground, which this margin recognises, and nowhere else.
  */
-export const RETURN_MARGIN = 0.02;
+export const RETURN_MARGIN = SKIP_AHEAD_MARGIN;
 
 export interface CompletionTracker {
   /**
@@ -107,7 +109,11 @@ export function createCompletionTracker(opts: {
             skippedFrom = undefined;
             trusted = false;
           } else if (percent > furthest + SKIP_AHEAD_MARGIN) {
-            skippedFrom = furthest;
+            // Keep the EARLIEST skip point. Paging on after a skip raises
+            // `furthest`, so a second skip measured from there would forget
+            // the unread stretch behind the first one.
+            skippedFrom =
+              skippedFrom === undefined ? furthest : Math.min(skippedFrom, furthest);
           } else if (
             skippedFrom !== undefined &&
             percent <= skippedFrom + RETURN_MARGIN

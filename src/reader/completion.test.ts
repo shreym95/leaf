@@ -270,3 +270,17 @@ describe("completion — trusted jumps", () => {
     expect(onFinished).not.toHaveBeenCalled();
   });
 });
+
+describe("completion — repeated skips", () => {
+  it("remembers the earliest skip point, not one raised by paging after a skip", () => {
+    // 30% -> skip to 91% -> page to 92% (furthest rises) -> skip to 98%. The
+    // second skip measured from 92% alone would forget 30–91% was never read.
+    const t = make();
+    t.arm(0.3);
+    t.observe(loc("jump", 0.91));
+    t.observe(loc("next", 0.92));
+    t.observe(loc("jump", 0.98));
+    t.observe(loc("next", 0.99, true));
+    expect(onFinished).not.toHaveBeenCalled();
+  });
+});
