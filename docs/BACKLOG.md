@@ -4,9 +4,9 @@ Things deliberately deferred. Not bugs — decisions to revisit, with the eviden
 that prompted them. See `SPEC.md` §9 for the milestone plan.
 
 `REVISED_PLAN.md` §7 reconciles this list with the next design phase: the **shelf
-redesign** is scheduled there (Phase 1; **highlight creation**, Phase 2, has since been
-dropped — see the end of this file);
-**ratings**, **hairline contrast**, **privacy email** and the
+redesign** was Phase 1 and is done; **highlight creation**, Phase 2, has since been
+dropped (see the end of this file);
+**ratings**, **privacy email** and the
 **hand-applied migrations** are not, and stay open here.
 
 ## Design — after M4
@@ -47,11 +47,10 @@ a cold start or a poor connection, which is exactly when the app used to look
 dead. `useLinkStatus` was considered and skipped: Next's own docs prefer
 route-level `loading.js`, which is what we now have everywhere.
 
-### Library shelf redesign
+### ~~Library shelf redesign~~ — done (design iteration 1)
 
-Part of the UI overhaul, not a standalone fix (founder's call). The shelf's
-*data* problems are handled separately in M5/M6 — progress, sort order and real
-cover art — so the redesign inherits a shelf with something worth showing.
+Delivered by design iteration 1: the "Continue reading" hero (`HeroCard.tsx`), the
+no-box shelf card (`BookCard.tsx`) and the shelf grid (`Shelf.tsx`).
 
 ### ~~Metadata enrichment — covers~~ — done (M6)
 
@@ -68,12 +67,11 @@ forgotten.
 `/privacy` still says `[your contact email]`. Low priority (founder's call) but
 it is the last thing that would embarrass a real launch.
 
-### `--leaf-rule` hairline contrast
+### ~~`--leaf-rule` hairline contrast~~ — done (2026-10-02)
 
-The hairline rule sits at roughly 1.5:1 against its background — deliberate (it is
-a hairline, not a border), but arguably short of WCAG 1.4.11 for a non-text
-boundary. Worth fixing during the next pass over `tokens.css` rather than opening
-that file twice.
+`--leaf-rule` now clears 3:1 on both grounds in both themes (day `#867650`: 3.46 on
+page, 3.15 on paper; night 3.09 / 3.33), asserted in `tokens.test.ts`.
+`--leaf-rule-soft` stays decorative only (cover outlines) and is deliberately lighter.
 
 ## Infrastructure — after M4
 
