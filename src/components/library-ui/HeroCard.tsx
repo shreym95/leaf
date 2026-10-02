@@ -42,7 +42,7 @@ export interface HeroCardProps {
 /**
  * Split the library into its hero and the books that stay on the grid.
  *
- * The hero is the single book with the most recent `lastReadAt`. `listBooks`
+ * The hero is the unfinished book with the most recent `lastReadAt`. `listBooks`
  * already returns the shelf most-recently-read first, but the hero is picked
  * explicitly here so it can't drift if that ordering ever changes. The hero is
  * removed from `shelf` so it never appears twice.
@@ -50,6 +50,12 @@ export interface HeroCardProps {
  * `enabled: false` (the `?hidden=1` view) returns no hero and the books
  * untouched. When no book has ever been opened there is no hero either — the
  * shelf renders grid-only.
+ *
+ * A finished book is never the hero: "Continue reading" over a book you have
+ * finished is wrong. Finished means `status === 'finished'`, or progress that
+ * rounds to 100% — the same rule that makes the shelf card say COMPLETED, so
+ * the spotlight never offers a book its own card calls done. If every opened
+ * book is finished there is no hero, and the shelf renders grid-only.
  */
 export function splitHeroBook(
   books: LibraryBook[],
@@ -59,7 +65,7 @@ export function splitHeroBook(
 
   let picked: LibraryBook | null = null;
   for (const book of books) {
-    if (!book.lastReadAt) continue;
+    if (!book.lastReadAt || isFinished(book)) continue;
     if (picked === null || book.lastReadAt > (picked.lastReadAt ?? "")) {
       picked = book;
     }
@@ -68,6 +74,11 @@ export function splitHeroBook(
   if (picked === null) return { hero: null, shelf: books };
   const hero = picked;
   return { hero, shelf: books.filter((b) => b.id !== hero.id) };
+}
+
+function isFinished(book: LibraryBook): boolean {
+  if (book.status === "finished") return true;
+  return book.percent != null && Math.round(book.percent * 100) >= 100;
 }
 
 export function HeroCard({ book }: HeroCardProps) {

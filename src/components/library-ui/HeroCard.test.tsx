@@ -71,6 +71,33 @@ describe("splitHeroBook", () => {
     ];
     expect(splitHeroBook(books).hero?.id).toBe("zzz");
   });
+
+  it("skips a finished book for the next most recent unfinished one", () => {
+    const books = [
+      makeBook({ id: "done", status: "finished", lastReadAt: "2026-09-09T00:00:00Z" }),
+      makeBook({ id: "full", percent: 0.996, lastReadAt: "2026-09-08T00:00:00Z" }),
+      makeBook({ id: "open", percent: 0.4, lastReadAt: "2026-09-01T00:00:00Z" }),
+    ];
+    const { hero, shelf } = splitHeroBook(books);
+    expect(hero?.id).toBe("open");
+    expect(shelf.map((x) => x.id)).toEqual(["done", "full"]);
+  });
+
+  it("renders no hero when every opened book is finished", () => {
+    const books = [
+      makeBook({ id: "a", status: "finished", lastReadAt: "2026-09-01T00:00:00Z" }),
+      makeBook({ id: "b", percent: 1, lastReadAt: "2026-09-02T00:00:00Z" }),
+      makeBook({ id: "c", percent: null, lastReadAt: null }),
+    ];
+    const { hero, shelf } = splitHeroBook(books);
+    expect(hero).toBeNull();
+    expect(shelf).toEqual(books);
+  });
+
+  it("keeps a book at 99% as the hero", () => {
+    const books = [makeBook({ id: "nearly", percent: 0.99, lastReadAt: "2026-09-01T00:00:00Z" })];
+    expect(splitHeroBook(books).hero?.id).toBe("nearly");
+  });
 });
 
 describe("HeroCard", () => {
