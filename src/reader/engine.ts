@@ -14,18 +14,9 @@
 
 import type { Book, Rendition } from "epubjs";
 import type { ThemeName } from "@/lib/types";
-import { createDebugProbe, type ReaderDebugProbe } from "./debug";
 import { chapterLabelForHref, flattenToc } from "./navigation";
 export type { ReaderTocEntry } from "./navigation";
 import type { ReaderTocEntry } from "./navigation";
-
-// Re-exported so the reader chrome imports one module, not two.
-export type {
-  ReaderDebugSnapshot,
-  ReaderDebugTurn,
-  ReaderDebugImages,
-} from "./debug";
-import type { ReaderDebugSnapshot } from "./debug";
 
 // --- Shared interface (Agents B & C code against these EXACT shapes) --------
 
@@ -77,9 +68,8 @@ export type ReaderLocationCause = "next" | "prev" | "jump" | "other";
 
 export interface ReaderController {
   attach(container: HTMLElement): Promise<void>; // renderTo + display + locations.generate
-  /** `source` is debug-only bookkeeping (which control was used); ignored otherwise. */
-  next(source?: string): Promise<void>;
-  prev(source?: string): Promise<void>;
+  next(): Promise<void>;
+  prev(): Promise<void>;
   goTo(target: string): Promise<void>; // CFI or spine href
   /** Best-effort chapter title for the current position, from the EPUB's own
    *  table of contents. Denormalised onto a bookmark at save time (Phase 2) so
@@ -114,13 +104,6 @@ export interface ReaderController {
   /** Clear the current text selection in the book iframe. */
   clearSelection(): void;
   readonly sectionCount: number;
-  /** Live pagination/geometry/image-timing readout. Present ONLY when
-   *  `createReader` was asked for `{ debug: true }` (behind `?debug=1`);
-   *  returns null otherwise. OBSERVE-ONLY — see `./debug`. */
-  debugSnapshot?(): ReaderDebugSnapshot | null;
-  /** Subscribe to debug snapshots (relocation, turn, resize, late image load).
-   *  Returns an unsubscribe fn, or null when debug is off. */
-  onDebug?(cb: (snap: ReaderDebugSnapshot) => void): (() => void) | null;
   destroy(): void;
 }
 
@@ -327,9 +310,6 @@ function viewportWidth(container: HTMLElement | undefined): number {
 // --- Factory -------------------------------------------------------------
 
 export interface ReaderEngineOptions {
-  /** Build the debug probe (`./debug`). Off by default — a normal reader never
-   *  pays for it, and nothing about pagination changes when it is on. */
-  debug?: boolean;
   /**
    * The library row id for this book. Used only as the locations-cache key
    * (DEFECTS.md D7). Omitted — as in a test or a one-off render — the reader
@@ -367,7 +347,6 @@ export async function createReader(
   let rendition: Rendition | undefined;
   let containerEl: HTMLElement | undefined;
   let contentPipeline: ReturnType<typeof registerContentPipeline> | undefined;
-  let debugProbe: ReaderDebugProbe | undefined;
   let locationsReady = false;
   let currentSpread: "always" | "none" = "none";
   let relayoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -553,22 +532,6 @@ export async function createReader(
         () => currentSettings,
       );
 
-      // Debug instrumentation, opt-in only. Registered AFTER the content
-      // pipeline so it observes the normalised DOM, and BEFORE the first
-      // display so chapter one's image timing is captured too.
-      if (options?.debug) {
-        try {
-          debugProbe = createDebugProbe({
-            rendition,
-            // The engine's own measurement — literally what `relayout()` passes.
-            measure: () => contentBox(containerEl),
-            getSpread: () => currentSpread,
-          });
-        } catch {
-          // instrumentation must never stop the book from opening
-        }
-      }
-
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
 
@@ -629,10 +592,7 @@ export async function createReader(
         });
     },
 
-    async next(source?: string): Promise<void> {
-      // Logged BEFORE the turn so the rolling log keeps the state a skip
-      // started from (DEFECTS.md D2).
-      debugProbe?.logTurn("next", source);
+    async next(): Promise<void> {
       const nav = beginNav("next");
       let ok = false;
       try {
@@ -644,8 +604,7 @@ export async function createReader(
       }
     },
 
-    async prev(source?: string): Promise<void> {
-      debugProbe?.logTurn("prev", source);
+    async prev(): Promise<void> {
       const from = sectionIndexOf(rendition);
       const nav = beginNav("prev");
       let ok = false;
@@ -835,18 +794,6 @@ export async function createReader(
       return sectionCount;
     },
 
-    debugSnapshot(): ReaderDebugSnapshot | null {
-      try {
-        return debugProbe?.snapshot() ?? null;
-      } catch {
-        return null;
-      }
-    },
-
-    onDebug(cb: (snap: ReaderDebugSnapshot) => void): (() => void) | null {
-      return debugProbe?.onChange(cb) ?? null;
-    },
-
     destroy(): void {
       if (relayoutTimer) {
         clearTimeout(relayoutTimer);
@@ -858,12 +805,6 @@ export async function createReader(
       }
       subscribers.clear();
       selectionSubscribers.clear();
-      try {
-        debugProbe?.destroy();
-      } catch {
-        // ignore probe teardown errors
-      }
-      debugProbe = undefined;
       try {
         contentPipeline?.destroy();
       } catch {
