@@ -197,4 +197,17 @@ describe("theme palettes", () => {
       expect(contrast(rule!, page!), `${id} rule/page`).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it("meets WCAG 1.4.11 (3:1) for --leaf-rule against --leaf-paper in every theme", () => {
+    // The library, settings and reader-surround sit on `--leaf-paper` (body
+    // background), not `--leaf-page`, so the hero hairline and the progress
+    // track are measured against paper. Day's rule was 2.84:1 there.
+    for (const id of THEME_IDS) {
+      const block = themeBlock(id);
+      const rule = decl(block, "rule");
+      const paper = decl(block, "paper");
+      expect(paper, `${id} --leaf-paper`).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(contrast(rule!, paper!), `${id} rule/paper`).toBeGreaterThanOrEqual(3);
+    }
+  });
 });

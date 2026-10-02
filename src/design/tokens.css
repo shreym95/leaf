@@ -332,9 +332,10 @@
   /* ~5.0:1 on --leaf-page — raised from the plan's #7a6b57, which failed AA. */
   --leaf-faint: #6a5c48;
   --leaf-accent: #9e472a;
-  /* ~3.1:1 on --leaf-page, meeting WCAG 1.4.11 for a non-text boundary; still a
-     single hairline, not a border. */
-  --leaf-rule: #8f7d55;
+  /* 3.46:1 on --leaf-page and 3.15:1 on --leaf-paper (the body ground the
+     library sits on), meeting WCAG 1.4.11 for a non-text boundary on both; still
+     a single hairline, not a border. Was #8f7d55: 3.12 / 2.84, short on paper. */
+  --leaf-rule: #867650;
   /* Decorative container edge — NOT a functional boundary. `--leaf-rule` is
      darkened to meet 1.4.11 because that governs boundaries carrying meaning (a
      separator, a field edge). A cover's outline carries none: it is there so the

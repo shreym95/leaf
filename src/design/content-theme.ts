@@ -41,7 +41,7 @@ const PALETTES: Record<ThemeId, ContentPalette> = {
     inkMid: "#5e503f",
     faint: "#6a5c48",
     accent: "#9e472a",
-    rule: "#8f7d55",
+    rule: "#867650",
     selection: "rgba(158, 71, 42, 0.22)",
   },
   night: {
