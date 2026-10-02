@@ -21,105 +21,68 @@
 // dependency on how the previous session ended.
 //
 // ---------------------------------------------------------------------------
-// Why `getSession()`, never `getUser()`
+// Why `getSession()`, never `getUser()` — and what it does NOT guarantee
 // ---------------------------------------------------------------------------
 // `getUser()` re-validates against the Supabase auth server — a network call
 // that, by construction, cannot succeed in the exact scenario this guard
 // exists for (the device is offline, reading a cached book). `getSession()`
-// reads the session already persisted locally by the browser client
+// reads the session persisted locally by the browser client
 // (`src/lib/supabase/client.ts`, a `@supabase/ssr` client backed by cookies
-// so the server can read it too) and resolves from that alone — no network,
-// works offline, and is exactly "who does this browser profile currently
-// believe is signed in" rather than "is that still valid right now."
+// so the server can read it too).
+//
+// It needs no network ONLY while the stored access token is unexpired
+// (~1 hour). After that auth-js tries to refresh, the refresh fails offline
+// with an `AuthRetryableFetchError`, the stored session is deliberately kept,
+// and `getSession()` RESOLVES `{ session: null, error }`. "No session" is
+// therefore ambiguous: `./identity.ts` tells a real sign-out apart from this
+// "unverifiable" state (and explains why the owner marker is a safe fallback
+// for it). This guard must NOT purge when unverifiable — that would delete
+// every cached book an hour into a flight.
 //
 // ---------------------------------------------------------------------------
 // The marker
 // ---------------------------------------------------------------------------
-// Conventions follow `src/reader/locations-cache.ts`: `localStorage`
-// (synchronous, survives a full browser close, no migration needed for a
-// single small value), a versioned key prefix, a storage guard that survives
-// SSR *and* blocked storage, reads that return `undefined` rather than
-// throwing, and best-effort writes.
-//
-// Everything here is best-effort in the same sense as the rest of the offline
-// stack: a miss, a blocked/unavailable `localStorage`, or a Supabase client
-// that isn't configured must all degrade to the SAFEST assumption ("nobody is
-// signed in locally") rather than throw into a layout render or leave the
-// previous device state in place.
+// The marker's read/write helpers live in `./identity.ts` (shared with
+// `outbox.ts`, which cannot import this module without a cycle through
+// `./purge`). Everything here is best-effort in the same sense as the rest of
+// the offline stack: a miss, a blocked/unavailable `localStorage`, or a
+// Supabase client that isn't configured must all degrade to the SAFEST
+// assumption ("nobody is signed in locally") rather than throw into a layout
+// render or leave the previous device state in place.
 
 import { createClient } from "@/lib/supabase/client";
+import {
+  clearOwnerMarker,
+  identityUserId,
+  readLocalIdentity,
+  readOwnerMarker,
+  writeOwnerMarker,
+  type LocalIdentity,
+} from "./identity";
 import { purgeAllOfflineData } from "./purge";
 
-/** Bumped when the stored shape changes, which orphans every older entry. */
-const SCHEMA = 1;
-const MARKER_KEY = `leaf:offline-owner:v${SCHEMA}`;
-
-function storage(): Storage | undefined {
+/** The device's identity, never throwing: no window (SSR) or a client that
+ * can't be built (unconfigured / demo mode, `src/lib/demo/flag.ts` —
+ * `createClient()` throws `SupabaseNotConfiguredError`) both read as
+ * signed-out. */
+async function currentIdentity(): Promise<LocalIdentity> {
   try {
-    // Absent during SSR and in a jsdom test without a storage shim; throws
-    // outright in a browser configured to block site data.
-    return typeof window === "undefined" ? undefined : window.localStorage;
+    if (typeof window === "undefined") return { kind: "signed-out" };
+    return await readLocalIdentity(createClient());
   } catch {
-    return undefined;
-  }
-}
-
-/** The user id this device's offline caches were last claimed for, or
- * `undefined` if there is no marker (never cached anything yet, or storage
- * is unavailable). */
-function readOwnerMarker(): string | undefined {
-  const store = storage();
-  if (!store) return undefined;
-  try {
-    return store.getItem(MARKER_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Claim the offline caches for `userId`. Silent on failure — this is a
- * nicety, not state; the worst case of a failed write is re-running the
- * comparison (and possibly re-purging) on the next boot. */
-function writeOwnerMarker(userId: string): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    store.setItem(MARKER_KEY, userId);
-  } catch {
-    // Storage is unusable (quota, blocked). Nothing more we can do here.
-  }
-}
-
-function clearOwnerMarker(): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    store.removeItem(MARKER_KEY);
-  } catch {
-    // Best-effort, same as writeOwnerMarker.
+    return { kind: "signed-out" };
   }
 }
 
 /**
- * The current local session's user id, with NO network round trip — see the
- * module header for why `getSession()` and not `getUser()`. Returns `null`
- * when there is no stored session, when Supabase isn't configured (demo mode,
- * `src/lib/demo/flag.ts` — `createClient()` throws `SupabaseNotConfiguredError`
- * in that case, caught below same as any other failure), or when reading it
- * throws for any other reason. Never throws.
+ * The user id this device is signed in as, with no network round trip — see
+ * `./identity.ts`. The session's id when signed in; the owner marker's id
+ * (or `null` if none) when the session is unverifiable (access token expired
+ * while offline); `null` when signed out, when Supabase isn't configured, or
+ * when reading it throws. Never throws.
  */
 export async function getLocalSessionUserId(): Promise<string | null> {
-  try {
-    if (typeof window === "undefined") return null;
-
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    return session?.user?.id ?? null;
-  } catch {
-    return null;
-  }
+  return identityUserId(await currentIdentity());
 }
 
 /**
@@ -129,10 +92,14 @@ export async function getLocalSessionUserId(): Promise<string | null> {
  * service worker's caches for display (see `OfflineShelf`, which also calls
  * this directly rather than relying solely on timing).
  *
- * Four cases:
- *   - no local session            → purge everything, clear the marker. The
- *     device has no one to attribute the cache to, which is exactly the
- *     "session ended without signing out" state this guard exists for.
+ * Five cases:
+ *   - signed out (no stored session, or a non-retryable auth failure) →
+ *     purge everything, clear the marker. The device has no one to attribute
+ *     the cache to, which is exactly the "session ended without signing out"
+ *     state this guard exists for.
+ *   - unverifiable (stored session exists but its token can't be refreshed
+ *     offline — see `./identity.ts`) → do NOTHING: no purge, no claim, marker
+ *     untouched. We cannot tell who is signed in, but nothing says it changed.
  *   - session, no marker yet      → claim it, purge nothing. The ordinary
  *     first run for an existing signed-in user (or the first boot after this
  *     guard shipped) — there is nothing to distrust yet.
@@ -149,14 +116,17 @@ export async function getLocalSessionUserId(): Promise<string | null> {
  */
 export async function enforceOfflineOwner(): Promise<void> {
   try {
-    const userId = await getLocalSessionUserId();
+    const identity = await currentIdentity();
 
-    if (!userId) {
+    if (identity.kind === "unverifiable") return;
+
+    if (identity.kind === "signed-out") {
       await purgeAllOfflineData();
       clearOwnerMarker();
       return;
     }
 
+    const { userId } = identity;
     const marker = readOwnerMarker();
 
     if (marker === undefined) {

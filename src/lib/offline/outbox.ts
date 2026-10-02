@@ -28,6 +28,7 @@
 
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { identityUserId, readLocalIdentity } from "./identity";
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
 import { setBookFinished } from "@/lib/db/book-status";
 import { createBookmark, deleteBookmark } from "@/lib/db/bookmarks";
@@ -206,11 +207,17 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
 // Offline-tolerant identity resolution.
 //
 // `auth.getUser()` revalidates against the Auth server — exactly the network
-// round trip that fails offline. `auth.getSession()` reads the already-
-// verified session back out of local storage with no network call, so it is
-// the only way to learn *who* a write belongs to once `getUser()` has failed
-// for being offline. It is used ONLY to address a queued write; the online
-// path is untouched and keeps using `getUser()` first.
+// round trip that fails offline. `auth.getSession()` reads the stored session
+// back out of local storage, so it is how we learn *who* a write belongs to
+// once `getUser()` has failed for being offline. It is used ONLY to address a
+// queued write; the online path is untouched and keeps using `getUser()` first.
+//
+// Caveat: `getSession()` needs no network only while the access token is
+// unexpired (~1h). After that it tries a refresh, which fails offline, and
+// RESOLVES `{ session: null, error: AuthRetryableFetchError }` while the
+// stored session survives. `./identity.ts` classifies that as "unverifiable"
+// and falls back to the owner marker (the last verified user id on this
+// device) — see its header for why that is safe (RLS still guards the replay).
 // ---------------------------------------------------------------------------
 
 interface MinimalAuthClient {
@@ -221,6 +228,7 @@ interface MinimalAuthClient {
     }>;
     getSession: () => Promise<{
       data: { session: { user: { id: string } } | null };
+      error?: unknown;
     }>;
   };
 }
@@ -257,20 +265,15 @@ export async function resolveUserId(
   }
 }
 
-/** The locally cached session's user id, with no network round trip. Used
+/** The locally cached identity's user id, with no network round trip. Used
  *  directly by the page-hide flush (D8), where even attempting the network
- *  is the thing we're trying to avoid. */
+ *  is the thing we're trying to avoid. The session's id when signed in; the
+ *  owner marker's id when the session is unverifiable (access token expired
+ *  while offline); null when signed out. Never throws. */
 export async function getCachedUserId(
   supabase: MinimalAuthClient,
 ): Promise<string | null> {
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    return session?.user?.id ?? null;
-  } catch {
-    return null;
-  }
+  return identityUserId(await readLocalIdentity(supabase));
 }
 
 // ---------------------------------------------------------------------------
