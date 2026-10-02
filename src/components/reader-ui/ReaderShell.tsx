@@ -12,7 +12,7 @@ import {
   createCompletionTracker,
   type CompletionTracker,
 } from "@/reader/completion";
-import { recordFinished } from "@/reader/book-status";
+import { recordFinished, recordUnread } from "@/reader/book-status";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import {
   useReaderSettings,
@@ -39,6 +39,7 @@ import { enforceOfflineOwner } from "@/lib/offline/owner";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
+import { EndOfBookPanel } from "./EndOfBookPanel";
 import { ReturnChip } from "./ReturnChip";
 import { SyncOfferChip } from "./SyncOfferChip";
 import { OfflineIndicator } from "./OfflineIndicator";
@@ -172,6 +173,27 @@ export function ReaderShell({
   const completionRef = useRef<CompletionTracker | null>(null);
 
   const [load, setLoad] = useState<LoadState>({ state: "loading" });
+
+  // ── End-of-book panel ──────────────────────────────────────────────────
+  // What lies after the last page. Opened ONLY by a next-intent made while the
+  // latest relocation already had `atEnd` (see `turn`); reaching the last page
+  // shows nothing. `atEndRef` mirrors that latest relocation; `endPanelOpenRef`
+  // mirrors the state so `turn` stays identity-stable.
+  const atEndRef = useRef(false);
+  const endPanelOpenRef = useRef(false);
+  const [endPanelOpen, setEndPanelOpenState] = useState(false);
+  // Finished state as the reader sees it: seeded from the prop, moved by the
+  // tracker firing this session and by the panel's manual override. The date
+  // is only known for a finish made this session — no fetch just for it.
+  const [isFinished, setIsFinished] = useState(finished);
+  const [finishedOn, setFinishedOn] = useState<Date | null>(null);
+  // Once the reader has chosen finished/unread by hand, the detector no longer
+  // gets to overrule them.
+  const manualStatusRef = useRef(false);
+  const setEndPanelOpen = useCallback((open: boolean) => {
+    endPanelOpenRef.current = open;
+    setEndPanelOpenState(open);
+  }, []);
 
   // ── "Opening the book…" visibility (see SHOW_LOADING_* above) ──────────
   // Derived from `load.state`, not equal to it: the overlay needs its own
@@ -420,7 +442,13 @@ export function ReaderShell({
         // past it; stays inert until `arm()` below, once the restore is done.
         const completion = createCompletionTracker({
           alreadyFinished: finished,
-          onFinished: () => void recordFinished(bookId),
+          onFinished: () => {
+            // The reader's own override (Mark as finished / unread) wins.
+            if (manualStatusRef.current) return;
+            void recordFinished(bookId);
+            setIsFinished(true);
+            setFinishedOn(new Date());
+          },
         });
         completionRef.current = completion;
         let lastPercent = 0;
@@ -428,6 +456,13 @@ export function ReaderShell({
         unsubRelocated = controller.onRelocated((loc) => {
           if (cancelled) return;
           lastPercent = loc.percent;
+          atEndRef.current = loc.atEnd === true;
+          // Moved off the last page (a jump, a re-flow): the panel's moment has
+          // passed. Focus is left where the reader put it.
+          if (loc.atEnd !== true && endPanelOpenRef.current) {
+            endPanelOpenRef.current = false;
+            setEndPanelOpenState(false);
+          }
           completion.observe(loc);
           setPercent(loc.percent);
           setHere({ cfi: loc.cfi, percent: loc.percent });
@@ -597,15 +632,56 @@ export function ReaderShell({
   const turnsSinceJump = useRef(0);
 
   // ── Page turn — instant (epub.js swaps content itself) ────────────────
-  const turn = useCallback((dir: "next" | "prev") => {
-    const controller = controllerRef.current;
-    if (!controller) return;
-    turnsSinceJump.current += 1;
-    if (turnsSinceJump.current > 8) setReturnTo(null);
-    turnsSinceSyncOffer.current += 1;
-    if (turnsSinceSyncOffer.current > 8) setSyncOffer(null);
-    void (dir === "next" ? controller.next() : controller.prev());
-  }, []);
+  //
+  // The single place every next/prev intent goes through (tap zones, dock
+  // buttons, arrow keys; the app has no separate swipe handler). That makes it
+  // the one place the end-of-book panel is gated:
+  //   - panel open: previous closes it (staying on the last page), next does
+  //     nothing, and neither reaches the engine;
+  //   - on the last page: next opens the panel instead of turning.
+  const closeEndPanel = useCallback(
+    (restoreFocus: boolean) => {
+      if (!endPanelOpenRef.current) return;
+      setEndPanelOpen(false);
+      if (restoreFocus) frameRef.current?.focus({ preventScroll: true });
+    },
+    [setEndPanelOpen],
+  );
+
+  const turn = useCallback(
+    (dir: "next" | "prev") => {
+      const controller = controllerRef.current;
+      if (!controller) return;
+      if (endPanelOpenRef.current) {
+        if (dir === "prev") closeEndPanel(true);
+        return;
+      }
+      if (dir === "next" && atEndRef.current) {
+        setEndPanelOpen(true);
+        return;
+      }
+      turnsSinceJump.current += 1;
+      if (turnsSinceJump.current > 8) setReturnTo(null);
+      turnsSinceSyncOffer.current += 1;
+      if (turnsSinceSyncOffer.current > 8) setSyncOffer(null);
+      void (dir === "next" ? controller.next() : controller.prev());
+      },
+    [closeEndPanel, setEndPanelOpen],
+  );
+
+  const markFinishedByHand = useCallback(() => {
+    manualStatusRef.current = true;
+    setIsFinished(true);
+    setFinishedOn(new Date());
+    void recordFinished(bookId);
+  }, [bookId]);
+
+  const markUnreadByHand = useCallback(() => {
+    manualStatusRef.current = true;
+    setIsFinished(false);
+    setFinishedOn(null);
+    void recordUnread(bookId);
+  }, [bookId]);
 
   // A page turn from OUTSIDE the deck (tap zones, arrow keys) collapses it —
   // "closes on … a page turn". The deck's own `‹` / `›` call `turn` directly so
@@ -628,6 +704,7 @@ export function ReaderShell({
   const jumpTo = useCallback(
     (target: string) => {
       const from = hereRef.current.cfi;
+      closeEndPanel(false);
       // A jump to the exact CFI already on screen is not a jump — it is a
       // no-op landing, and a "Back to Ch. N" chip for the chapter you are
       // reading right now is never useful, only confusing (founder,
@@ -648,7 +725,7 @@ export function ReaderShell({
       }
       void controllerRef.current?.goTo(target);
     },
-    [chapterLabel],
+    [chapterLabel, closeEndPanel],
   );
 
   const returnFromJump = useCallback(() => {
@@ -712,6 +789,10 @@ export function ReaderShell({
 
       if (e.key === "Escape") {
         if (deckOpen) return; // ReaderDock owns Esc while the deck is open
+        if (endPanelOpenRef.current) {
+          closeEndPanel(true);
+          return;
+        }
         if (immersive) exitImmersive();
         return;
       }
@@ -729,6 +810,7 @@ export function ReaderShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [
     turnAndCloseDeck,
+    closeEndPanel,
     immersive,
     deckOpen,
     exitImmersive,
@@ -762,7 +844,19 @@ export function ReaderShell({
         onPrev={() => turnAndCloseDeck("prev")}
         onNext={() => turnAndCloseDeck("next")}
       >
-        {returnTo && (
+        {endPanelOpen && (
+          <EndOfBookPanel
+            title={title}
+            author={author}
+            finished={isFinished}
+            finishedOn={finishedOn}
+            onClose={() => closeEndPanel(true)}
+            onMarkFinished={markFinishedByHand}
+            onMarkUnread={markUnreadByHand}
+          />
+        )}
+
+        {returnTo && !endPanelOpen && (
           <ReturnChip
             label={returnTo.label}
             onReturn={returnFromJump}
@@ -773,7 +867,7 @@ export function ReaderShell({
         {/* Suppressed while a `returnTo` chip is already showing — the two
             share the same anchor point, and a reader already mid-undo of one
             jump shouldn't be handed a second, unrelated prompt to parse. */}
-        {!returnTo && syncOffer && (
+        {!returnTo && !endPanelOpen && syncOffer && (
           <SyncOfferChip
             label={syncOffer.label}
             onContinue={acceptSyncOffer}

@@ -55,7 +55,10 @@ export function SpreadFrame({
     >
       <div
         ref={frameRef}
-        className="relative overflow-hidden bg-page"
+        // Programmatically focusable (not in the tab order) so focus has a
+        // place to return to when the end-of-book panel closes.
+        tabIndex={-1}
+        className="relative overflow-hidden bg-page outline-none"
         style={{
           borderRadius: "var(--leaf-reader-frame-radius)",
           boxShadow: "var(--leaf-reader-frame-shadow)",

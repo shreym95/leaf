@@ -9,6 +9,9 @@ export type {
 
 export { ReaderTopBar } from "./ReaderTopBar";
 
+export { EndOfBookPanel } from "./EndOfBookPanel";
+export type { EndOfBookPanelProps } from "./EndOfBookPanel";
+
 export { ReturnChip } from "./ReturnChip";
 export type { ReturnChipProps } from "./ReturnChip";
 export { SyncOfferChip } from "./SyncOfferChip";
