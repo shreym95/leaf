@@ -40,6 +40,7 @@ export default async function ReaderPage({
       author={book.author}
       fileUrl={fileUrl}
       userId={user.id}
+      finished={book.status === "finished"}
       initialSettings={initialSettings}
       // TEMPORARY, opt-in only: `/reader/<bookId>?debug=1` paints the D2
       // instrumentation readout (DEFECTS.md D2). Nothing changes without it.

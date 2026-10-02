@@ -8,6 +8,11 @@ import {
   type ReaderTocEntry,
 } from "@/reader/engine";
 import { trackPosition, type PositionTracker } from "@/reader/position";
+import {
+  createCompletionTracker,
+  type CompletionTracker,
+} from "@/reader/completion";
+import { recordFinished } from "@/reader/book-status";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import {
   useReaderSettings,
@@ -137,6 +142,11 @@ export interface ReaderShellProps {
   author: string;
   fileUrl: string;
   userId: string;
+  /** The book is already marked finished (`books.status`). Only ever read at
+   *  open: it stops the end-of-book detector from firing a second time. May be
+   *  stale if the reader rendered from a cached document — harmless, since the
+   *  finish write only touches a row that is not already finished. */
+  finished?: boolean;
   initialSettings: ReaderShellInitialSettings;
   /** `?debug=1` only (see `./debug-flag`) — builds the engine's D2 probe and
    *  paints the readout. Off for every normal reader. */
@@ -154,6 +164,7 @@ export function ReaderShell({
   author,
   fileUrl,
   userId,
+  finished = false,
   initialSettings,
   debug = false,
 }: ReaderShellProps) {
@@ -161,6 +172,9 @@ export function ReaderShell({
   const frameRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<ReaderController | null>(null);
   const trackerRef = useRef<PositionTracker | null>(null);
+  // Finished-book detector. A ref so the jump handlers below (sync offer,
+  // return chip), which live outside the engine effect, can vouch for a jump.
+  const completionRef = useRef<CompletionTracker | null>(null);
 
   const [load, setLoad] = useState<LoadState>({ state: "loading" });
 
@@ -408,8 +422,19 @@ export function ReaderShell({
         }
         controllerRef.current = controller;
 
+        // Created BEFORE the relocation subscription so no relocation can slip
+        // past it; stays inert until `arm()` below, once the restore is done.
+        const completion = createCompletionTracker({
+          alreadyFinished: finished,
+          onFinished: () => void recordFinished(bookId),
+        });
+        completionRef.current = completion;
+        let lastPercent = 0;
+
         unsubRelocated = controller.onRelocated((loc) => {
           if (cancelled) return;
+          lastPercent = loc.percent;
+          completion.observe(loc);
           setPercent(loc.percent);
           setHere({ cfi: loc.cfi, percent: loc.percent });
           // A two-page spread shows facing pages, so the right folio is the
@@ -463,7 +488,14 @@ export function ReaderShell({
           turnsSinceSyncOffer.current = 0;
           setSyncOffer({ cfi: offer.cfi, label });
         });
-        await tracker.restore();
+        const restored = await tracker.restore();
+        // Armed only now. The restore's own landing relocation arrives later as
+        // a "jump", and on a first open on a new device its percent is a spine
+        // estimate that can sit far from the stored one — read as a skip ahead
+        // it would block the finish for good. Vouching for it makes that
+        // landing raise the furthest point instead.
+        completion.arm(lastPercent);
+        if (restored) completion.markTrusted();
 
         // The book is open — read its table of contents for the dock's `≡`
         // popover. Style-agnostic data from the engine; empty when the EPUB
@@ -525,6 +557,7 @@ export function ReaderShell({
       unsubHighlights?.();
       unsubBookmarks?.();
       unsubSyncOffer?.();
+      completionRef.current = null;
       highlightsRef.current?.stop();
       highlightsRef.current = null;
       bookmarksRef.current?.stop();
@@ -630,6 +663,8 @@ export function ReaderShell({
     const back = returnTo;
     if (!back) return;
     setReturnTo(null);
+    // Going back to where the reader was is not a skip ahead.
+    completionRef.current?.markTrusted();
     void controllerRef.current?.goTo(back.cfi);
   }, [returnTo]);
 
@@ -647,6 +682,10 @@ export function ReaderShell({
     const offer = syncOffer;
     if (!offer) return;
     setSyncOffer(null);
+    // The offered place is the reader's own, read further on another device —
+    // not a skip ahead. (Not inside `jumpTo`: contents and bookmark jumps
+    // share it, and those ARE skips.)
+    completionRef.current?.markTrusted();
     jumpTo(offer.cfi);
   }, [syncOffer, jumpTo]);
 
