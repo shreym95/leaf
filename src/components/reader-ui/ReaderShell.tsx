@@ -44,7 +44,6 @@ import { SyncOfferChip } from "./SyncOfferChip";
 import { OfflineIndicator } from "./OfflineIndicator";
 import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
-import { ReaderDebugOverlay } from "./ReaderDebugOverlay";
 import { useImmersive } from "./useImmersive";
 
 /**
@@ -148,9 +147,6 @@ export interface ReaderShellProps {
    *  finish write only touches a row that is not already finished. */
   finished?: boolean;
   initialSettings: ReaderShellInitialSettings;
-  /** `?debug=1` only (see `./debug-flag`) — builds the engine's D2 probe and
-   *  paints the readout. Off for every normal reader. */
-  debug?: boolean;
 }
 
 type LoadState =
@@ -166,7 +162,6 @@ export function ReaderShell({
   userId,
   finished = false,
   initialSettings,
-  debug = false,
 }: ReaderShellProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -413,7 +408,6 @@ export function ReaderShell({
         // `bookId` keys the locations cache so progress is exact on reopen
         // instead of climbing from 0 while the table regenerates (D7).
         const controller = await createReader(bytes, initialSettings, {
-          debug,
           bookId,
         });
         if (cancelled || !viewerRef.current) {
@@ -603,24 +597,22 @@ export function ReaderShell({
   const turnsSinceJump = useRef(0);
 
   // ── Page turn — instant (epub.js swaps content itself) ────────────────
-  // `source` names the control that fired it; the engine only records it in the
-  // debug turn log (DEFECTS.md D2) and ignores it otherwise.
-  const turn = useCallback((dir: "next" | "prev", source: string) => {
+  const turn = useCallback((dir: "next" | "prev") => {
     const controller = controllerRef.current;
     if (!controller) return;
     turnsSinceJump.current += 1;
     if (turnsSinceJump.current > 8) setReturnTo(null);
     turnsSinceSyncOffer.current += 1;
     if (turnsSinceSyncOffer.current > 8) setSyncOffer(null);
-    void (dir === "next" ? controller.next(source) : controller.prev(source));
+    void (dir === "next" ? controller.next() : controller.prev());
   }, []);
 
   // A page turn from OUTSIDE the deck (tap zones, arrow keys) collapses it —
   // "closes on … a page turn". The deck's own `‹` / `›` call `turn` directly so
   // a keyboard user can page through with the deck up (decision 2).
   const turnAndCloseDeck = useCallback(
-    (dir: "next" | "prev", source: string) => {
-      turn(dir, source);
+    (dir: "next" | "prev") => {
+      turn(dir);
       setDeckOpen(false);
     },
     [turn],
@@ -712,17 +704,6 @@ export function ReaderShell({
     }
   }, []);
 
-  // ── Debug readout accessors — stable identities so the overlay's
-  //    subscription effect doesn't re-run on every render. ─────────────────
-  const debugSnapshot = useCallback(
-    () => controllerRef.current?.debugSnapshot?.() ?? null,
-    [],
-  );
-  const debugSubscribe = useCallback(
-    (cb: () => void) => controllerRef.current?.onDebug?.(cb) ?? null,
-    [],
-  );
-
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -736,9 +717,9 @@ export function ReaderShell({
       }
 
       if (e.key === "ArrowRight") {
-        turnAndCloseDeck("next", "key-right");
+        turnAndCloseDeck("next");
       } else if (e.key === "ArrowLeft") {
-        turnAndCloseDeck("prev", "key-left");
+        turnAndCloseDeck("prev");
       } else if (key === "f") {
         toggleImmersive();
       }
@@ -778,8 +759,8 @@ export function ReaderShell({
         loading={showLoadingMessage}
         folioLeft={folio.left}
         folioRight={folio.right}
-        onPrev={() => turnAndCloseDeck("prev", "tap-prev")}
-        onNext={() => turnAndCloseDeck("next", "tap-next")}
+        onPrev={() => turnAndCloseDeck("prev")}
+        onNext={() => turnAndCloseDeck("next")}
       >
         {returnTo && (
           <ReturnChip
@@ -817,8 +798,8 @@ export function ReaderShell({
         chapterLabel={chapterLabel}
         toc={toc}
         onNavigate={(href) => jumpTo(href)}
-        onPrevPage={() => turn("prev", "dock-prev")}
-        onNextPage={() => turn("next", "dock-next")}
+        onPrevPage={() => turn("prev")}
+        onNextPage={() => turn("next")}
         theme={settings.theme}
         onSetTheme={setReaderTheme}
         fontSize={settings.fontSize}
@@ -840,14 +821,6 @@ export function ReaderShell({
         }}
         onRemoveBookmark={(id) => void bookmarksRef.current?.remove(id)}
       />
-
-
-      {debug && (
-        <ReaderDebugOverlay
-          snapshot={debugSnapshot}
-          subscribe={debugSubscribe}
-        />
-      )}
 
       {/* Polite, throttled progress announcement for screen readers. Updated
           only on 5% boundaries (see `announcedPct`) so it never chatters. */}
