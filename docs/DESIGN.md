@@ -288,7 +288,7 @@ Run `npm test`. These will catch you:
 
 - every registered theme has a `[data-theme]` block in `tokens.css`
 - every theme block defines the identical token set
-- `--leaf-rule` clears 3:1 against `--leaf-page` in every theme
+- `--leaf-rule` clears 3:1 against both `--leaf-page` and `--leaf-paper` (the body ground) in every theme
 - `content-theme.ts` palettes match `tokens.css` exactly
 - `highlight-theme.ts` washes match `tokens.css` exactly, in every theme
 - the content pipeline paints **every** registered theme distinctly, and falls back

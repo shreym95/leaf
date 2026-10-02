@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import clsx from "clsx";
 import type { LibraryBook } from "@/lib/db/books";
+import { isBookFinished } from "@/lib/books/finished";
 import { BookActions } from "./BookActions";
 
 /**
@@ -18,7 +19,7 @@ import { BookActions } from "./BookActions";
  *   - a resting elevation (`--leaf-shadow-card`) that expands on hover
  *     (`--leaf-shadow-card-hover`) with a small lift, the lift suppressed
  *     under `prefers-reduced-motion`;
- *   - a state label — `UNREAD` / `NN% READ` / `COMPLETED` — as plain words
+ *   - a state label — `UNREAD` / `NN% READ` / `COMPLETED` (recorded status only) — as plain words
  *     under the author. Design iteration 1 dropped the fill ribbon that used to
  *     sit on the cover: it duplicated what the label says and sat over the art;
  *   - the actions trigger on a frosted disc so it never clashes with busy
@@ -39,18 +40,17 @@ export function BookCard({ book }: BookCardProps) {
 
   // One state word, not a bar: where you are in a book reads fine as text on a
   // shelf, and it does not sit over the cover art (design iteration 1, §9A).
+  // Capped at 99: only a book recorded as finished may say COMPLETED, so a book
+  // that is not finished never reads "100% READ" (it may sit at 99.6%).
   const pct =
     book.percent == null
       ? null
-      : Math.min(100, Math.max(0, Math.round(book.percent * 100)));
-  const stateLabel =
-    book.status === "finished"
-      ? "COMPLETED"
-      : pct == null || pct === 0
-        ? "UNREAD"
-        : pct >= 100
-          ? "COMPLETED"
-          : `${pct}% READ`;
+      : Math.min(99, Math.max(0, Math.round(book.percent * 100)));
+  const stateLabel = isBookFinished(book)
+    ? "COMPLETED"
+    : pct == null || pct === 0
+      ? "UNREAD"
+      : `${pct}% READ`;
 
   return (
     <article className="relative h-full hover:z-10">

@@ -3,6 +3,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Button } from "@/components/primitives";
 import type { LibraryBook } from "@/lib/db/books";
+import { isBookFinished } from "@/lib/books/finished";
 
 /**
  * HeroCard — the "Continue reading" spotlight pinned above the shelf grid for
@@ -52,10 +53,10 @@ export interface HeroCardProps {
  * shelf renders grid-only.
  *
  * A finished book is never the hero: "Continue reading" over a book you have
- * finished is wrong. Finished means `status === 'finished'`, or progress that
- * rounds to 100% — the same rule that makes the shelf card say COMPLETED, so
- * the spotlight never offers a book its own card calls done. If every opened
- * book is finished there is no hero, and the shelf renders grid-only.
+ * finished is wrong. Finished is `isBookFinished` — `status === 'finished'` and
+ * nothing else, the same rule the shelf card and the Completed Books section
+ * use. A book at 99.6% that was marked unread is still a valid hero. If every
+ * opened book is finished there is no hero, and the shelf renders grid-only.
  */
 export function splitHeroBook(
   books: LibraryBook[],
@@ -65,7 +66,7 @@ export function splitHeroBook(
 
   let picked: LibraryBook | null = null;
   for (const book of books) {
-    if (!book.lastReadAt || isFinished(book)) continue;
+    if (!book.lastReadAt || isBookFinished(book)) continue;
     if (picked === null || book.lastReadAt > (picked.lastReadAt ?? "")) {
       picked = book;
     }
@@ -74,11 +75,6 @@ export function splitHeroBook(
   if (picked === null) return { hero: null, shelf: books };
   const hero = picked;
   return { hero, shelf: books.filter((b) => b.id !== hero.id) };
-}
-
-function isFinished(book: LibraryBook): boolean {
-  if (book.status === "finished") return true;
-  return book.percent != null && Math.round(book.percent * 100) >= 100;
 }
 
 export function HeroCard({ book }: HeroCardProps) {

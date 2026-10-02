@@ -62,9 +62,10 @@ describe("BookCard", () => {
     expect(screen.getByText("UNREAD")).toBeInTheDocument();
   });
 
-  it("labels a finished book COMPLETED", () => {
+  it("caps a not-finished book at 99% READ, never COMPLETED", () => {
     render(<BookCard book={makeBook({ percent: 1 })} />);
-    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
+    expect(screen.getByText("99% READ")).toBeInTheDocument();
+    expect(screen.queryByText("COMPLETED")).toBeNull();
   });
 
   it("labels a book marked finished COMPLETED even when the saved position is short of the end", () => {
@@ -82,8 +83,22 @@ describe("BookCard", () => {
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
-  it("clamps out-of-range progress to COMPLETED", () => {
+  it("clamps out-of-range progress to 99% READ", () => {
     render(<BookCard book={makeBook({ percent: 1.5 })} />);
+    expect(screen.getByText("99% READ")).toBeInTheDocument();
+  });
+
+  it("labels a 99.6% book that is not finished 99% READ", () => {
+    render(<BookCard book={makeBook({ percent: 0.996 })} />);
+    expect(screen.getByText("99% READ")).toBeInTheDocument();
+  });
+
+  it("labels a finished book COMPLETED at any recorded progress", () => {
+    render(
+      <BookCard
+        book={makeBook({ status: "finished", finished_at: "2026-10-02T10:00:00Z", percent: 1 })}
+      />,
+    );
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 

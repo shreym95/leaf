@@ -1,7 +1,9 @@
 import { requireUser } from "@/lib/auth";
 import { listBooks, countArchivedBooks } from "@/lib/db";
+import { partitionCompleted } from "@/lib/books/finished";
 import {
   AddBooksBar,
+  CompletedBooks,
   EmptyState,
   HeroCard,
   Shelf,
@@ -26,10 +28,18 @@ export default async function LibraryPage({
     countArchivedBooks(user.id),
   ]);
 
-  // The "Continue reading" spotlight is the single most recently read book,
-  // lifted out of the grid so it never shows twice. Never in the hidden view,
-  // and none at all until some book has been opened.
-  const { hero, shelf } = splitHeroBook(books, { enabled: !showHidden });
+  // Finished books leave the shelf for the quiet Completed Books section below
+  // it (most recently finished first). Not in the hidden view: archived books
+  // keep today's behaviour there, so an archived + finished book shows only
+  // there and never in Completed Books.
+  const { rest, completed } = showHidden
+    ? { rest: books, completed: [] }
+    : partitionCompleted(books);
+
+  // The "Continue reading" spotlight is the single most recently read
+  // unfinished book, lifted out of the grid so it never shows twice. Never in
+  // the hidden view, and none at all until some book has been opened.
+  const { hero, shelf } = splitHeroBook(rest, { enabled: !showHidden });
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-6 sm:py-10">
@@ -91,8 +101,17 @@ export default async function LibraryPage({
               <Shelf books={shelf} />
             </section>
           )}
+          {/* Every book completed: no spotlight and an empty shelf, so say so
+              rather than leaving a gap above the Completed Books line. */}
+          {!hero && shelf.length === 0 && (
+            <p className="font-ui text-ink-mid [font-size:var(--leaf-text-sm)]">
+              Every book here is completed.
+            </p>
+          )}
         </>
       )}
+
+      {!showHidden && <CompletedBooks books={completed} />}
 
       {!showHidden && hiddenCount > 0 && (
         <Link
