@@ -25,6 +25,7 @@
 // silent degradation to today's behaviour (drop the write) when IndexedDB is
 // unavailable.
 
+import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
 import { createBookmark, deleteBookmark } from "@/lib/db/bookmarks";
@@ -203,24 +204,42 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
 
 interface MinimalAuthClient {
   auth: {
-    getUser: () => Promise<{ data: { user: { id: string } | null } }>;
+    getUser: () => Promise<{
+      data: { user: { id: string } | null };
+      error?: unknown;
+    }>;
     getSession: () => Promise<{
       data: { session: { user: { id: string } } | null };
     }>;
   };
 }
 
-/** `getUser()`, falling back to the cached session if it throws. Null means
- *  "signed out" or "no identity we can safely queue against" — either way,
- *  drop, same as today. */
+/**
+ * `getUser()`, falling back to the cached session when the Auth server is
+ * unreachable. Null means "signed out" or "no identity we can safely queue
+ * against" — either way, drop.
+ *
+ * auth-js does NOT throw on a network failure: it catches the
+ * `AuthRetryableFetchError` and RESOLVES `{ data: { user: null }, error }`.
+ * So the offline case is an `error` that is a retryable fetch error, not an
+ * exception. Only that error falls back to the cached session. Any other
+ * error (e.g. `AuthSessionMissingError`) or no error with no user means the
+ * server — or the local storage — says nobody is signed in: return null and
+ * never queue against a cached id the server just disowned. A thrown
+ * `getUser()` (defensive; not what auth-js does) also falls back.
+ */
 export async function resolveUserId(
   supabase: MinimalAuthClient,
 ): Promise<string | null> {
   try {
     const {
       data: { user },
+      error,
     } = await supabase.auth.getUser();
     if (user) return user.id;
+    if (error && isAuthRetryableFetchError(error)) {
+      return getCachedUserId(supabase);
+    }
     return null;
   } catch {
     return getCachedUserId(supabase);
