@@ -6,7 +6,7 @@ that prompted them. See `SPEC.md` §9 for the milestone plan.
 `REVISED_PLAN.md` §7 reconciles this list with the next design phase: the **shelf
 redesign** is scheduled there (Phase 1; **highlight creation**, Phase 2, has since been
 dropped — see the end of this file);
-**ratings**, **custom domain**, **hairline contrast**, **privacy email** and the
+**ratings**, **hairline contrast**, **privacy email** and the
 **hand-applied migrations** are not, and stay open here.
 
 ## Design — after M4
@@ -87,29 +87,7 @@ need storage of their own: `0005_bookmarks.sql` (the `bookmarks` table) is
 written and also hand-applied. The visible bookmark treatment (`REVISED_PLAN`
 §4A) is still an open design question — only the schema and data layer are settled.
 
-### Custom domain
-
-Deferred from M4 (SPEC §9 lists it under "deploy to Vercel with a custom
-domain"). Shipping on `leaf-black.vercel.app` for now.
-
-**Why it matters beyond vanity:** Google's consent screen shows the host of the
-OAuth redirect URI, so sign-in currently reads *"Sign in to
-`<project-ref>.supabase.co`"*. The consent screen's app name and logo are
-already set; the domain line is the part only a custom domain fixes.
-
-**What it takes:**
-1. Register the domain.
-2. Vercel → project → Settings → Domains → add it; point DNS as instructed.
-3. Supabase custom domain add-on (paid, ~$10/mo) so auth is served from
-   e.g. `auth.<domain>` instead of the project-ref host.
-4. Update Supabase Site URL + Redirect URLs, and the Google OAuth client's
-   authorized origins / redirect URI, to the new domain.
-5. Re-test sign-in on desktop and phone (the redirect allowlist is the usual
-   breakage — see the M1 notes in CHANGELOG).
-
-Steps 1–2 alone give a branded app URL; step 3 is what changes the Google
-screen.
-
 ## Dropped
 
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
+- Custom domain was dropped on 2026-10-02; Leaf stays on `leaf-black.vercel.app`. Google's sign-in consent screen continues to show the Supabase project host rather than a Leaf domain.
