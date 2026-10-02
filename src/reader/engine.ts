@@ -54,7 +54,26 @@ export interface ReaderLocation {
   estimated?: boolean;
   displayedPage?: number; // rendition.currentLocation().start.displayed.page
   totalPages?: number;
+  /**
+   * True when epub.js says the reader is on the final page of the final
+   * section (`located.atEnd`, set in `Rendition.located()`). A statement about
+   * WHERE the reader is, not how they got there — pair it with `cause`.
+   */
+  atEnd?: boolean;
+  /**
+   * What produced this relocation. `"next"` / `"prev"` are a page turn through
+   * the engine's own `next()` / `prev()`; `"jump"` is `goTo()` (contents,
+   * bookmark, restore, sync offer, return chip); `"other"` is anything the
+   * engine cannot attribute — a resize re-flow, the locations table finishing,
+   * a scroll-settle duplicate, or a turn that landed before its promise did.
+   * Absent on a location that did not come through the engine's relocation
+   * handler. Consumers that care must treat `"other"` as "unknown", never as
+   * a page turn.
+   */
+  cause?: ReaderLocationCause;
 }
+
+export type ReaderLocationCause = "next" | "prev" | "jump" | "other";
 
 export interface ReaderController {
   attach(container: HTMLElement): Promise<void>; // renderTo + display + locations.generate
@@ -355,6 +374,34 @@ export async function createReader(
   let redisplayTimer: ReturnType<typeof setTimeout> | undefined;
   let lastKnownCfi: string | undefined;
 
+  // Which navigation call the NEXT relocation belongs to. epub.js emits
+  // `relocated` in a requestAnimationFrame AFTER the promise from
+  // `next()` / `prev()` / `display()` has settled, so the relocation cannot be
+  // tagged while the call is in flight — only once `settled` is true. Anything
+  // that relocates without a settled navigation behind it (a resize re-flow, a
+  // relocation that fires before the promise resolves, the 20ms scroll-debounce
+  // duplicate that follows a programmatic scroll such as `undriftForNextPage`
+  // or `snapBackToChapterEnd`) is `"other"`: the first relocation after
+  // settling consumes `pending`, so the later duplicates find none.
+  // Each call gets its OWN object, so a slow earlier call settling cannot mark
+  // a newer navigation as settled.
+  type PendingNav = { cause: "next" | "prev" | "jump"; settled: boolean };
+  let pending: PendingNav | undefined;
+
+  function beginNav(cause: PendingNav["cause"]): PendingNav {
+    const nav: PendingNav = { cause, settled: false };
+    pending = nav;
+    return nav;
+  }
+
+  // Called from a `finally`. A navigation that REJECTED moved nowhere, so no
+  // relocation is owed to it — drop it rather than let the next unrelated
+  // relocation (a resize re-flow, say) be mis-tagged as that turn.
+  function endNav(nav: PendingNav, ok: boolean): void {
+    if (ok) nav.settled = true;
+    else if (pending === nav) pending = undefined;
+  }
+
   const subscribers = new Set<(loc: ReaderLocation) => void>();
   const selectionSubscribers = new Set<
     (sel: { cfiRange: string; text: string }) => void
@@ -397,7 +444,11 @@ export async function createReader(
   }
 
   // epub.js `relocated` payload is loosely typed across versions; read defensively.
-  function handleRelocated(raw: unknown): void {
+  //
+  // `synthetic` marks the one call the engine makes itself (locations finished
+  // generating): it is always `"other"` and must leave `pending` alone, because
+  // it did not come from the navigation `pending` is waiting on.
+  function handleRelocated(raw: unknown, synthetic = false): void {
     const loc = raw as {
       start?: {
         cfi?: string;
@@ -405,6 +456,7 @@ export async function createReader(
         displayed?: { page?: number; total?: number };
       };
       cfi?: string;
+      atEnd?: boolean;
     };
     const cfi = loc?.start?.cfi ?? loc?.cfi;
     if (!cfi) return;
@@ -433,12 +485,20 @@ export async function createReader(
       }
     }
 
+    let cause: ReaderLocationCause = "other";
+    if (!synthetic && pending?.settled) {
+      cause = pending.cause;
+      pending = undefined;
+    }
+
     emit({
       cfi,
       percent,
       estimated,
       displayedPage: page,
       totalPages,
+      atEnd: loc?.atEnd === true,
+      cause,
     });
   }
 
@@ -557,7 +617,7 @@ export async function createReader(
           try {
             const here = rendition?.currentLocation() as unknown;
             if (here && typeof here === "object" && "start" in here) {
-              handleRelocated(here);
+              handleRelocated(here, true);
             }
           } catch {
             // currentLocation can throw mid-transition; the next `relocated`
@@ -573,14 +633,31 @@ export async function createReader(
       // Logged BEFORE the turn so the rolling log keeps the state a skip
       // started from (DEFECTS.md D2).
       debugProbe?.logTurn("next", source);
-      undriftForNextPage(rendition);
-      await rendition?.next();
+      const nav = beginNav("next");
+      let ok = false;
+      try {
+        undriftForNextPage(rendition);
+        await rendition?.next();
+        ok = true;
+      } finally {
+        endNav(nav, ok);
+      }
     },
 
     async prev(source?: string): Promise<void> {
       debugProbe?.logTurn("prev", source);
       const from = sectionIndexOf(rendition);
-      await rendition?.prev();
+      const nav = beginNav("prev");
+      let ok = false;
+      try {
+        await rendition?.prev();
+        ok = true;
+      } finally {
+        // Settled as soon as epub.js is done — NOT after the snap-back frame
+        // below, which can itself provoke a scroll-settle relocation that must
+        // not be mistaken for a second turn.
+        endNav(nav, ok);
+      }
       // epub.js scrolls to the chapter end itself; re-assert it from geometry
       // because that scroll can run against an unsettled width (D6). A frame
       // later the prepended view has its final size.
@@ -596,7 +673,14 @@ export async function createReader(
 
     async goTo(target: string): Promise<void> {
       // `display` accepts a CFI or a spine href.
-      await rendition?.display(target);
+      const nav = beginNav("jump");
+      let ok = false;
+      try {
+        await rendition?.display(target);
+        ok = true;
+      } finally {
+        endNav(nav, ok);
+      }
     },
 
     currentChapterLabel(): string | undefined {

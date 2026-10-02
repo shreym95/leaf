@@ -326,3 +326,161 @@ describe("wiring", () => {
     expect(seen.at(-1)).toBe(0.5); // book.locations.percentageFromCfi mock
   });
 });
+
+// --- Relocation cause + atEnd (finished-book detection) ---------------------
+//
+// epub.js emits `relocated` in a requestAnimationFrame AFTER the promise from
+// next()/prev()/display() has settled, so a relocation can only be attributed
+// to a navigation once that navigation's promise has resolved. jsdom cannot
+// model real pagination — these tests drive the mocked rendition's promises and
+// `relocated` callback by hand to pin the engine's attribution rule, not
+// epub.js's timing.
+describe("relocation cause and atEnd", () => {
+  function deferred() {
+    let resolve!: () => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  async function setup() {
+    const reader = await createReader(new ArrayBuffer(8), BASE_SETTINGS);
+    const seen: { cause?: string; atEnd?: boolean; cfi: string }[] = [];
+    reader.onRelocated((loc) =>
+      seen.push({ cause: loc.cause, atEnd: loc.atEnd, cfi: loc.cfi }),
+    );
+    await reader.attach(document.createElement("div"));
+    await Promise.resolve();
+    seen.length = 0; // drop anything attach itself produced
+    const relocated = rendition.on.mock.calls.find(
+      (c) => c[0] === "relocated",
+    )![1] as (loc: unknown) => void;
+    const fire = (extra: Record<string, unknown> = {}, cfi = "epubcfi(/6/4!/2)") =>
+      relocated({
+        start: { cfi, displayed: { page: 2, total: 9 } },
+        ...extra,
+      });
+    return { reader, seen, fire };
+  }
+
+  it("tags a relocation that arrives after next() resolved as 'next'", async () => {
+    const { reader, seen, fire } = await setup();
+    await reader.next();
+    fire();
+    expect(seen.map((s) => s.cause)).toEqual(["next"]);
+  });
+
+  it("tags prev() and goTo() the same way", async () => {
+    const { reader, seen, fire } = await setup();
+    await reader.prev();
+    fire();
+    await reader.goTo("epubcfi(/6/8!/4)");
+    fire();
+    expect(seen.map((s) => s.cause)).toEqual(["prev", "jump"]);
+  });
+
+  it("tags a relocation that arrives BEFORE the nav promise resolved as 'other'", async () => {
+    const { reader, seen, fire } = await setup();
+    const gate = deferred();
+    rendition.next.mockImplementationOnce(() => gate.promise);
+
+    const turn = reader.next();
+    fire(); // lands before the turn's promise has settled
+    gate.resolve();
+    await turn;
+    fire(); // the real post-settle relocation
+
+    expect(seen.map((s) => s.cause)).toEqual(["other", "next"]);
+  });
+
+  it("tags the scroll-debounce duplicate that follows a turn as 'other'", async () => {
+    const { reader, seen, fire } = await setup();
+    await reader.next();
+    fire(); // the turn's relocation
+    fire(); // the 20ms scroll-debounce duplicate from a programmatic scroll
+    fire();
+    expect(seen.map((s) => s.cause)).toEqual(["next", "other", "other"]);
+  });
+
+  it("tags a relocation with no navigation behind it as 'other'", async () => {
+    const { seen, fire } = await setup();
+    fire(); // e.g. a resize re-flow
+    expect(seen.map((s) => s.cause)).toEqual(["other"]);
+  });
+
+  it("settles prev() as soon as epub.js resolves, before the snap-back frame", async () => {
+    const { reader, seen, fire } = await setup();
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+    try {
+      void reader.prev(); // parks on the (never-run) snap-back frame
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      fire(); // epub.js's relocation, while the engine's own frame is pending
+      expect(seen.map((s) => s.cause)).toEqual(["prev"]);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
+  it("an older navigation settling late does not settle a newer one still in flight", async () => {
+    const { reader, seen, fire } = await setup();
+    const slowJump = deferred();
+    const turnGate = deferred();
+    rendition.display.mockImplementationOnce(() => slowJump.promise);
+    rendition.next.mockImplementationOnce(() => turnGate.promise);
+
+    const jump = reader.goTo("epubcfi(/6/8!/4)"); // in flight...
+    const turn = reader.next(); // ...superseded by a turn, also in flight
+    slowJump.resolve(); // the OLD jump settles first
+    await jump;
+    fire(); // relocation lands while the turn has not settled
+    turnGate.resolve();
+    await turn;
+    fire();
+
+    expect(seen.map((s) => s.cause)).toEqual(["other", "next"]);
+  });
+
+  it("does not tag a later relocation with the cause of a navigation that failed", async () => {
+    const { reader, seen, fire } = await setup();
+    rendition.display.mockImplementationOnce(async () => {
+      throw new Error("bad target");
+    });
+    await expect(reader.goTo("nope")).rejects.toThrow("bad target");
+    fire();
+    expect(seen.map((s) => s.cause)).toEqual(["other"]);
+  });
+
+  it("the locations-ready relocation is 'other' and leaves a settled turn pending", async () => {
+    let resolveGen: (v: unknown[]) => void = () => {};
+    book.locations.generate.mockImplementationOnce(
+      () => new Promise<unknown[]>((r) => (resolveGen = r)),
+    );
+    const { reader, seen, fire } = await setup();
+
+    await reader.next(); // settled, its relocation not yet delivered
+    resolveGen([]);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The synthetic relocation fired (from currentLocation()) as 'other'...
+    expect(seen.map((s) => s.cause)).toEqual(["other"]);
+    // ...and did not consume the turn's pending cause.
+    fire();
+    expect(seen.map((s) => s.cause)).toEqual(["other", "next"]);
+  });
+
+  it("passes atEnd through from epub.js, and is false when it is absent", async () => {
+    const { reader, seen, fire } = await setup();
+    await reader.next();
+    fire({ atEnd: true });
+    await reader.next();
+    fire();
+    expect(seen.map((s) => s.atEnd)).toEqual([true, false]);
+  });
+});
