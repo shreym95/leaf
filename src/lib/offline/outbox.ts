@@ -1,10 +1,11 @@
-// Durable outbox for the four client-side writes that go straight from the
+// Durable outbox for the five client-side writes that go straight from the
 // browser Supabase client to Postgres and, today, silently drop on failure
 // (`docs/REVISED_PLAN.md` §8, `DEFECTS.md` D8):
 //   - reading position    (src/reader/position.ts)
 //   - bookmarks           (src/reader/bookmarks.ts)
 //   - highlights          (src/reader/highlights.ts)
 //   - reader settings     (src/store/reader-settings.ts)
+//   - finished / unread   (src/reader/book-status.ts)
 //
 // LOGIC ONLY — no design/component imports (ESLint seam rule).
 //
@@ -27,6 +28,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
+import { setBookFinished } from "@/lib/db/book-status";
 import { createBookmark, deleteBookmark } from "@/lib/db/bookmarks";
 import {
   createHighlight,
@@ -45,7 +47,8 @@ export type OutboxKind =
   | "highlight-create"
   | "highlight-delete"
   | "highlight-note"
-  | "reader-settings";
+  | "reader-settings"
+  | "book-status";
 
 export interface ReadingStatePayload {
   userId: string;
@@ -99,6 +102,13 @@ export interface ReaderSettingsRowPayload {
   theme: string;
 }
 
+/** A finished/unread write. `finishedAt` null = back to unread. */
+export interface BookStatusPayload {
+  userId: string;
+  bookId: string;
+  finishedAt: string | null;
+}
+
 export type OutboxPayload =
   | ReadingStatePayload
   | BookmarkCreatePayload
@@ -106,7 +116,8 @@ export type OutboxPayload =
   | HighlightCreatePayload
   | HighlightDeletePayload
   | HighlightNotePayload
-  | ReaderSettingsRowPayload;
+  | ReaderSettingsRowPayload
+  | BookStatusPayload;
 
 /** One queued write. Enough to replay itself with no other context. The
  *  storage layer treats `payload` as opaque (`unknown`, not the `OutboxPayload`
@@ -618,6 +629,21 @@ function readerSettingsHandler(): ReplayHandler {
   };
 }
 
+function bookStatusHandler(): ReplayHandler {
+  return async (entry) => {
+    const p = entry.payload as BookStatusPayload;
+    try {
+      const supabase = createClient();
+      // `setBookFinished`'s finished path only touches a not-yet-finished row,
+      // so a stale replay after a later finish matches nothing and is harmless.
+      await setBookFinished(p.userId, p.bookId, p.finishedAt, supabase);
+      return "applied";
+    } catch (err) {
+      return classifyWriteFailure(err);
+    }
+  };
+}
+
 function realHandlers(): Partial<Record<OutboxKind, ReplayHandler>> {
   return {
     "reading-state": readingStateHandler(),
@@ -627,6 +653,7 @@ function realHandlers(): Partial<Record<OutboxKind, ReplayHandler>> {
     "highlight-delete": highlightDeleteHandler(),
     "highlight-note": highlightNoteHandler(),
     "reader-settings": readerSettingsHandler(),
+    "book-status": bookStatusHandler(),
   };
 }
 
@@ -761,6 +788,26 @@ export async function enqueueReaderSettings(row: ReaderSettingsRowPayload): Prom
     kind: "reader-settings",
     key: row.user_id,
     payload: row,
+    ts: Date.now(),
+  });
+}
+
+/**
+ * Finished/unread is one fact per (user, book) — only the latest intent
+ * matters, so a queued earlier write for the same book is dropped first
+ * (finish, then un-finish, offline replays as just the un-finish).
+ */
+export async function enqueueBookStatus(
+  userId: string,
+  bookId: string,
+  finishedAt: string | null,
+): Promise<void> {
+  const key = `${userId}:${bookId}`;
+  await cancelPending(store, "book-status", key);
+  await store.enqueue({
+    kind: "book-status",
+    key,
+    payload: { userId, bookId, finishedAt },
     ts: Date.now(),
   });
 }
