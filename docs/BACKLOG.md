@@ -85,6 +85,26 @@ need storage of their own: `0005_bookmarks.sql` (the `bookmarks` table) is
 written and also hand-applied. The visible bookmark treatment (`REVISED_PLAN`
 §4A) is still an open design question — only the schema and data layer are settled.
 
+## Features — deferred 2026-10-11
+
+### AI reading aids (features 1, 2, 3, 5)
+
+Recap up to the current page, a spoiler-free premise, context-aware word meanings, and a
+character who's-who. Researched and architected in `FEATURES_PLAN.md` §3 (one cached
+chapter pass per edition serves both the recap and the who's-who; text is bounded to the
+reader's position, so the model cannot spoil). Deferred by the founder so that reading
+groups ship first. Reviving it needs three decisions first (`FEATURES_PLAN.md` §8):
+**D1** AI budget and quota, **D2** AI on uploaded books, **D3** word-lookup trigger.
+`CLAUDE.md`'s "NO AI features" line stays until then.
+
+### Full design review — after Groups v1
+
+Founder, 2026-10-11. The group screens ship in the existing design language with
+minimal copy and no designer handoff (`GROUPS_V1_BUILD.md` §2 F3). Once that version is
+built, review the whole app: groups, library, reader chrome, and copy tone. Then
+decide whether a design iteration (as `design-iterations/2026-09-09-shelf-and-dock`) is
+needed.
+
 ## Dropped
 
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.

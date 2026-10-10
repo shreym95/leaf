@@ -2,6 +2,8 @@
 
 Read `docs/SPEC.md` fully. v0.1 reader prototype (epub.js + fine-press design, Day/Night) is APPROVED;
 MVP 1 wraps library + accounts + sync + import around it. NO AI features this version.
+Reading groups (bring-your-own-copy social reading) are IN scope as of 2026-10-11: see
+`docs/FEATURES_PLAN.md` §5. Book files never cross users. AI stays out (backlog).
 
 Stack: Next.js (App Router) + TS + Tailwind v4 (CSS-first `@theme` + token layer) · epub.js
 (real pagination, don't hand-roll) · Supabase (Postgres/Auth/Storage, RLS owner-only) · deploy on Vercel.
@@ -44,7 +46,7 @@ next task and its brief, what is waiting on the founder, decisions that must not
 reverted, and how to verify visual changes. It is written when a session is about to end and
 is the fastest way back into context. Delete it once its contents are stale or absorbed.
 
-## Current milestone: `docs/REVISED_PLAN.md` §6 Phase 2 (M0–M7 shipped; Phase 0+1 shipped 2026-09-07).
+## Current milestone: Groups v1 — `docs/FEATURES_PLAN.md` §5, executed per `docs/GROUPS_V1_BUILD.md` (M0–M7, REVISED_PLAN Phases 0–2 shipped).
 
 Build: `npm run dev`  ·  Test: `npm test`  ·  Lint: `npm run lint`  ·  Types: `npm run typecheck`
 

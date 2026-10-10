@@ -28,6 +28,11 @@
 - Any AI feature (that's a later phase)
 - Payments / Pro tier / ads
 - Native mobile apps, PDF/MOBI support, TTS, social features
+
+> **Amended 2026-10-11 (founder):** social reading is now in scope as **reading groups**,
+> where every member brings their own copy and only progress, notes, milestones and
+> reviews are shared. See `FEATURES_PLAN.md` §5. AI features remain out of scope.
+
 - The final polished UI (this is next version — keep the layer swappable instead)
 
 **What we're validating with MVP 1:** that people will sign in, build a shelf, and come back to read. Reading quality + reliability of sync are the bar.
