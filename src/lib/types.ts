@@ -109,3 +109,41 @@ export interface ReaderSettings {
   margins: Margins;
   theme: ThemeName;
 }
+
+/** Role of a group member; guarded by a CHECK constraint (0008). */
+export type GroupRole = "owner" | "member";
+
+/** `public.groups` (0008). The owner is the `group_members` row with role `'owner'`. */
+export interface Group {
+  id: string;
+  /** 1–60 characters (CHECK in 0008). */
+  name: string;
+  created_at: string;
+}
+
+/** `public.group_members` (0008) — PK `(group_id, user_id)`; one `'owner'` row per group. */
+export interface GroupMember {
+  group_id: string;
+  user_id: string;
+  role: GroupRole;
+  joined_at: string;
+}
+
+/** `public.group_invites` (0008) — service-role only; no client policies. */
+export interface GroupInvite {
+  /** URL-safe token from at least 32 random bytes. Primary key. */
+  token: string;
+  group_id: string;
+  created_by: string;
+  expires_at: string;
+  max_uses: number;
+  uses: number;
+}
+
+/** Row returned by `public.group_member_names(gid)` (0008). */
+export interface GroupMemberName {
+  user_id: string;
+  display_name: string | null;
+  role: GroupRole;
+  joined_at: string;
+}
