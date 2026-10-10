@@ -147,3 +147,69 @@ export interface GroupMemberName {
   role: GroupRole;
   joined_at: string;
 }
+
+/**
+ * One entry of `group_reads.outline` (0009): labels only, in reading order.
+ * The milestone trigger reads `index` and `partIndex`.
+ */
+export interface OutlineJsonEntry {
+  index: number;
+  label: string;
+  depth: number;
+  /** Part this chapter belongs to, or null (front matter, books without Parts). */
+  partIndex: number | null;
+  href: string;
+}
+
+/** `public.group_reads` (0009). Created and deleted through Route Handlers only. */
+export interface GroupRead {
+  id: string;
+  group_id: string;
+  /** 1–300 characters (CHECK in 0009). */
+  title: string;
+  author: string;
+  source: BookSource;
+  source_ref: string | null;
+  /** Non-empty array (CHECK in 0009). */
+  outline: OutlineJsonEntry[];
+  /** Reserved for v1b; v1a writes null. */
+  schedule: unknown | null;
+  /** Null once the creator's account is deleted. */
+  created_by: string | null;
+  created_at: string;
+}
+
+/** `public.read_copies` (0009) — PK `(read_id, user_id)`; owner-only. */
+export interface ReadCopy {
+  read_id: string;
+  user_id: string;
+  book_id: string;
+  content_sha256: string | null;
+  alignment: unknown | null;
+}
+
+/** `public.read_progress` (0009) — PK `(read_id, user_id)`; position in outline coordinates. */
+export interface ReadProgress {
+  read_id: string;
+  user_id: string;
+  chapter_index: number;
+  /** 0–1 within the chapter. */
+  chapter_fraction: number;
+  /** 0–1 across the whole book. */
+  percent: number;
+  finished_at: string | null;
+  /** True when the member set their position by hand rather than from a copy. */
+  manual: boolean;
+  updated_at: string;
+}
+
+/**
+ * `public.read_milestones` (0009) — PK `(read_id, user_id, point)`. Trigger-written,
+ * append-only. `point` is `part:<n>`, `half` or `end`.
+ */
+export interface ReadMilestone {
+  read_id: string;
+  user_id: string;
+  point: string;
+  reached_at: string;
+}
