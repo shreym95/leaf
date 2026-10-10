@@ -11,6 +11,7 @@
 import { createServerClient } from "@supabase/ssr";
 import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+import { GROUPS_ENABLED } from "@/lib/groups/flag";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -18,7 +19,13 @@ const isSupabaseConfigured =
   SUPABASE_URL.length > 0 && SUPABASE_ANON_KEY.length > 0;
 
 /** Route trees that require a signed-in user (SPEC §9 M1). */
-const PROTECTED_PREFIXES = ["/library", "/settings", "/reader"];
+const PROTECTED_PREFIXES = [
+  "/library",
+  "/settings",
+  "/reader",
+  // Groups pages exist only while the flag is on (GROUPS_V1_BUILD L1).
+  ...(GROUPS_ENABLED ? ["/groups", "/invite"] : []),
+];
 
 function isProtected(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(
