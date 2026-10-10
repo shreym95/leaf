@@ -46,6 +46,24 @@ export interface ReaderLocation {
   displayedPage?: number; // rendition.currentLocation().start.displayed.page
   totalPages?: number;
   /**
+   * Index of the spine item the reader is in (`located.start.index`). Absent
+   * when epub.js did not report one.
+   */
+  spineIndex?: number;
+  /**
+   * Href of that spine item (`located.start.href`) with any `#fragment`
+   * removed. Absent when epub.js did not report one.
+   */
+  spineHref?: string;
+  /**
+   * 0..1 through the current spine item: the first page is 0, the last page is
+   * 1, and a one-page section is 0. Derived from `displayedPage` / `totalPages`
+   * as `(page - 1) / (total - 1)`, clamped to [0, 1]. Both counts are
+   * per-section in epub.js, so this is a position inside the chapter, not the
+   * book. Absent when the page counts are missing or not finite.
+   */
+  sectionFraction?: number;
+  /**
    * True when epub.js says the reader is on the final page of the final
    * section (`located.atEnd`, set in `Rendition.located()`). A statement about
    * WHERE the reader is, not how they got there — pair it with `cause`.
@@ -367,6 +385,28 @@ export function estimateProgress(
   return Math.min(Math.max((index + within) / sectionCount, 0), 1);
 }
 
+/**
+ * Position inside one spine item, 0..1: the first page is 0, the last page is
+ * 1, a one-page section is 0. `page` is 1-based; both arguments are epub.js's
+ * per-section `displayed.page` / `displayed.total`. `undefined` when either is
+ * missing or not finite.
+ */
+export function sectionFractionOf(
+  page: number | undefined,
+  totalPages: number | undefined,
+): number | undefined {
+  if (
+    typeof page !== "number" ||
+    typeof totalPages !== "number" ||
+    !Number.isFinite(page) ||
+    !Number.isFinite(totalPages)
+  ) {
+    return undefined;
+  }
+  if (totalPages <= 1) return 0;
+  return Math.min(Math.max((page - 1) / (totalPages - 1), 0), 1);
+}
+
 function spreadFor(width: number): "always" | "none" {
   return width >= SPREAD_MIN_WIDTH ? "always" : "none";
 }
@@ -529,6 +569,7 @@ export async function createReader(
       start?: {
         cfi?: string;
         index?: number;
+        href?: string;
         displayed?: { page?: number; total?: number };
       };
       cfi?: string;
@@ -540,6 +581,15 @@ export async function createReader(
 
     const page = loc?.start?.displayed?.page;
     const totalPages = loc?.start?.displayed?.total;
+    const rawIndex = loc?.start?.index;
+    const spineIndex =
+      typeof rawIndex === "number" && Number.isFinite(rawIndex)
+        ? rawIndex
+        : undefined;
+    const rawHref = loc?.start?.href;
+    const spineHref =
+      typeof rawHref === "string" ? rawHref.split("#")[0] : undefined;
+    const sectionFraction = sectionFractionOf(page, totalPages);
 
     let percent = 0;
     let estimated = false;
@@ -584,6 +634,9 @@ export async function createReader(
       estimated,
       displayedPage: page,
       totalPages,
+      spineIndex,
+      spineHref,
+      sectionFraction,
       atEnd,
       cause,
     });
