@@ -6,6 +6,7 @@
 //   - highlights          (src/reader/highlights.ts)
 //   - reader settings     (src/store/reader-settings.ts)
 //   - finished / unread   (src/reader/book-status.ts)
+//   - group read progress (src/lib/db/groups.ts, enqueued by the reader hook)
 //
 // LOGIC ONLY — no design/component imports (ESLint seam rule).
 //
@@ -31,6 +32,7 @@ import { createClient } from "@/lib/supabase/client";
 import { identityUserId, readLocalIdentity } from "./identity";
 import { getReadingState, upsertReadingState } from "@/lib/db/reading-state";
 import { setBookFinished } from "@/lib/db/book-status";
+import { getMyProgress, setGroupProgress } from "@/lib/db/groups";
 import { createBookmark, deleteBookmark } from "@/lib/db/bookmarks";
 import {
   createHighlight,
@@ -50,7 +52,8 @@ export type OutboxKind =
   | "highlight-delete"
   | "highlight-note"
   | "reader-settings"
-  | "book-status";
+  | "book-status"
+  | "group-progress";
 
 export interface ReadingStatePayload {
   userId: string;
@@ -111,6 +114,19 @@ export interface BookStatusPayload {
   finishedAt: string | null;
 }
 
+/**
+ * My position in a group read, in outline coordinates. One row per (read, user),
+ * replayed as a full snapshot. `finishedAt` null = not finished.
+ */
+export interface GroupProgressPayload {
+  userId: string;
+  readId: string;
+  chapterIndex: number;
+  chapterFraction: number;
+  percent: number;
+  finishedAt: string | null;
+}
+
 export type OutboxPayload =
   | ReadingStatePayload
   | BookmarkCreatePayload
@@ -119,7 +135,8 @@ export type OutboxPayload =
   | HighlightDeletePayload
   | HighlightNotePayload
   | ReaderSettingsRowPayload
-  | BookStatusPayload;
+  | BookStatusPayload
+  | GroupProgressPayload;
 
 /** One queued write. Enough to replay itself with no other context. The
  *  storage layer treats `payload` as opaque (`unknown`, not the `OutboxPayload`
@@ -666,6 +683,26 @@ function bookStatusHandler(): ReplayHandler {
   };
 }
 
+function groupProgressHandler(): ReplayHandler {
+  return async (entry) => {
+    const p = entry.payload as GroupProgressPayload;
+    try {
+      const supabase = createClient();
+      // A position written after this one was recorded (another device, or a
+      // manual "I'm at chapter N") is the latest intent; replaying this one
+      // would move the member backwards.
+      const current = await getMyProgress(p.userId, p.readId, supabase);
+      if (current && Date.parse(current.updated_at) > entry.ts) {
+        return "skipped";
+      }
+      await setGroupProgress(p, supabase, new Date(entry.ts).toISOString());
+      return "applied";
+    } catch (err) {
+      return classifyWriteFailure(err);
+    }
+  };
+}
+
 function realHandlers(): Partial<Record<OutboxKind, ReplayHandler>> {
   return {
     "reading-state": readingStateHandler(),
@@ -676,6 +713,7 @@ function realHandlers(): Partial<Record<OutboxKind, ReplayHandler>> {
     "highlight-note": highlightNoteHandler(),
     "reader-settings": readerSettingsHandler(),
     "book-status": bookStatusHandler(),
+    "group-progress": groupProgressHandler(),
   };
 }
 
@@ -830,6 +868,22 @@ export async function enqueueBookStatus(
     kind: "book-status",
     key,
     payload: { userId, bookId, finishedAt },
+    ts: Date.now(),
+  });
+}
+
+/**
+ * Group read progress is one position per (read, user) — only the latest
+ * intent matters, so a queued earlier position for the same read is dropped
+ * first, exactly like `enqueueBookStatus`.
+ */
+export async function enqueueGroupProgress(payload: GroupProgressPayload): Promise<void> {
+  const key = `${payload.readId}:${payload.userId}`;
+  await cancelPending(store, "group-progress", key);
+  await store.enqueue({
+    kind: "group-progress",
+    key,
+    payload,
     ts: Date.now(),
   });
 }
