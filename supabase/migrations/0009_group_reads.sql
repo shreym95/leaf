@@ -188,8 +188,10 @@ begin
 
     union all
 
+    -- Same rule as milestonePoints() in src/lib/groups/outline.ts:
+    -- floor(len / 2), and no half for a one-chapter book.
     select 'half'
-    where new.chapter_index >= (v_len - 1) / 2
+    where v_len >= 2 and new.chapter_index >= v_len / 2
 
     union all
 

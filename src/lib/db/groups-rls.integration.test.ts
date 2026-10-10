@@ -484,7 +484,7 @@ describe.skipIf(noKeys)("Group reads: RLS, milestones and cleanup (0009)", () =>
   }
 
   // 12 chapters. Front matter (index 0) has no Part. Part 1 starts at 1, Part 2
-  // at 4, Part 3 at 8. Half is floor((12 - 1) / 2) = 5. End is index 11.
+  // at 4, Part 3 at 8. Half is floor(12 / 2) = 6. End is index 11.
   const OUTLINE = Array.from({ length: 12 }, (_, i) => ({
     index: i,
     label: `Chapter ${i}`,
@@ -885,7 +885,10 @@ describe.skipIf(noKeys)("Group reads: RLS, milestones and cleanup (0009)", () =>
     });
 
     it("reaching the halfway chapter records half", async () => {
-      await setProgress(a, rid, { chapter_index: 5, chapter_fraction: 0 });
+      await setProgress(a, rid, { chapter_index: 5, chapter_fraction: 0.9 });
+      expect(await points(rid, a.id)).toEqual(["part:1", "part:2"]);
+
+      await setProgress(a, rid, { chapter_index: 6, chapter_fraction: 0 });
       expect(await points(rid, a.id)).toEqual(["half", "part:1", "part:2"]);
     });
 
