@@ -23,7 +23,11 @@ vi.mock("@/lib/supabase/client", () => ({
 
 vi.mock("@/lib/db/groups", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db/groups")>();
-  return { ...actual, findReadForBook: vi.fn(async () => []) };
+  return {
+    ...actual,
+    findReadForBook: vi.fn(async () => []),
+    setGroupProgress: vi.fn(async () => {}),
+  };
 });
 
 vi.mock("@/lib/offline/outbox", async (importOriginal) => {
@@ -37,7 +41,7 @@ vi.mock("@/lib/offline/outbox", async (importOriginal) => {
 });
 
 import { createClient } from "@/lib/supabase/client";
-import { findReadForBook, type BookRead } from "@/lib/db/groups";
+import { findReadForBook, setGroupProgress, type BookRead } from "@/lib/db/groups";
 import { enqueueGroupProgress, resolveUserId } from "@/lib/offline/outbox";
 import type { Alignment, Outline } from "@/lib/groups/types";
 import type { ReaderController, ReaderLocation } from "./engine";
@@ -92,6 +96,14 @@ function bookRead(alignment: Alignment | null, id = "r1"): BookRead {
 
 const DEBOUNCE = 1500;
 
+const transportError = () => new TypeError("Failed to fetch");
+const rlsError = () => Object.assign(new Error("denied"), { code: "42501" });
+
+function expectNothingSent(): void {
+  expect(setGroupProgress).not.toHaveBeenCalled();
+  expect(enqueueGroupProgress).not.toHaveBeenCalled();
+}
+
 async function settle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
 }
@@ -100,6 +112,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   h.enabled = true;
   vi.mocked(findReadForBook).mockReset().mockResolvedValue([]);
+  vi.mocked(setGroupProgress).mockReset().mockResolvedValue(undefined);
   vi.mocked(enqueueGroupProgress).mockReset().mockResolvedValue(undefined);
   vi.mocked(resolveUserId).mockReset().mockResolvedValue("u1");
   vi.mocked(createClient).mockClear();
@@ -124,7 +137,7 @@ describe("trackGroupProgress", () => {
     expect(addDoc).not.toHaveBeenCalled();
     expect(addWin).not.toHaveBeenCalled();
     t.stop();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
     addDoc.mockRestore();
     addWin.mockRestore();
   });
@@ -138,31 +151,35 @@ describe("trackGroupProgress", () => {
     t.stop();
     expect(findReadForBook).toHaveBeenCalledTimes(1);
     expect(findReadForBook).toHaveBeenCalledWith("u1", "b1", expect.anything());
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
-  it("maps a relocation to outline coordinates and enqueues after the debounce", async () => {
+  it("maps a relocation to outline coordinates and writes directly after the debounce", async () => {
     vi.mocked(findReadForBook).mockResolvedValue([bookRead(alignmentFor("text/"))]);
     const c = makeController();
     const t = trackGroupProgress(c, { bookId: "b1" });
     await settle();
     c._emit(loc({ spineHref: "text/ch3.xhtml", sectionFraction: 0.5 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE - 1);
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
     await vi.advanceTimersByTimeAsync(1);
-    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
-    expect(enqueueGroupProgress).toHaveBeenCalledWith({
-      userId: "u1",
-      readId: "r1",
-      chapterIndex: 2,
-      chapterFraction: 0.5,
-      percent: 0.625,
-      finishedAt: null,
-    });
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).toHaveBeenCalledWith(
+      {
+        userId: "u1",
+        readId: "r1",
+        chapterIndex: 2,
+        chapterFraction: 0.5,
+        percent: 0.625,
+        finishedAt: null,
+      },
+      expect.anything(),
+    );
+    expect(enqueueGroupProgress).not.toHaveBeenCalled();
     t.stop();
   });
 
-  it("debounces: only the latest of several quick relocations is enqueued", async () => {
+  it("debounces: only the latest of several quick relocations is sent", async () => {
     vi.mocked(findReadForBook).mockResolvedValue([bookRead(alignmentFor("text/"))]);
     const c = makeController();
     const t = trackGroupProgress(c, { bookId: "b1" });
@@ -171,9 +188,10 @@ describe("trackGroupProgress", () => {
     await vi.advanceTimersByTimeAsync(500);
     c._emit(loc({ spineHref: "text/ch2.xhtml", sectionFraction: 0.2 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
-    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
-    expect(enqueueGroupProgress).toHaveBeenCalledWith(
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).toHaveBeenCalledWith(
       expect.objectContaining({ chapterIndex: 1, chapterFraction: 0.2 }),
+      expect.anything(),
     );
     t.stop();
   });
@@ -187,7 +205,7 @@ describe("trackGroupProgress", () => {
     c._emit(loc({ sectionFraction: 0.4 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     t.stop();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
   it("an href that is not in the TOC enqueues nothing (never chapter 0)", async () => {
@@ -198,7 +216,7 @@ describe("trackGroupProgress", () => {
     c._emit(loc({ spineHref: "text/colophon.xhtml", sectionFraction: 0.3 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     t.stop();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
   it("skips a read whose copy has no alignment", async () => {
@@ -209,7 +227,7 @@ describe("trackGroupProgress", () => {
     c._emit(loc({ spineHref: "text/ch1.xhtml", sectionFraction: 0.3 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     t.stop();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
   it("falls back to a unique final-segment match when directories differ", async () => {
@@ -220,8 +238,9 @@ describe("trackGroupProgress", () => {
     c._emit(loc({ spineHref: "text/ch2.xhtml", sectionFraction: 0.25 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     t.stop();
-    expect(enqueueGroupProgress).toHaveBeenCalledWith(
+    expect(setGroupProgress).toHaveBeenCalledWith(
       expect.objectContaining({ chapterIndex: 1, chapterFraction: 0.25 }),
+      expect.anything(),
     );
   });
 
@@ -240,7 +259,7 @@ describe("trackGroupProgress", () => {
     c._emit(loc({ spineHref: "c/ch1.xhtml", sectionFraction: 0.5 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     t.stop();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
   it("a page turn that lands before the lookup resolves is still reported", async () => {
@@ -255,10 +274,10 @@ describe("trackGroupProgress", () => {
     await settle();
     c._emit(loc({ spineHref: "text/ch1.xhtml", sectionFraction: 0.5 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
     resolveLookup([bookRead(alignmentFor("text/"))]);
     await settle();
-    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
     t.stop();
   });
 
@@ -271,7 +290,7 @@ describe("trackGroupProgress", () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     t.stop();
     expect(findReadForBook).not.toHaveBeenCalled();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
   it("offline at start: no query for this session", async () => {
@@ -291,14 +310,15 @@ describe("trackGroupProgress", () => {
     await settle();
     c._emit(loc({ spineHref: "text/ch2.xhtml", sectionFraction: 0.5 }));
     t.stop();
-    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
     expect(c._subs.size).toBe(0);
     t.stop();
     await vi.advanceTimersByTimeAsync(DEBOUNCE * 2);
-    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).not.toHaveBeenCalled();
   });
 
-  it("flushes the pending position when the page is hidden", async () => {
+  it("page hide flushes the pending position to the outbox, not the network", async () => {
     vi.mocked(findReadForBook).mockResolvedValue([bookRead(alignmentFor("text/"))]);
     const c = makeController();
     const t = trackGroupProgress(c, { bookId: "b1" });
@@ -306,8 +326,26 @@ describe("trackGroupProgress", () => {
     c._emit(loc({ spineHref: "text/ch2.xhtml", sectionFraction: 0.5 }));
     window.dispatchEvent(new Event("pagehide"));
     expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ readId: "r1", chapterIndex: 1, chapterFraction: 0.5 }),
+    );
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).not.toHaveBeenCalled();
+    t.stop();
+  });
+
+  it("visibility hidden flushes to the outbox, not the network", async () => {
+    vi.mocked(findReadForBook).mockResolvedValue([bookRead(alignmentFor("text/"))]);
+    const c = makeController();
+    const t = trackGroupProgress(c, { bookId: "b1" });
+    await settle();
+    c._emit(loc({ spineHref: "text/ch2.xhtml", sectionFraction: 0.5 }));
+    const spy = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    spy.mockRestore();
+    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(setGroupProgress).not.toHaveBeenCalled();
     t.stop();
   });
 
@@ -327,10 +365,10 @@ describe("trackGroupProgress", () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
     expect(sibling).toHaveBeenCalledTimes(1);
     expect(() => t.stop()).not.toThrow();
-    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    expectNothingSent();
   });
 
-  it("a throwing or rejecting enqueue never throws and leaves a sibling tracker working (L6)", async () => {
+  it("a failing write or enqueue never throws and leaves a sibling tracker working (L6)", async () => {
     vi.mocked(findReadForBook).mockResolvedValue([bookRead(alignmentFor("text/"))]);
     const c = makeController();
     const sibling = vi.fn();
@@ -338,10 +376,14 @@ describe("trackGroupProgress", () => {
     const t = trackGroupProgress(c, { bookId: "b1" });
     await settle();
 
+    // Transport failure whose fallback enqueue rejects.
+    vi.mocked(setGroupProgress).mockRejectedValueOnce(transportError());
     vi.mocked(enqueueGroupProgress).mockRejectedValueOnce(new Error("idb"));
     c._emit(loc({ spineHref: "text/ch1.xhtml", sectionFraction: 0.1 }));
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
 
+    // Transport failure whose fallback enqueue throws synchronously.
+    vi.mocked(setGroupProgress).mockRejectedValueOnce(transportError());
     vi.mocked(enqueueGroupProgress).mockImplementationOnce(() => {
       throw new Error("sync");
     });
@@ -350,9 +392,96 @@ describe("trackGroupProgress", () => {
     }).not.toThrow();
     await vi.advanceTimersByTimeAsync(DEBOUNCE);
 
-    expect(sibling).toHaveBeenCalledTimes(2);
-    expect(enqueueGroupProgress).toHaveBeenCalledTimes(2);
+    // The write itself throws synchronously.
+    vi.mocked(setGroupProgress).mockImplementationOnce(() => {
+      throw new Error("sync write");
+    });
+    c._emit(loc({ spineHref: "text/ch3.xhtml", sectionFraction: 0.3 }));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+
+    expect(sibling).toHaveBeenCalledTimes(3);
+    expect(setGroupProgress).toHaveBeenCalledTimes(3);
+    expect(enqueueGroupProgress).toHaveBeenCalledTimes(3);
     expect(() => t.stop()).not.toThrow();
+  });
+});
+
+describe("trackGroupProgress delivery", () => {
+  async function readingAt(spineHref = "text/ch2.xhtml", sectionFraction = 0.5) {
+    vi.mocked(findReadForBook).mockResolvedValue([bookRead(alignmentFor("text/"))]);
+    const c = makeController();
+    const t = trackGroupProgress(c, { bookId: "b1" });
+    await settle();
+    c._emit(loc({ spineHref, sectionFraction }));
+    return { c, t };
+  }
+
+  it("direct write succeeds: nothing is queued", async () => {
+    const { t } = await readingAt();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    t.stop();
+  });
+
+  it("transport failure: the same payload is queued once", async () => {
+    vi.mocked(setGroupProgress).mockRejectedValue(transportError());
+    const { t } = await readingAt();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).toHaveBeenCalledWith(
+      vi.mocked(setGroupProgress).mock.calls[0][0],
+    );
+    t.stop();
+  });
+
+  it("rejection (RLS): neither retried nor queued", async () => {
+    vi.mocked(setGroupProgress).mockRejectedValue(rlsError());
+    const { t } = await readingAt();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE * 3);
+    t.stop();
+    await settle();
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+  });
+
+  it("offline: queued without a network attempt", async () => {
+    const { t } = await readingAt();
+    const spy = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    spy.mockRestore();
+    expect(setGroupProgress).not.toHaveBeenCalled();
+    expect(enqueueGroupProgress).toHaveBeenCalledTimes(1);
+    t.stop();
+  });
+
+  it("a slow failure does not queue a position a newer write superseded", async () => {
+    let failFirst!: (e: unknown) => void;
+    vi.mocked(setGroupProgress)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            failFirst = reject;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const { c, t } = await readingAt("text/ch1.xhtml", 0.1);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    c._emit(loc({ spineHref: "text/ch2.xhtml", sectionFraction: 0.2 }));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(setGroupProgress).toHaveBeenCalledTimes(2);
+    failFirst(transportError());
+    await settle();
+    expect(enqueueGroupProgress).not.toHaveBeenCalled();
+    t.stop();
+  });
+
+  it("stop() sends the last position directly", async () => {
+    const { t } = await readingAt();
+    t.stop();
+    expect(setGroupProgress).toHaveBeenCalledTimes(1);
+    expect(enqueueGroupProgress).not.toHaveBeenCalled();
   });
 });
 
