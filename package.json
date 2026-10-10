@@ -18,6 +18,8 @@
     "db:link": "supabase link --project-ref emvasvbeypkrfnlzjxaz",
     "db:push": "supabase db push --linked",
     "db:diff": "supabase db diff --linked",
+    "db:backup": "node scripts/db/backup.mjs",
+    "db:restore": "node scripts/db/restore.mjs",
     "db:types": "supabase gen types typescript --project-id emvasvbeypkrfnlzjxaz > src/lib/types.ts"
   },
   "dependencies": {

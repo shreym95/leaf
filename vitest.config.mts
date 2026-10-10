@@ -12,6 +12,6 @@ export default defineConfig({
     globals: true,
     // env loader first (populates process.env from .env.local), then jsdom setup.
     setupFiles: ["./vitest.setup.env.ts", "./vitest.setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.test.ts"],
   },
 });
