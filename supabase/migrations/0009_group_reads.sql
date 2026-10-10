@@ -25,7 +25,8 @@
 -- MILESTONE POINTS, computed by the trigger for the new progress position:
 --   part:<n>  for each distinct non-null partIndex n; reached when
 --             chapter_index >= the first `index` carrying that partIndex
---   half      reached when chapter_index >= floor((outline length - 1) / 2)
+--   half      reached when chapter_index >= floor(outline length / 2); none
+--             when the outline has fewer than 2 entries
 --   end       reached when chapter_index = outline length - 1 and
 --             chapter_fraction >= 0.98, or when finished_at is not null
 -- `read_milestones` is append-only: rows are inserted `on conflict do nothing`
