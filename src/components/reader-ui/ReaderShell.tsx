@@ -8,6 +8,7 @@ import {
   type ReaderTocEntry,
 } from "@/reader/engine";
 import { trackPosition, type PositionTracker } from "@/reader/position";
+import { trackGroupProgress, type GroupProgressTracker } from "@/reader/group-progress";
 import {
   createCompletionTracker,
   type CompletionTracker,
@@ -168,6 +169,7 @@ export function ReaderShell({
   const frameRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<ReaderController | null>(null);
   const trackerRef = useRef<PositionTracker | null>(null);
+  const groupProgressRef = useRef<GroupProgressTracker | null>(null);
   // Finished-book detector. A ref so the jump handlers below (sync offer,
   // return chip), which live outside the engine effect, can vouch for a jump.
   const completionRef = useRef<CompletionTracker | null>(null);
@@ -503,6 +505,7 @@ export function ReaderShell({
 
         const tracker = trackPosition(controller, bookId);
         trackerRef.current = tracker;
+        groupProgressRef.current = trackGroupProgress(controller, { bookId });
         // A further position synced from another device is OFFERED, never
         // applied silently (docs/REVISED_PLAN.md §8(c) — a passive prompt,
         // not silent convergence; see position.ts's own doc comment on
@@ -593,6 +596,8 @@ export function ReaderShell({
       bookmarksRef.current = null;
       trackerRef.current?.stop();
       trackerRef.current = null;
+      groupProgressRef.current?.stop();
+      groupProgressRef.current = null;
       controllerRef.current?.destroy();
       controllerRef.current = null;
       useReaderSettings.getState().flush();
