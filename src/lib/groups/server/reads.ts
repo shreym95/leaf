@@ -2,12 +2,13 @@
 
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { InvalidEpubError } from "@/lib/epub/validate";
 import { alignCopy } from "@/lib/groups/alignment";
 import { buildOutline } from "@/lib/groups/outline";
 import type { Outline } from "@/lib/groups/types";
 import type { Book, BookSource } from "@/lib/types";
 import { isCatalogSource, linkCopy, linkExistingCopies } from "./link-or-import";
-import { downloadBookBytes, extractEpubToc, TocUnavailableError } from "./toc";
+import { downloadBookBytes, extractEpubToc } from "./toc";
 import { isUuid } from "./membership";
 import { parseBoundedText, READ_TITLE_MAX } from "./validate";
 
@@ -130,22 +131,23 @@ export async function createGroupRead(
   try {
     toc = await extractEpubToc(bytes);
   } catch (err) {
-    if (err instanceof TocUnavailableError) {
+    if (err instanceof InvalidEpubError) {
       return {
         ok: false,
-        status: 501,
-        message: "Adding a group read is not available yet.",
+        status: 422,
+        message: "This book could not be read.",
       };
     }
     throw err;
   }
 
   const outline = buildOutline(toc);
+  const storedOutline = toStoredOutline(outline);
   if (outline.length === 0) {
     return {
       ok: false,
       status: 422,
-      message: "That book has no table of contents.",
+      message: "This book has no table of contents.",
     };
   }
 
@@ -157,7 +159,7 @@ export async function createGroupRead(
       author: input.author,
       source: input.source,
       source_ref: input.sourceRef,
-      outline: toStoredOutline(outline),
+      outline: storedOutline,
       schedule: null,
       created_by: userId,
     })
@@ -187,6 +189,7 @@ export async function createGroupRead(
           title: input.title,
           source: input.source,
           source_ref: input.sourceRef,
+          outline: storedOutline,
         },
         groupId,
         userId,

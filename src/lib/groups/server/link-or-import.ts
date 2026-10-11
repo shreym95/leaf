@@ -10,6 +10,7 @@ import { ingestEpub } from "@/lib/books/ingest";
 import { fetchStandardEbooksEpub } from "@/lib/import/standard-ebooks";
 import { fetchGutenbergEpub } from "@/lib/import/gutendex";
 import type { CatalogSource } from "@/lib/import/types";
+import { alignMemberCopy } from "./copy-alignment";
 
 export const CATALOG_SOURCES: readonly CatalogSource[] = [
   "standardebooks",
@@ -28,6 +29,8 @@ export interface CatalogRead {
   title: string;
   source: CatalogSource;
   source_ref: string;
+  /** `group_reads.outline`: labels and structure, no hrefs. */
+  outline: unknown;
 }
 
 export interface CopyDetails {
@@ -77,6 +80,28 @@ export async function linkCopy(
   if (error) throw error;
 }
 
+/**
+ * Replace what a member's copy link points at, with its alignment. Unlike
+ * `linkCopy`, this overwrites an existing link.
+ */
+export async function updateCopy(
+  admin: SupabaseClient,
+  readId: string,
+  userId: string,
+  patch: { bookId?: string; contentSha256?: string | null; alignment?: unknown | null },
+): Promise<void> {
+  const row: Record<string, unknown> = {};
+  if (patch.bookId !== undefined) row.book_id = patch.bookId;
+  if (patch.contentSha256 !== undefined) row.content_sha256 = patch.contentSha256;
+  if (patch.alignment !== undefined) row.alignment = patch.alignment;
+  const { error } = await admin
+    .from("read_copies")
+    .update(row)
+    .eq("read_id", readId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 /** Download a catalog EPUB and ingest it into the signed-in user's library. */
 export async function importCatalogBook(
   userId: string,
@@ -120,7 +145,13 @@ export async function linkOrImportCatalogReads(
         read.source_ref,
       );
       if (existing) {
-        await linkCopy(admin, read.id, userId, existing);
+        await linkCopy(
+          admin,
+          read.id,
+          userId,
+          existing,
+          await alignMemberCopy(admin, userId, existing, read.outline),
+        );
         result.linked += 1;
       } else {
         const bookId = await importCatalogBook(
@@ -128,7 +159,13 @@ export async function linkOrImportCatalogReads(
           read.source,
           read.source_ref,
         );
-        await linkCopy(admin, read.id, userId, bookId);
+        await linkCopy(
+          admin,
+          read.id,
+          userId,
+          bookId,
+          await alignMemberCopy(admin, userId, bookId, read.outline),
+        );
         result.imported += 1;
       }
     } catch (err) {
@@ -171,7 +208,13 @@ export async function linkExistingCopies(
         read.source_ref,
       );
       if (existing) {
-        await linkCopy(admin, read.id, m.user_id, existing);
+        await linkCopy(
+          admin,
+          read.id,
+          m.user_id,
+          existing,
+          await alignMemberCopy(admin, m.user_id, existing, read.outline),
+        );
         linked += 1;
       } else {
         pending += 1;

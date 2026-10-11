@@ -100,7 +100,7 @@ export async function POST(
 
     const { data: reads, error: readsError } = await admin
       .from("group_reads")
-      .select("id, title, source, source_ref")
+      .select("id, title, source, source_ref, outline")
       .eq("group_id", groupId)
       .in("source", ["standardebooks", "gutenberg"]);
     if (readsError) throw readsError;
@@ -110,6 +110,7 @@ export async function POST(
       title: string;
       source: string;
       source_ref: string | null;
+      outline: unknown;
     }>).filter(
       (r): r is CatalogRead =>
         isCatalogSource(r.source) && typeof r.source_ref === "string",
