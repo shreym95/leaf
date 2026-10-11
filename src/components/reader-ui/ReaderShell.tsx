@@ -40,6 +40,7 @@ import { enforceOfflineOwner } from "@/lib/offline/owner";
 import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
+import { useGroupMarkers } from "./useGroupMarkers";
 import { EndOfBookPanel } from "./EndOfBookPanel";
 import { ReturnChip } from "./ReturnChip";
 import { SyncOfferChip } from "./SyncOfferChip";
@@ -165,6 +166,7 @@ export function ReaderShell({
   finished = false,
   initialSettings,
 }: ReaderShellProps) {
+  const groupMarkers = useGroupMarkers(bookId);
   const viewerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<ReaderController | null>(null);
@@ -913,6 +915,7 @@ export function ReaderShell({
         open={deckOpen}
         onOpenChange={setDeckOpen}
         percent={percent}
+        markers={groupMarkers}
         chapterLabel={chapterLabel}
         toc={toc}
         onNavigate={(href) => jumpTo(href)}
