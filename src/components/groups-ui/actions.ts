@@ -78,3 +78,50 @@ export async function removeMember(
     "Could not remove the member.",
   );
 }
+
+export interface NewReadBook {
+  id: string;
+  title: string;
+  author: string;
+  source: "standardebooks" | "gutenberg" | "upload";
+  sourceRef: string | null;
+}
+
+/** Start a group read from one of the caller's own books. */
+export async function addRead(
+  groupId: string,
+  book: NewReadBook,
+): Promise<{ id: string }> {
+  const body = await call<{ read: { id: string } }>(
+    `/api/groups/${encodeURIComponent(groupId)}/reads`,
+    jsonInit("POST", {
+      title: book.title,
+      author: book.author,
+      source: book.source,
+      ...(book.source === "upload" || !book.sourceRef
+        ? {}
+        : { sourceRef: book.sourceRef }),
+      bookId: book.id,
+    }),
+    "Could not add the book.",
+  );
+  return body.read;
+}
+
+/**
+ * Give the caller their own copy of a read. Without `bookId` a catalog read is
+ * imported (or linked) for the caller; an uploaded read needs `bookId`.
+ * Resolves with the alignment confidence, or null when there is no alignment.
+ */
+export async function addMyCopy(
+  groupId: string,
+  readId: string,
+  bookId?: string,
+): Promise<{ confidence: number | null }> {
+  const body = await call<{ alignment: { confidence: number } | null }>(
+    `/api/groups/${encodeURIComponent(groupId)}/reads/${encodeURIComponent(readId)}/copy`,
+    jsonInit("POST", bookId ? { bookId } : undefined),
+    "Could not add your copy.",
+  );
+  return { confidence: body.alignment?.confidence ?? null };
+}

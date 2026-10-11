@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/primitives";
 import type { GroupMemberName } from "@/lib/types";
-import { leaveGroup, removeMember, renameGroup } from "./actions";
+import { addRead, leaveGroup, removeMember, renameGroup } from "./actions";
+import { BookPickerDialog } from "./BookPickerDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GroupNameDialog } from "./GroupNameDialog";
 import { InviteLinkControl } from "./InviteLinkControl";
@@ -13,6 +14,7 @@ import { MemberList, memberDisplayName } from "./MemberList";
 import { ReadList, type ReadListItem } from "./ReadList";
 import { backLinkClass, sectionHeadingClass } from "./styles";
 import { useInviteLink } from "./useInviteLink";
+import { useOwnBooks, type OwnBook } from "./useOwnBooks";
 
 export interface GroupScreenProps {
   groupId: string;
@@ -36,7 +38,9 @@ export function GroupScreen({
   const [renameOpen, setRenameOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [removing, setRemoving] = useState<GroupMemberName | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const invite = useInviteLink(groupId);
+  const ownBooks = useOwnBooks(currentUserId, addOpen);
 
   async function handleRename(next: string) {
     await renameGroup(groupId, next);
@@ -52,6 +56,11 @@ export function GroupScreen({
   async function handleRemove() {
     if (!removing) return;
     await removeMember(groupId, removing.user_id);
+    router.refresh();
+  }
+
+  async function handleAddBook(book: OwnBook) {
+    await addRead(groupId, book);
     router.refresh();
   }
 
@@ -96,9 +105,14 @@ export function GroupScreen({
       </section>
 
       <section className="flex flex-col gap-3" aria-labelledby="group-reads">
-        <h2 id="group-reads" className={sectionHeadingClass}>
-          Reads
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="group-reads" className={sectionHeadingClass}>
+            Reads
+          </h2>
+          <Button variant="ghost" size="sm" onClick={() => setAddOpen(true)}>
+            Add a book
+          </Button>
+        </div>
         <ReadList groupId={groupId} reads={reads} />
       </section>
 
@@ -119,6 +133,14 @@ export function GroupScreen({
           onSubmit={handleRename}
         />
       ) : null}
+
+      <BookPickerDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        title="Add a book"
+        books={ownBooks}
+        onPick={handleAddBook}
+      />
 
       <ConfirmDialog
         open={leaveOpen}
