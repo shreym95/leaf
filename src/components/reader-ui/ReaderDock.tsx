@@ -13,6 +13,7 @@ import type { ReaderTheme } from "@/store/reader-settings";
 import type { ReaderTocEntry } from "@/reader/engine";
 import { TocPopover, type DockBookmark } from "./TocPopover";
 import { formatChapterLabel } from "./chapter-label";
+import type { GroupMarker } from "./useGroupMarkers";
 
 /**
  * ReaderDock — the reader's bottom chrome (design iteration 1, REVISED_PLAN §9B
@@ -81,6 +82,11 @@ export interface ReaderDockProps {
   /** Disabled until the engine reports a position to bookmark. */
   canBookmark: boolean;
   onToggleBookmark: () => void;
+  /**
+   * Other group members' places, 0–1. Optional: absent or empty renders exactly
+   * what the dock rendered before groups existed.
+   */
+  markers?: GroupMarker[];
 }
 
 // ── Icons — flat vector line SVGs, no emoji (handoff §4) ──────────────────
@@ -298,6 +304,60 @@ function FontStepper({
   );
 }
 
+// ── Group markers on the progress hairline ───────────────────────────────
+
+/**
+ * The resting hairline with other members' places on it. Rendered only when
+ * there are markers; without them the plain hairline above is used unchanged.
+ * The track clips its fill, so the dots sit in a wrapper beside it instead.
+ * Static: no transition, so reduced motion has nothing to gate.
+ */
+function MarkedTrack({ pct, markers }: { pct: number; markers: GroupMarker[] }) {
+  return (
+    <span
+      role="group"
+      aria-label="Group members"
+      className="relative flex items-center"
+      style={{ width: "var(--leaf-dock-progress-w)" }}
+    >
+      <span
+        aria-hidden
+        className="relative w-full overflow-hidden rounded-pill"
+        style={{
+          height: "var(--leaf-dock-track-h)",
+          background: "var(--leaf-dock-track)",
+        }}
+      >
+        <span
+          className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
+          style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
+        />
+      </span>
+      {markers.map((m) => {
+        const at = Math.round(clamp(m.percent, 0, 1) * 100);
+        const label = `${m.name}, ${at}%`;
+        return (
+          <span
+            key={m.userId}
+            role="img"
+            aria-label={label}
+            title={label}
+            data-testid="group-marker"
+            className="absolute top-1/2 box-border -translate-x-1/2 -translate-y-1/2 rounded-pill border"
+            style={{
+              left: `${at}%`,
+              width: "calc(var(--leaf-dock-track-h) * 3)",
+              height: "calc(var(--leaf-dock-track-h) * 3)",
+              background: "var(--leaf-accent)",
+              borderColor: "var(--leaf-dock-bg)",
+            }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────
 
 export function ReaderDock({
@@ -319,8 +379,10 @@ export function ReaderDock({
   onRemoveBookmark,
   canBookmark,
   onToggleBookmark,
+  markers,
 }: ReaderDockProps) {
   const pct = Math.round(clamp(percent, 0, 1) * 100);
+  const hasMarkers = markers !== undefined && markers.length > 0;
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const deckRef = useRef<HTMLDivElement>(null);
@@ -450,7 +512,7 @@ export function ReaderDock({
             dock and the expanded pods are the same solid material, so it never
             looks like a row of loose chips. Every child here is transparent. */}
         <div
-          aria-hidden
+          aria-hidden={hasMarkers ? undefined : true}
           className="flex items-center gap-[var(--leaf-space-3)] border px-[var(--leaf-dock-pad-x)]"
           style={{
             ...podSurface,
@@ -459,27 +521,33 @@ export function ReaderDock({
           }}
         >
           <span
+            aria-hidden={hasMarkers ? true : undefined}
             className="max-w-[11ch] truncate font-mono [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
             style={{ color: "var(--leaf-dock-text-muted)" }}
           >
             {formatChapterLabel(chapterLabel) ?? "Reading"}
           </span>
 
-          <span
-            className="relative overflow-hidden rounded-pill"
-            style={{
-              width: "var(--leaf-dock-progress-w)",
-              height: "var(--leaf-dock-track-h)",
-              background: "var(--leaf-dock-track)",
-            }}
-          >
+          {hasMarkers ? (
+            <MarkedTrack pct={pct} markers={markers} />
+          ) : (
             <span
-              className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
-              style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
-            />
-          </span>
+              className="relative overflow-hidden rounded-pill"
+              style={{
+                width: "var(--leaf-dock-progress-w)",
+                height: "var(--leaf-dock-track-h)",
+                background: "var(--leaf-dock-track)",
+              }}
+            >
+              <span
+                className="absolute inset-y-0 left-0 rounded-pill [transition:width_var(--leaf-dur-ui)_var(--leaf-ease)]"
+                style={{ width: `${pct}%`, background: "var(--leaf-dock-text)" }}
+              />
+            </span>
+          )}
 
           <span
+            aria-hidden={hasMarkers ? true : undefined}
             className="font-mono tabular-nums [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-tight)]"
             style={{ color: "var(--leaf-dock-text)" }}
           >
