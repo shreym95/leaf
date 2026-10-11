@@ -11,6 +11,7 @@ import {
   Button,
 } from "@/components/primitives";
 import { purgeAllOfflineData } from "@/lib/offline/purge";
+import { GROUPS_ENABLED } from "@/lib/groups/flag";
 
 /**
  * AccountMenu — everything in the app bar that is not the wordmark or the theme
@@ -118,6 +119,13 @@ export function AccountMenu({ name }: AccountMenuProps) {
                   Library
                 </Link>
               </MenuItem>
+              {GROUPS_ENABLED && (
+                <MenuItem asChild>
+                  <Link href="/groups" className={itemLink}>
+                    Groups
+                  </Link>
+                </MenuItem>
+              )}
               <MenuItem asChild>
                 <Link href="/settings" className={itemLink}>
                   Settings
