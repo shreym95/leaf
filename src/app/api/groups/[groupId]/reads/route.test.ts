@@ -36,7 +36,7 @@ vi.mock("@/lib/groups/server/toc", async (importOriginal) => ({
 }));
 
 import { POST } from "./route";
-import { TocUnavailableError } from "@/lib/groups/server/toc";
+import { InvalidEpubError } from "@/lib/epub/validate";
 
 let db: FakeDb;
 
@@ -163,10 +163,10 @@ describe("POST /api/groups/:groupId/reads", () => {
     expect(db.rows("group_reads")).toHaveLength(0);
   });
 
-  it("501s while no table-of-contents parser exists", async () => {
-    h.extractToc.mockRejectedValue(new TocUnavailableError());
+  it("422s when the book's contents cannot be read", async () => {
+    h.extractToc.mockRejectedValue(new InvalidEpubError("bad nav"));
     const res = await post(validBody);
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(422);
     expect(db.rows("group_reads")).toHaveLength(0);
   });
 
