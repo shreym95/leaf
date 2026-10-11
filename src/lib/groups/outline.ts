@@ -8,6 +8,7 @@ import type {
 } from "./types";
 
 /** A chapter at or past this fraction counts as finished. */
+// Must match the `end` rule in supabase/migrations/0009_group_reads.sql (record_read_milestones).
 export const END_FRACTION_THRESHOLD = 0.98;
 
 function clamp01(n: number): number {
