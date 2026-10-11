@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ThemePicker } from "@/components/theme/ThemePicker";
 import { AccountMenu } from "@/components/ui/AccountMenu";
 import { getUser } from "@/lib/auth";
+import { GROUPS_ENABLED } from "@/lib/groups/flag";
 
 /**
  * NavBar — the slim app chrome shell (SPEC §8).
@@ -48,6 +49,11 @@ export async function NavBar() {
           <Link href="/library" className={linkClass}>
             Library
           </Link>
+          {GROUPS_ENABLED && (
+            <Link href="/groups" className={linkClass}>
+              Groups
+            </Link>
+          )}
           <Link href="/settings" className={linkClass}>
             Settings
           </Link>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { GROUPS_ENABLED } from "@/lib/groups/flag";
 
 /**
  * /privacy — Leaf's privacy policy (SPEC §9 M4). Public: no auth, safe to
@@ -114,6 +115,18 @@ export default function PrivacyPage() {
           other users. The app is hosted on Vercel.
         </p>
       </Section>
+
+      {GROUPS_ENABLED && (
+        <Section heading="Reading groups">
+          <p className={proseClass}>
+            Members of a group you join can see your display name, your reading
+            progress and milestones in that group&apos;s books, and the notes you
+            share there. Your book files are never shared; each member reads
+            their own copy. Leaving a group removes your progress and notes from
+            it.
+          </p>
+        </Section>
+      )}
 
       <Section heading="Who else is involved">
         <ul className={listClass}>
