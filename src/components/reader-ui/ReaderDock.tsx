@@ -76,19 +76,24 @@ export interface ReaderDockProps {
   /** Open the shared `ReaderSettingsSheet`. */
   /** Whether the current page is already bookmarked. */
   bookmarked: boolean;
-  /** Saved bookmarks for this book — listed in the contents panel. */
-  bookmarks: DockBookmark[];
-  onGoToBookmark: (cfi: string) => void;
-  onRemoveBookmark: (id: string) => void;
-  /** Disabled until the engine reports a position to bookmark. */
+  /** @deprecated Legacy Bookmarks tab; only read when `notesPanel` is absent. */
+  bookmarks?: DockBookmark[];
+  /** @deprecated Legacy Bookmarks tab; only read when `notesPanel` is absent. */
+  onGoToBookmark?: (cfi: string) => void;
+  /** @deprecated Legacy Bookmarks tab; only read when `notesPanel` is absent. */
+  onRemoveBookmark?: (id: string) => void;
+  /** Disabled until the engine reports a position to mark. */
   canBookmark: boolean;
+  /** Toggles the "Mark this page" mark on the page on screen. */
   onToggleBookmark: () => void;
   /**
    * Other group members' places, 0–1. Optional: absent or empty renders exactly
    * what the dock rendered before groups existed.
    */
   markers?: GroupMarker[];
-  /** The contents popover's Group tab body. Absent: no Group tab. */
+  /** The contents popover's Notes tab body (NOTES_PLAN N2b). */
+  notesPanel?: ReactNode;
+  /** @deprecated Legacy Group tab body; only read when `notesPanel` is absent. */
   groupPanel?: ReactNode;
 }
 
@@ -383,6 +388,7 @@ export function ReaderDock({
   canBookmark,
   onToggleBookmark,
   markers,
+  notesPanel,
   groupPanel,
 }: ReaderDockProps) {
   const pct = Math.round(clamp(percent, 0, 1) * 100);
@@ -655,16 +661,16 @@ export function ReaderDock({
               bookmarks={bookmarks}
               onGoToBookmark={(cfi) => {
                 setTocOpen(false);
-                onGoToBookmark(cfi);
+                onGoToBookmark?.(cfi);
               }}
               onRemoveBookmark={onRemoveBookmark}
+              notesPanel={notesPanel}
               groupPanel={groupPanel}
             />
           </div>
 
-          {/* Bookmarking lives here now. It used to be a tab on the frame's
-              top edge, which spent reading space on a control used a few times
-              a book. The list of bookmarks is a tab in the contents panel. */}
+          {/* One-tap page mark (NOTES_PLAN §1.2). It used to be a tab on the
+              frame's top edge; the marks themselves are listed in the Notes tab. */}
           <button
             type="button"
             onClick={onToggleBookmark}

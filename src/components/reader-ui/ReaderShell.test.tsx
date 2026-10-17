@@ -398,17 +398,29 @@ describe("ReaderShell — settings reach the engine", () => {
   });
 
   it("keeps the bookmark list reachable from the contents popover", async () => {
+    let emit: ((loc: unknown) => void) | undefined;
+    h.onRelocated.mockImplementation((cb: (loc: unknown) => void) => {
+      emit = cb;
+      return () => {};
+    });
+
     const user = userEvent.setup();
     renderShell();
     await ready();
+    await act(async () => {
+      emit?.({ cfi: "epubcfi(/6/8!/4/2)", percent: 0.34 });
+    });
 
-    // The ribbon on the frame's top edge is gone — the pod creates bookmarks
-    // and the contents popover's second tab lists them.
+    // The ribbon on the frame's top edge is gone — the pod saves the page and
+    // the contents popover's Notes tab lists the saved mark.
     await user.click(screen.getByRole("button", { name: /open reading controls/i }));
+    const pod = screen.getByRole("button", { name: "Bookmark this page" });
+    await waitFor(() => expect(pod).toBeEnabled());
+    await user.click(pod);
     await user.click(screen.getByRole("button", { name: "Table of contents" }));
-    await user.click(screen.getByRole("tab", { name: "Bookmarks" }));
+    await user.click(screen.getByRole("tab", { name: "Notes" }));
 
-    expect(screen.getByText(/No bookmarks yet/i)).toBeTruthy();
+    expect(screen.getByText("Marked page")).toBeTruthy();
   });
 
   it("seeds the engine with the server-provided settings", async () => {

@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   createReader,
@@ -22,15 +28,16 @@ import {
 import { isThemeId } from "@/design/themes";
 import { trackScreen } from "@/lib/analytics";
 import {
-  manageHighlights,
-  type HighlightManager,
-  type HighlightRecord,
-} from "@/reader/highlights";
+  createAnnotationManager,
+  type AnnotationManager,
+} from "@/reader/annotations";
+import { listAnnotationsWithCache } from "@/lib/db/annotations";
 import {
-  manageBookmarks,
-  type BookmarkManager,
-  type BookmarkRecord,
-} from "@/reader/bookmarks";
+  enqueueAnnotationCreate,
+  enqueueAnnotationDelete,
+  enqueueAnnotationNote,
+} from "@/lib/offline/outbox";
+import type { Annotation } from "@/lib/types";
 import {
   readCachedBook,
   updateCachedBookProgress,
@@ -42,7 +49,7 @@ import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
 import { useGroupMarkers } from "./useGroupMarkers";
 import { useGroupReads } from "./useGroupReads";
-import { GroupNotesPanel } from "./GroupNotesPanel";
+import { ReaderNotes } from "./ReaderNotes";
 import { EndOfBookPanel } from "./EndOfBookPanel";
 import { ReturnChip } from "./ReturnChip";
 import { SyncOfferChip } from "./SyncOfferChip";
@@ -130,6 +137,16 @@ function requestReaderCache(bookId: string): void {
   } catch {
     // Best-effort — never let this affect the reading session.
   }
+}
+
+/** Subscribes to connectivity changes for `useSyncExternalStore`. */
+function subscribeConnectivity(onChange: () => void): () => void {
+  window.addEventListener("online", onChange);
+  window.addEventListener("offline", onChange);
+  return () => {
+    window.removeEventListener("online", onChange);
+    window.removeEventListener("offline", onChange);
+  };
 }
 
 export interface ReaderShellInitialSettings {
@@ -285,21 +302,23 @@ export function ReaderShell({
   // SpreadFrame centre-tap band both close/toggle it.
   const [deckOpen, setDeckOpen] = useState(false);
 
-  // ── Highlights ────────────────────────────────────────────────────────
-  // The manager still paints existing highlights into the book. There is no
-  // list UI for them at the moment: highlight MODE is disabled pending a design
-  // (REVISED_PLAN §4C), and the notes sheet that listed them went with the
-  // reader's old chrome. The subscription is kept so the list can come back
-  // without rewiring the engine.
-  const highlightsRef = useRef<HighlightManager | null>(null);
-  const [, setHighlights] = useState<HighlightRecord[]>([]);
-
-  // ── Bookmarks (placeholder UI, stable schema — see NotesPanel header) ──
-  const bookmarksRef = useRef<BookmarkManager | null>(null);
-  const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
+  // ── Notes (NOTES_PLAN N2c) ────────────────────────────────────────────
+  // One annotation manager per open book: page marks and quoted ranges. It
+  // paints every range, legacy ones included. Mark actions stay disabled until
+  // its restore has settled, so a mark cannot be written twice.
+  const annotationsRef = useRef<AnnotationManager | null>(null);
+  const [annotationList, setAnnotationList] = useState<Annotation[]>([]);
+  const [annotationsReady, setAnnotationsReady] = useState(false);
+  // Offline from `navigator.onLine` and the window events. The server snapshot
+  // is online, so server and client agree until the client reads the real value.
+  const offline = useSyncExternalStore(
+    subscribeConnectivity,
+    () => navigator.onLine === false,
+    () => false,
+  );
   // The page currently on screen: its start CFI + progress, kept so the
-  // bookmark toggle knows what to save and whether it is already saved. A ref
-  // mirror lets the toggle callback stay identity-stable.
+  // mark toggle knows what to save. A ref mirror lets the toggle callback stay
+  // identity-stable.
   const [here, setHere] = useState<{
     cfi?: string;
     percent: number;
@@ -351,6 +370,12 @@ export function ReaderShell({
     themeRef.current = settings.theme;
   }, [settings.theme]);
 
+  // A theme change re-paints the book's highlights in the new wash. Declared
+  // after the ref sync above, so the repaint reads the new theme.
+  useEffect(() => {
+    annotationsRef.current?.repaint();
+  }, [settings.theme]);
+
   // ── Hydrate the store once from the server-loaded row ──────────────────
   // (createReader is seeded straight from the `initialSettings` prop, so the
   // one-render gap before this effect runs is harmless.)
@@ -391,8 +416,7 @@ export function ReaderShell({
     let cancelled = false;
     let unsubRelocated: (() => void) | undefined;
     let unsubSelected: (() => void) | undefined;
-    let unsubHighlights: (() => void) | undefined;
-    let unsubBookmarks: (() => void) | undefined;
+    let unsubAnnotations: (() => void) | undefined;
     let unsubSyncOffer: (() => void) | undefined;
     // Stage 4 part 2 — debounced, best-effort cache-percent write. Scoped to
     // this effect instance like the `unsub*` handles above, not a ref: it
@@ -406,6 +430,7 @@ export function ReaderShell({
         // business surviving into this one.
         setSyncOffer(null);
         turnsSinceSyncOffer.current = 0;
+        setAnnotationsReady(false);
 
         // Ownership gate BEFORE the cache read, not merely at app boot. The
         // boot guard mounts in the root layout, but React commits a deeper
@@ -552,22 +577,47 @@ export function ReaderShell({
           setChapterLabel(controller.currentChapterLabel() ?? null);
         }
 
-        // Highlights: the manager is style-agnostic, so the concrete wash comes
-        // from the design layer here. `themeRef` keeps the closure reading the
-        // live theme rather than the value captured at mount.
-        const highlights = manageHighlights(controller, bookId, {
-          stylesFor: (color) => highlightStyles(color, themeRef.current),
-        });
-        highlightsRef.current = highlights;
-        unsubHighlights = highlights.subscribe(setHighlights);
-        await highlights.restore();
-
-        // Bookmarks: no rendition painting (the visible treatment is a later
-        // design decision) — just load the list and keep it in sync.
-        const bookmarks = manageBookmarks(bookId);
-        bookmarksRef.current = bookmarks;
-        unsubBookmarks = bookmarks.subscribe(setBookmarks);
-        await bookmarks.restore();
+        // Notes: the annotation manager is style-agnostic, so the concrete wash
+        // comes from the design layer here. `themeRef` keeps the closure reading
+        // the live theme rather than the value captured at mount. Notes can never
+        // fail the open (N5): creation and the load are guarded, and the restore
+        // is not awaited, so a slow notes fetch never holds the book.
+        try {
+          const annotations = createAnnotationManager({
+            controller,
+            bookId,
+            userId,
+            load: () => listAnnotationsWithCache(userId, bookId),
+            writer: {
+              create: (a) =>
+                enqueueAnnotationCreate(userId, {
+                  id: a.id,
+                  bookId: a.book_id,
+                  kind: a.kind,
+                  cfi: a.cfi,
+                  quote: a.quote,
+                  note: a.note,
+                  label: a.label,
+                  percent: a.percent,
+                }),
+              setNote: (id, note) => enqueueAnnotationNote(userId, id, note),
+              remove: (id) => enqueueAnnotationDelete(userId, id),
+            },
+            stylesFor: () => highlightStyles("copper", themeRef.current),
+          });
+          annotationsRef.current = annotations;
+          unsubAnnotations = annotations.subscribe(setAnnotationList);
+          void annotations.restore().then(
+            () => {
+              if (!cancelled) setAnnotationsReady(true);
+            },
+            () => {
+              // restore() does not reject; the guard keeps the reader safe if it ever does
+            },
+          );
+        } catch {
+          // Notes are optional for reading: the marks stay off, the book opens.
+        }
 
         // NOTE: the selection-triggered highlight popover is DISABLED.
         // It opened on any text selection, sat over the page, and had no way to
@@ -601,14 +651,11 @@ export function ReaderShell({
       if (cacheProgressTimer) clearTimeout(cacheProgressTimer);
       unsubRelocated?.();
       unsubSelected?.();
-      unsubHighlights?.();
-      unsubBookmarks?.();
+      unsubAnnotations?.();
       unsubSyncOffer?.();
       completionRef.current = null;
-      highlightsRef.current?.stop();
-      highlightsRef.current = null;
-      bookmarksRef.current?.stop();
-      bookmarksRef.current = null;
+      annotationsRef.current?.destroy();
+      annotationsRef.current = null;
       trackerRef.current?.stop();
       trackerRef.current = null;
       groupProgressRef.current?.stop();
@@ -800,24 +847,33 @@ export function ReaderShell({
 
   const dismissSyncOffer = useCallback(() => setSyncOffer(null), []);
 
-  // ── Bookmark / un-bookmark the page on screen ─────────────────────────
-  // Placeholder control (see NotesPanel header). Matches the current page by
-  // exact start-CFI — good enough for a plain toggle; a redesign can make the
-  // match fuzzier if it needs to.
-  const toggleBookmark = useCallback(() => {
-    const mgr = bookmarksRef.current;
-    const cfi = hereRef.current.cfi;
-    if (!mgr || !cfi) return;
-    const existing = mgr.list().find((b) => b.cfi === cfi);
-    if (existing) {
-      void mgr.remove(existing.id);
-    } else {
-      void mgr.create({
+  // ── Mark / un-mark the page on screen (NOTES_PLAN §1.2) ───────────────
+  // One tap creates or removes the page mark at this page's start CFI. The
+  // manager decides which: `markPage` toggles on an exact CFI match. Inert until
+  // the notes restore has settled, so a mark is never written twice.
+  const toggleMark = useCallback(() => {
+    const mgr = annotationsRef.current;
+    const { cfi, percent } = hereRef.current;
+    if (!mgr || !cfi || !annotationsReady) return;
+    void mgr
+      .markPage({
         cfi,
         label: controllerRef.current?.currentChapterLabel() ?? null,
-        percent: hereRef.current.percent,
+        percent,
+      })
+      .catch(() => {
+        // markPage swallows its own write errors; nothing here may reach reading
       });
-    }
+  }, [annotationsReady]);
+
+  const saveNote = useCallback((id: string, note: string | null) => {
+    annotationsRef.current?.setNote(id, note).catch(() => {
+      // a rejected note (bad length) leaves the item as it was
+    });
+  }, []);
+
+  const removeAnnotation = useCallback((id: string) => {
+    void annotationsRef.current?.remove(id);
   }, []);
 
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
@@ -939,36 +995,28 @@ export function ReaderShell({
         fontSize={settings.fontSize}
         onSetFontSize={(size) => useReaderSettings.getState().setFontSize(size)}
         bookmarked={
-          here.cfi != null && bookmarks.some((b) => b.cfi === here.cfi)
+          here.cfi != null &&
+          annotationList.some((a) => a.kind === "page" && a.cfi === here.cfi)
         }
-        canBookmark={Boolean(here.cfi)}
-        onToggleBookmark={toggleBookmark}
-        bookmarks={bookmarks.map((b) => ({
-          id: b.id,
-          cfi: b.cfi,
-          label: b.label,
-          percent: b.percent,
-        }))}
-        onGoToBookmark={(cfi) => {
-          setDeckOpen(false);
-          jumpTo(cfi);
-        }}
-        onRemoveBookmark={(id) => void bookmarksRef.current?.remove(id)}
-        groupPanel={
-          groupReads ? (
-            <GroupNotesPanel
-              ctx={groupReads}
-              place={{
-                cfi: here.cfi,
-                spineHref: here.spineHref,
-                sectionFraction: here.sectionFraction,
-              }}
-              onJump={(target) => {
-                setDeckOpen(false);
-                jumpTo(target);
-              }}
-            />
-          ) : undefined
+        canBookmark={Boolean(here.cfi) && annotationsReady}
+        onToggleBookmark={toggleMark}
+        notesPanel={
+          <ReaderNotes
+            mine={annotationList}
+            groupReads={groupReads}
+            place={{
+              cfi: here.cfi,
+              spineHref: here.spineHref,
+              sectionFraction: here.sectionFraction,
+            }}
+            offline={offline}
+            onJump={(target) => {
+              setDeckOpen(false);
+              jumpTo(target);
+            }}
+            onSaveNote={saveNote}
+            onRemove={removeAnnotation}
+          />
         }
       />
 
