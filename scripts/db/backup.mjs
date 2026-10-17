@@ -2,6 +2,10 @@
 // Back up the live Supabase project's public tables and the `epubs` bucket.
 //
 //   npm run db:backup [-- --out <dir>]
+//   npm run db:backup -- --tables a,b,c [--out <dir>]
+//
+// --tables backs up only the named tables (core or extra, see lib/select-tables.mjs),
+// in restore order, and skips the bucket: a scoped backup never copies EPUBs.
 //
 // Needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (env, or .env.local
 // in the current directory). Default output: ~/leaf-backups/<UTC timestamp>/.
@@ -14,9 +18,14 @@ import { parseArgs } from "node:util";
 import { runBackup, timestampName } from "./lib/backup-core.mjs";
 import { getSupabaseConfig, loadEnvLocal } from "./lib/env.mjs";
 import { assertOutsideRepo } from "./lib/path-guard.mjs";
+import { parseTableList } from "./lib/select-tables.mjs";
 
 async function main() {
-  const { values } = parseArgs({ options: { out: { type: "string" } }, strict: true });
+  const { values } = parseArgs({
+    options: { out: { type: "string" }, tables: { type: "string" } },
+    strict: true,
+  });
+  const tableNames = values.tables === undefined ? null : parseTableList(values.tables);
   loadEnvLocal();
   const { url, serviceRoleKey, projectRef } = getSupabaseConfig();
 
@@ -28,10 +37,12 @@ async function main() {
   });
 
   console.log(`Project ${projectRef}; writing to ${outDir}`);
-  const manifest = await runBackup({ client, outDir, projectRef, log: (m) => console.log(m) });
+  if (tableNames) console.log(`Scoped to tables: ${tableNames.join(", ")} (bucket skipped)`);
+  const manifest = await runBackup({ client, outDir, projectRef, tableNames, log: (m) => console.log(m) });
 
   const rows = Object.values(manifest.tables).reduce((n, t) => n + t.rows, 0);
-  console.log(`Backup complete: ${rows} rows, ${manifest.storage.objectCount} objects.`);
+  const storage = manifest.scope.storage ? `${manifest.storage.objectCount} objects` : "storage skipped";
+  console.log(`Backup complete: ${rows} rows, ${storage}.`);
   console.log(`Verify, then keep it safe: ${outDir}`);
 }
 

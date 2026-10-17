@@ -35,11 +35,16 @@ export function safeJoin(dir, rel) {
   return full;
 }
 
-export function buildManifest({ projectRef, createdAt, bucket, tables, objects }) {
+/**
+ * `scope` says what the backup was asked to cover: `scoped` is true when only named
+ * tables were requested, `tables` lists them, `storage` says whether bucket objects were copied.
+ */
+export function buildManifest({ projectRef, createdAt, bucket, tables, objects, scope }) {
   return {
     version: MANIFEST_VERSION,
     projectRef,
     createdAt,
+    scope: scope ?? { scoped: false, tables: Object.keys(tables), storage: true },
     tables, // { [name]: { file, rows, sha256 } }
     storage: { bucket, objectCount: objects.length, objects }, // objects: [{ path, file, size, sha256 }]
   };

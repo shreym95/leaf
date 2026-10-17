@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import { safeJoin, verifyBackup } from "./manifest.mjs";
 import { fetchAllRows, listAllObjects, listAuthUserIds } from "./paginate.mjs";
-import { BUCKET, TABLES, UPSERT_BATCH } from "./tables.mjs";
+import { ALL_TABLE_NAMES, ALL_TABLES } from "./select-tables.mjs";
+import { BUCKET, UPSERT_BATCH } from "./tables.mjs";
 
 const CONTENT_TYPES = {
   ".epub": "application/epub+zip",
@@ -47,18 +48,26 @@ function readRows(dir, entry) {
 /**
  * Build the plan: per table, which rows insert / update / are skipped, and which
  * storage objects are missing. Read-only against the live project.
+ *
+ * A scoped manifest (`scope.scoped`) restores only the tables it lists. Its bucket
+ * is not read unless `scope.storage` is true. If `books` is not in the manifest,
+ * a row's book is checked against the live `books` table instead.
  */
 export async function planRestore({ client, dir, manifest }) {
   for (const name of Object.keys(manifest.tables)) {
-    if (!TABLES.some((t) => t.name === name)) {
+    if (!ALL_TABLE_NAMES.includes(name)) {
       throw new Error(`Backup contains an unknown table "${name}"; this restore script does not know its foreign-key order.`);
     }
   }
   const userIds = await listAuthUserIds(client);
-  const keptBookIds = new Set();
+  const booksInBackup = Object.hasOwn(manifest.tables, "books");
+  const bookIds = new Set();
+  if (!booksInBackup) {
+    for (const row of await fetchAllRows(client, "books", ["id"], { columns: "id" })) bookIds.add(row.id);
+  }
   const tables = [];
 
-  for (const table of TABLES) {
+  for (const table of ALL_TABLES) {
     const entry = manifest.tables[table.name];
     if (!entry) continue;
     const rows = readRows(dir, entry);
@@ -74,7 +83,7 @@ export async function planRestore({ client, dir, manifest }) {
         skipped.missingUser += 1;
         continue;
       }
-      if (table.bookColumn && !keptBookIds.has(row[table.bookColumn])) {
+      if (table.bookColumn && !bookIds.has(row[table.bookColumn])) {
         skipped.missingBook += 1;
         continue;
       }
@@ -82,19 +91,23 @@ export async function planRestore({ client, dir, manifest }) {
       if (existing.has(keyOf(row, table.pk))) updates += 1;
       else inserts += 1;
     }
-    if (table.name === "books") for (const row of keep) keptBookIds.add(row.id);
+    if (table.name === "books") for (const row of keep) bookIds.add(row.id);
     tables.push({ name: table.name, pk: table.pk, total: rows.length, keep, inserts, updates, skipped });
   }
 
-  const bucketPaths = new Set(await listAllObjects(client, BUCKET));
+  const storageInScope = manifest.scope?.storage !== false;
   const objects = manifest.storage?.objects ?? [];
   for (const obj of objects) {
     if (obj.path.split("/").some((seg) => seg === ".." || seg === "") || obj.path.startsWith("/")) {
       throw new Error(`Unsafe object path in manifest: ${JSON.stringify(obj.path)}`);
     }
   }
-  const missingObjects = objects.filter((o) => !bucketPaths.has(o.path));
-  return { tables, objectTotal: objects.length, missingObjects };
+  let missingObjects = [];
+  if (storageInScope) {
+    const bucketPaths = new Set(await listAllObjects(client, BUCKET));
+    missingObjects = objects.filter((o) => !bucketPaths.has(o.path));
+  }
+  return { tables, objectTotal: objects.length, missingObjects, storageInScope };
 }
 
 export function describePlan(plan, { apply }) {
@@ -107,8 +120,12 @@ export function describePlan(plan, { apply }) {
     }
     lines.push(line);
   }
-  lines.push(`storage ${BUCKET}: ${plan.objectTotal} in backup, ${plan.missingObjects.length} missing from bucket`);
-  for (const o of plan.missingObjects) lines.push(`  missing: ${o.path}`);
+  if (plan.storageInScope) {
+    lines.push(`storage ${BUCKET}: ${plan.objectTotal} in backup, ${plan.missingObjects.length} missing from bucket`);
+    for (const o of plan.missingObjects) lines.push(`  missing: ${o.path}`);
+  } else {
+    lines.push(`storage ${BUCKET}: not in backup scope (scoped backup), not touched`);
+  }
   return lines;
 }
 
