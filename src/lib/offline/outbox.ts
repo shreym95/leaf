@@ -189,6 +189,14 @@ export interface QueuedEntry<P = unknown> {
   /** Monotonic write time (ms). Doubles as the `updated_at` proxy for the
    *  reading-state conflict rule. */
   ts: number;
+  /** Bumped every time the payload is replaced in place. A flush that applied
+   *  an older revision keeps the entry and re-applies it (see `runPass`). Absent
+   *  on entries written before revisions existed: read as 0. */
+  rev?: number;
+  /** Set before the first network call for this entry. Once set, the request may
+   *  have reached the server even though no response came back, so a cancel
+   *  must queue a delete rather than drop the create. Absent: read as false. */
+  attempted?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,8 +261,14 @@ export type WriteFailure = "transport" | "rejected";
  * This is a heuristic on `supabase-js`'s documented error shape, not a
  * guarantee — see the test file and the final report for what would need a
  * real browser/Supabase project to confirm end-to-end.
+ *
+ * A validation RangeError is a rejection too: nothing can be retried into a
+ * valid value, so queuing it would retry forever.
  */
 export function classifyWriteFailure(err: unknown): WriteFailure {
+  // A RangeError is client-side validation (`annotations.ts`) refusing a value
+  // before any round trip. Retrying cannot change that answer.
+  if (err instanceof RangeError) return "rejected";
   if (err && typeof err === "object") {
     const e = err as { code?: unknown; name?: unknown };
     if (e.name === "SupabaseNotConfiguredError") return "rejected";
@@ -359,44 +373,156 @@ export interface DrainResult {
   requeued: number;
 }
 
+/**
+ * Serialises every read-modify-write of the queue in this tab. Without it a
+ * flush could mark an entry `attempted` after an enqueue had cancelled it, and
+ * `IDBObjectStore.put` would silently resurrect the cancelled entry.
+ * Nothing run under the lock awaits another locked call.
+ */
+let queueChain: Promise<unknown> = Promise.resolve();
+function withQueueLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = queueChain.then(() => task());
+  queueChain = run.catch(() => undefined);
+  return run;
+}
+
+/** The stored copy of an entry, or undefined once it has been discarded. */
+async function liveEntry(store: OutboxStore, id: string): Promise<QueuedEntry | undefined> {
+  return (await store.list()).find((e) => e.id === id);
+}
+
+interface PassOutcome {
+  result: DrainResult;
+  /** An entry was edited while it applied. It is kept, and the pass stops so
+   *  that it re-applies before anything queued behind it. */
+  changed: boolean;
+  /** A transport failure stopped the pass. Nothing behind it was attempted. */
+  stopped: boolean;
+}
+
+/**
+ * One FIFO pass over the queue. Per entry:
+ *   1. mark it `attempted` (persisted before the network, so a reload or a
+ *      lost response still knows a request may have landed);
+ *   2. apply it through its handler;
+ *   3. discard it only if its `rev` is unchanged. A changed entry is kept and
+ *      the pass stops, so the latest payload is re-applied first (B2).
+ * A transport failure leaves the entry queued and stops the pass: the network
+ * is down, and later entries must not overtake it.
+ */
+async function runPass(
+  store: OutboxStore,
+  handlers: Partial<Record<OutboxKind, ReplayHandler>>,
+): Promise<PassOutcome> {
+  const result: DrainResult = { applied: 0, skipped: 0, rejected: 0, requeued: 0 };
+  const outcome: PassOutcome = { result, changed: false, stopped: false };
+  const snapshot = await store.list();
+  for (const seen of snapshot) {
+    const handler = handlers[seen.kind];
+    if (!handler) continue;
+
+    // Read the live copy: the snapshot can be stale by now (cancelled, replaced).
+    const applying = await withQueueLock(async () => {
+      const live = await liveEntry(store, seen.id);
+      if (!live) return undefined;
+      if (!store.put || live.attempted) return live;
+      const marked: QueuedEntry = { ...live, attempted: true };
+      await store.put(marked);
+      return marked;
+    });
+    if (!applying) continue;
+
+    let verdict: ReplayOutcome;
+    try {
+      verdict = await handler(applying);
+    } catch {
+      // A handler must not throw, but if one slips through, be conservative
+      // and retry later rather than lose the write.
+      verdict = "transport";
+    }
+
+    const settled = await withQueueLock(async () => {
+      const now = await liveEntry(store, applying.id);
+      if (!now) return "gone" as const;
+      if ((now.rev ?? 0) !== (applying.rev ?? 0)) return "changed" as const;
+      if (verdict !== "transport") await store.discard(applying.id);
+      return "settled" as const;
+    });
+
+    if (settled === "changed") {
+      outcome.changed = true;
+      break;
+    }
+    if (verdict === "transport") {
+      result.requeued += 1;
+      outcome.stopped = true;
+      break;
+    }
+    if (verdict === "applied") result.applied += 1;
+    else if (verdict === "skipped") result.skipped += 1;
+    else result.rejected += 1;
+  }
+  return outcome;
+}
+
 /** Replay every queued entry once, oldest first. An entry a handler doesn't
- *  recognise is left alone (forward compatibility), not discarded. */
+ *  recognise is left alone (forward compatibility), not discarded. A transport
+ *  failure stops the pass and leaves the rest queued, in order. */
 export async function drain(
   store: OutboxStore,
   handlers: Partial<Record<OutboxKind, ReplayHandler>>,
 ): Promise<DrainResult> {
-  const result: DrainResult = { applied: 0, skipped: 0, rejected: 0, requeued: 0 };
-  const entries = await store.list();
-  for (const entry of entries) {
-    const handler = handlers[entry.kind];
-    if (!handler) continue;
-    let outcome: ReplayOutcome;
+  return (await runPass(store, handlers)).result;
+}
+
+export interface Flusher {
+  /** Run a pass now. Requested while one is running: exactly one more pass
+   *  runs after it. Resolves when the queue has no more applicable work, or a
+   *  transport failure stopped it. Never rejects. */
+  flush(): Promise<void>;
+  /** Resolves once no flush is running. Never rejects. */
+  idle(): Promise<void>;
+}
+
+/** Single-flight replay over one store. The real outbox and the tests share it. */
+export function createFlusher(
+  store: OutboxStore,
+  handlers: () => Partial<Record<OutboxKind, ReplayHandler>>,
+): Flusher {
+  let running: Promise<void> | undefined;
+  let requested = false;
+
+  async function loop(): Promise<void> {
     try {
-      outcome = await handler(entry);
+      let again = true;
+      while (again) {
+        requested = false;
+        const pass = await runPass(store, handlers());
+        // Re-run for an entry that changed mid-apply, or for a request that
+        // arrived while this pass ran. A transport stop waits for the next
+        // request (online, load) rather than spinning offline.
+        again = pass.changed || requested;
+      }
     } catch {
-      // A handler must not throw, but if one slips through, be conservative
-      // and retry later rather than lose the write.
-      outcome = "transport";
-    }
-    switch (outcome) {
-      case "applied":
-        result.applied += 1;
-        await store.discard(entry.id);
-        break;
-      case "skipped":
-        result.skipped += 1;
-        await store.discard(entry.id);
-        break;
-      case "rejected":
-        result.rejected += 1;
-        await store.discard(entry.id);
-        break;
-      case "transport":
-        result.requeued += 1;
-        break; // leave it queued
+      // never let a replay failure surface anywhere
+    } finally {
+      running = undefined;
     }
   }
-  return result;
+
+  return {
+    flush() {
+      if (running) {
+        requested = true;
+        return running;
+      }
+      running = loop();
+      return running;
+    },
+    async idle() {
+      while (running) await running;
+    },
+  };
 }
 
 /** Find the first still-queued entry matching `kind` + `key`, if any. */
@@ -409,11 +535,20 @@ export async function findPending(
   return entries.find((e) => e.kind === kind && e.key === key);
 }
 
-/** Cancel a still-queued entry by kind + key. Returns whether one was found.
- *  Used to drop a queued `*-create` when its optimistic record is deleted
- *  before ever reaching the server — see `enqueueBookmarkDelete` /
- *  `enqueueHighlightDelete` below for why that matters. */
-export async function cancelPending(
+/** Cancel a still-queued entry by kind + key, under the queue lock. Returns
+ *  whether one was found. Used to drop a queued `*-create` when its optimistic
+ *  record is deleted before ever reaching the server — see
+ *  `enqueueBookmarkDelete` / `enqueueHighlightDelete` below for why that matters. */
+export function cancelPending(
+  store: OutboxStore,
+  kind: OutboxKind,
+  key: string,
+): Promise<boolean> {
+  return withQueueLock(() => cancelPendingNow(store, kind, key));
+}
+
+/** `cancelPending` without taking the lock, for callers already inside it. */
+async function cancelPendingNow(
   store: OutboxStore,
   kind: OutboxKind,
   key: string,
@@ -510,10 +645,12 @@ function getDb(): Promise<IDBDatabase | undefined> {
 
 let idSeq = 0;
 /** Chronologically sortable (string keys sort lexicographically in
- *  IndexedDB, and `Date.now()` only grows), unique within a session. */
+ *  IndexedDB, and `Date.now()` only grows), unique within a session. The
+ *  sequence is zero-padded so `"10"` sorts after `"9"` within one millisecond:
+ *  replay order is the id order. */
 function makeId(): string {
   idSeq += 1;
-  return `${Date.now().toString(36)}-${idSeq.toString(36)}-${Math.random()
+  return `${Date.now().toString(36)}-${idSeq.toString(36).padStart(6, "0")}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
 }
@@ -640,16 +777,6 @@ function readingStateHandler(): ReplayHandler {
   };
 }
 
-/**
- * A RangeError is the client-side validation in `annotations.ts` refusing a
- * value before any round trip. Retrying cannot change that answer, so it is a
- * rejection, not a transport failure (which would requeue the entry forever).
- */
-function classifyAnnotationFailure(err: unknown): WriteFailure {
-  if (err instanceof RangeError) return "rejected";
-  return classifyWriteFailure(err);
-}
-
 /** One annotation write: run it against the annotations client, classify any failure. */
 function annotationHandler(
   run: (entry: QueuedEntry, client: ReturnType<typeof createClient>) => Promise<unknown>,
@@ -659,7 +786,7 @@ function annotationHandler(
       await run(entry, createClient());
       return "applied";
     } catch (err) {
-      return classifyAnnotationFailure(err);
+      return classifyWriteFailure(err);
     }
   };
 }
@@ -736,8 +863,19 @@ function highlightNoteShim(): ReplayHandler {
   });
 }
 
+/** Postgres `unique_violation`: the row with this id already exists. */
+function isDuplicateKey(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "23505";
+}
+
+/**
+ * Idempotent: replaying a create whose row already exists is success. That
+ * happens when an earlier attempt reached the server and its response was lost
+ * (M2), or when an entry is re-applied after an edit (B2). The duplicate row
+ * gets the queued note, so a note merged into the create is never dropped.
+ */
 function annotationCreateHandler(): ReplayHandler {
-  return annotationHandler((entry, client) => {
+  return annotationHandler(async (entry, client) => {
     const p = entry.payload as AnnotationCreatePayload;
     const input: CreateAnnotationInput = {
       id: p.id,
@@ -750,7 +888,12 @@ function annotationCreateHandler(): ReplayHandler {
       label: p.label,
       percent: p.percent,
     };
-    return createAnnotation(input, client);
+    try {
+      await createAnnotation(input, client);
+    } catch (err) {
+      if (!isDuplicateKey(err)) throw err;
+      await updateAnnotationNote(p.id, p.note, client);
+    }
   });
 }
 
@@ -1017,47 +1160,63 @@ export type AnnotationEnqueueInput = Omit<CreateAnnotationInput, "userId" | "id"
   id: string;
 };
 
-/** Replace a queued entry's payload, keeping its id, kind, key and time. */
+/** Replace a queued entry's payload in place: same id, kind, key and time, one
+ *  revision later. Called under the queue lock with a freshly read entry. */
 async function replacePayload(entry: QueuedEntry, payload: unknown): Promise<void> {
-  const next: QueuedEntry = { ...entry, payload };
+  const rev = (entry.rev ?? 0) + 1;
   if (store.put) {
-    await store.put(next);
+    await store.put({ ...entry, payload, rev });
     return;
   }
   // Fallback: enqueue first, so a crash between the two calls leaves a duplicate
   // rather than losing the write.
-  await store.enqueue({ kind: entry.kind, key: entry.key, payload, ts: entry.ts });
+  await store.enqueue({
+    kind: entry.kind,
+    key: entry.key,
+    payload,
+    ts: entry.ts,
+    rev,
+    attempted: entry.attempted,
+  });
   await store.discard(entry.id);
 }
 
+/**
+ * Queue a create. Does not start a flush: the writer does that, after this
+ * resolves, so the entry is durable before any network call.
+ */
 export async function enqueueAnnotationCreate(
   userId: string,
   input: AnnotationEnqueueInput,
 ): Promise<void> {
-  await store.enqueue({
-    kind: "annotation-create",
-    key: `${userId}:${input.id}`,
-    payload: {
-      userId,
-      id: input.id,
-      bookId: input.bookId,
-      kind: input.kind,
-      cfi: input.cfi,
-      quote: input.quote ?? null,
-      note: input.note ?? null,
-      label: input.label ?? null,
-      percent: input.percent ?? null,
-    } satisfies AnnotationCreatePayload,
-    ts: Date.now(),
-  });
+  await withQueueLock(() =>
+    store.enqueue({
+      kind: "annotation-create",
+      key: `${userId}:${input.id}`,
+      payload: {
+        userId,
+        id: input.id,
+        bookId: input.bookId,
+        kind: input.kind,
+        cfi: input.cfi,
+        quote: input.quote ?? null,
+        note: input.note ?? null,
+        label: input.label ?? null,
+        percent: input.percent ?? null,
+      } satisfies AnnotationCreatePayload,
+      ts: Date.now(),
+      rev: 0,
+      attempted: false,
+    }),
+  );
 }
 
 /**
  * Set or clear the note on an annotation.
  *
- * Lost-note fix: when the item's create is still queued (the item has not
- * synced), the note is merged into that create's payload. Queued as a separate
- * `annotation-note`, it would replay before the row exists and be dropped.
+ * When the item's create is still queued, the note is merged into that create
+ * (and bumps its revision, so an in-flight apply re-runs with it). Queued as a
+ * separate `annotation-note`, it would replay before the row exists.
  *
  * Otherwise the latest note wins: any earlier queued note for the item is
  * dropped first.
@@ -1068,39 +1227,49 @@ export async function enqueueAnnotationNote(
   note: string | null,
 ): Promise<void> {
   const key = `${userId}:${id}`;
-  const create = await findPending(store, "annotation-create", key);
-  if (create) {
-    const payload = create.payload as AnnotationCreatePayload;
-    await replacePayload(create, { ...payload, note });
-    return;
-  }
-  await cancelPending(store, "annotation-note", key);
-  await store.enqueue({
-    kind: "annotation-note",
-    key,
-    payload: { userId, id, note } satisfies AnnotationNotePayload,
-    ts: Date.now(),
+  await withQueueLock(async () => {
+    const create = await findPending(store, "annotation-create", key);
+    if (create) {
+      const payload = create.payload as AnnotationCreatePayload;
+      await replacePayload(create, { ...payload, note });
+      return;
+    }
+    await cancelPendingNow(store, "annotation-note", key);
+    await store.enqueue({
+      kind: "annotation-note",
+      key,
+      payload: { userId, id, note } satisfies AnnotationNotePayload,
+      ts: Date.now(),
+    });
   });
 }
 
 /**
  * Delete an annotation.
  *
- * A create still queued means the server never saw the row: cancel the create
- * and its queued note, and queue no delete. Otherwise any queued note is
- * dropped and one delete is queued (a second delete for the same id coalesces).
+ * A create still queued and never attempted means the server never saw the row:
+ * cancel the create and its note, and queue no delete. An attempted create may
+ * have landed (its response was lost), so it stays and a delete is queued after
+ * it: the create replays idempotently, then the delete removes the row (M2).
+ * Otherwise any queued note is dropped and one delete is queued (a second delete
+ * for the same id coalesces).
  */
 export async function enqueueAnnotationDelete(userId: string, id: string): Promise<void> {
   const key = `${userId}:${id}`;
-  await cancelPending(store, "annotation-note", key);
-  const neverSynced = await cancelPending(store, "annotation-create", key);
-  if (neverSynced) return;
-  await cancelPending(store, "annotation-delete", key);
-  await store.enqueue({
-    kind: "annotation-delete",
-    key,
-    payload: { userId, id } satisfies AnnotationDeletePayload,
-    ts: Date.now(),
+  await withQueueLock(async () => {
+    await cancelPendingNow(store, "annotation-note", key);
+    const create = await findPending(store, "annotation-create", key);
+    if (create && !create.attempted) {
+      await store.discard(create.id);
+      return;
+    }
+    await cancelPendingNow(store, "annotation-delete", key);
+    await store.enqueue({
+      kind: "annotation-delete",
+      key,
+      payload: { userId, id } satisfies AnnotationDeletePayload,
+      ts: Date.now(),
+    });
   });
 }
 
@@ -1130,17 +1299,20 @@ export async function pendingAnnotationEntries(userId: string): Promise<QueuedEn
 // Replay trigger — on the `online` event and on next start.
 // ---------------------------------------------------------------------------
 
-let replaying = false;
-async function replayNow(): Promise<void> {
-  if (replaying) return;
-  replaying = true;
-  try {
-    await drain(store, realHandlers());
-  } catch {
-    // never let a replay failure surface anywhere
-  } finally {
-    replaying = false;
-  }
+const flusher = createFlusher(store, realHandlers);
+
+/**
+ * Replay the whole outbox now. Single-flight (see `createFlusher`). Never throws.
+ * The writer calls it after every enqueue; the `online` event and next start
+ * call it too.
+ */
+export function flushOutbox(): Promise<void> {
+  return flusher.flush();
+}
+
+/** Resolves once no flush is running. Never rejects. */
+export function flushIdle(): Promise<void> {
+  return flusher.idle();
 }
 
 /**
@@ -1193,8 +1365,8 @@ export function initOutboxReplay(): void {
   if (initialized) return;
   if (typeof window === "undefined") return;
   initialized = true;
-  window.addEventListener("online", () => void replayNow());
-  void replayNow();
+  window.addEventListener("online", () => void flushOutbox());
+  void flushOutbox();
 }
 
 initOutboxReplay();
