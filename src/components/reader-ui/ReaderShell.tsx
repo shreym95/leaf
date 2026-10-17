@@ -1147,7 +1147,7 @@ export function ReaderShell({
     } else if (activeHighlight) {
       barNode = (
         <HighlightBar
-          hasNote={Boolean(activeHighlight.note)}
+          note={activeHighlight.note}
           onNote={() => setBarItem({ kind: "note", id: activeHighlight.id })}
           onRemove={() => removeFromBar(activeHighlight.id)}
           onClose={() => setBarItem(null)}

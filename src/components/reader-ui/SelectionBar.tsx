@@ -1,7 +1,8 @@
 "use client";
 
-import type { PointerEvent, MouseEvent } from "react";
+import type { PointerEvent, MouseEvent, KeyboardEvent } from "react";
 import { barButtonClass, barNoticeClass } from "./bar-styles";
+import { swallowNextClick } from "./ghost-click";
 
 /**
  * SelectionBar — the actions for a settled text selection, shown in the top
@@ -13,6 +14,9 @@ import { barButtonClass, barNoticeClass } from "./bar-styles";
  * selection on the way down. A `click` that follows a pointer press is
  * ignored; a keyboard activation (click with `detail` 0) acts instead, so
  * the bar works without a pointer.
+ *
+ * Layout: the actions form a group centred in the row, with the ✕ at the far
+ * end. An empty pod of the ✕'s width sits at the start so the group stays centred.
  */
 
 export interface SelectionBarProps {
@@ -47,17 +51,34 @@ export function defineHref(text: string): string {
   );
 }
 
-/** Acts on a primary pointer press; the keyboard path is the click with detail 0. */
+/**
+ * Acts on a primary pointer press; the keyboard path is the click with detail 0.
+ * The bar unmounts on this press, so the press's own click is swallowed: it
+ * would otherwise land on the top bar's row that takes the bar's place.
+ */
 function onPrimaryPress(e: PointerEvent<HTMLButtonElement>, act: () => void): void {
   // Keeps focus and the book's selection where they are until the action has read them.
   e.preventDefault();
   if (e.button !== 0) return;
+  swallowNextClick();
   act();
 }
 
 function onKeyboardClick(e: MouseEvent<HTMLButtonElement>, act: () => void): void {
   if (e.detail === 0) act();
 }
+
+/** Esc dismisses the bar from any of its controls. */
+function onEscape(e: KeyboardEvent<HTMLDivElement>, close: () => void): void {
+  if (e.key !== "Escape") return;
+  e.stopPropagation();
+  close();
+}
+
+/** Same width as the ✕ at the far end, so the group sits centred in the row. */
+const balancePod = (
+  <span aria-hidden className="min-w-[var(--leaf-dock-pod-size)] flex-none" />
+);
 
 export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: SelectionBarProps) {
   const eligible = canDefine(text);
@@ -66,9 +87,11 @@ export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: Sel
     <div
       role="toolbar"
       aria-label="Selected text actions"
-      className="flex h-full w-full min-w-0 items-center justify-between gap-[var(--leaf-space-3)]"
+      onKeyDown={(e) => onEscape(e, onClose)}
+      className="flex h-full w-full min-w-0 items-center gap-[var(--leaf-space-3)]"
     >
-      <div className="flex min-w-0 items-center gap-[var(--leaf-space-3)]">
+      {balancePod}
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-[var(--leaf-space-3)]">
         <button
           type="button"
           className={barButtonClass}
@@ -98,7 +121,7 @@ export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: Sel
           </a>
         )}
         {notice && (
-          <span role="status" className={barNoticeClass}>
+          <span role="status" className={`${barNoticeClass} min-w-0`}>
             {notice}
           </span>
         )}
@@ -124,8 +147,9 @@ export interface SelectionNoticeProps {
 /** A status that stays in the top bar after the selection is gone, until dismissed. */
 export function SelectionNotice({ text, onDismiss }: SelectionNoticeProps) {
   return (
-    <div className="flex h-full w-full min-w-0 items-center justify-between gap-[var(--leaf-space-3)]">
-      <span role="status" className={`${barNoticeClass} min-w-0`}>
+    <div className="flex h-full w-full min-w-0 items-center gap-[var(--leaf-space-3)]">
+      {balancePod}
+      <span role="status" className={`${barNoticeClass} min-w-0 flex-1 text-center`}>
         {text}
       </span>
       <button
