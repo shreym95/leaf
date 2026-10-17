@@ -2,7 +2,7 @@
 
 import type { PointerEvent, MouseEvent, KeyboardEvent } from "react";
 import { barButtonClass, barNoticeClass } from "./bar-styles";
-import { swallowNextClick } from "./ghost-click";
+import { useBarPressArm } from "./BarPressHold";
 
 /**
  * SelectionBar — the actions for a settled text selection, shown in the top
@@ -53,14 +53,18 @@ export function defineHref(text: string): string {
 
 /**
  * Acts on a primary pointer press; the keyboard path is the click with detail 0.
- * The bar unmounts on this press, so the press's own click is swallowed: it
- * would otherwise land on the top bar's row that takes the bar's place.
+ * `arm` holds the bar under the finger until the press's own click has passed
+ * (BarPressHold), so that click cannot land on the row that replaces the bar.
  */
-function onPrimaryPress(e: PointerEvent<HTMLButtonElement>, act: () => void): void {
+function onPrimaryPress(
+  e: PointerEvent<HTMLButtonElement>,
+  arm: () => void,
+  act: () => void,
+): void {
   // Keeps focus and the book's selection where they are until the action has read them.
   e.preventDefault();
   if (e.button !== 0) return;
-  swallowNextClick();
+  arm();
   act();
 }
 
@@ -82,6 +86,7 @@ const balancePod = (
 
 export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: SelectionBarProps) {
   const eligible = canDefine(text);
+  const arm = useBarPressArm();
 
   return (
     <div
@@ -95,7 +100,7 @@ export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: Sel
         <button
           type="button"
           className={barButtonClass}
-          onPointerDown={(e) => onPrimaryPress(e, onHighlight)}
+          onPointerDown={(e) => onPrimaryPress(e, arm, onHighlight)}
           onClick={(e) => onKeyboardClick(e, onHighlight)}
         >
           Highlight
@@ -103,7 +108,7 @@ export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: Sel
         <button
           type="button"
           className={barButtonClass}
-          onPointerDown={(e) => onPrimaryPress(e, onNote)}
+          onPointerDown={(e) => onPrimaryPress(e, arm, onNote)}
           onClick={(e) => onKeyboardClick(e, onNote)}
         >
           Note

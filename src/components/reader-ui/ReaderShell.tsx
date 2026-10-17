@@ -51,6 +51,7 @@ import { useGroupReads } from "./useGroupReads";
 import { ReaderNotes } from "./ReaderNotes";
 import { SelectionBar, SelectionNotice } from "./SelectionBar";
 import { HighlightBar } from "./HighlightBar";
+import { BarPressHold } from "./BarPressHold";
 import { NoteField } from "./NoteField";
 import { decideContentTap, isCoarsePointer } from "./tap-policy";
 import { EndOfBookPanel } from "./EndOfBookPanel";
@@ -1143,17 +1144,23 @@ export function ReaderShell({
 
   return (
     <>
-      <ReaderTopBar
-        immersive={immersive}
-        // Fullscreen gives the page the browser's chrome; keeping ours in the
-        // flow would hand the space straight back. So in fullscreen the bar
-        // floats instead of occupying height, and merely fades — opening the
-        // deck must not move the prose or force a repagination.
-        overlay={immersive}
-        hidden={immersive && !deckOpen && barNode === null}
-        onToggleImmersive={toggleImmersive}
-        slot={barNode ?? undefined}
-      />
+      {/* Holds the bar under a pressing finger until that press's click has
+          passed (see BarPressHold). The slot shows what it hands back. */}
+      <BarPressHold live={barNode}>
+        {(shown) => (
+          <ReaderTopBar
+            immersive={immersive}
+            // Fullscreen gives the page the browser's chrome; keeping ours in the
+            // flow would hand the space straight back. So in fullscreen the bar
+            // floats instead of occupying height, and merely fades — opening the
+            // deck must not move the prose or force a repagination.
+            overlay={immersive}
+            hidden={immersive && !deckOpen && shown === null}
+            onToggleImmersive={toggleImmersive}
+            slot={shown ?? undefined}
+          />
+        )}
+      </BarPressHold>
 
       {/* Stage 4 part 3 — quiet, non-modal connectivity signal. Fades with
           the top bar in fullscreen (same `hidden` condition) rather than
