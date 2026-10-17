@@ -16,6 +16,8 @@ import type { Book, Rendition } from "epubjs";
 import { EpubCFI } from "epubjs";
 import type { ThemeName } from "@/lib/types";
 import { chapterLabelForHref, flattenToc } from "./navigation";
+import { isDragGesture, selectionHasText, watchIframeDocument } from "./selection";
+import type { Point } from "./selection";
 export type { ReaderTocEntry } from "./navigation";
 import type { ReaderTocEntry } from "./navigation";
 
@@ -115,6 +117,14 @@ export interface LocatedCfi {
   exact: boolean;
 }
 
+/** A tap inside the book iframe, mapped to the reader frame (see `onContentTap`). */
+export interface ReaderContentTap {
+  /** 0..1 across the reader frame, left to right. */
+  xFraction: number;
+  /** True when the book iframe still holds a non-collapsed selection with text. */
+  selectionActive: boolean;
+}
+
 export interface ReaderController {
   attach(container: HTMLElement): Promise<void>; // renderTo + display + locations.generate
   next(): Promise<ReaderTurnResult>;
@@ -150,8 +160,14 @@ export interface ReaderController {
   relayout(): void; // recompute spread (call on resize; debounced inside)
   applySettings(s: ReaderContentSettings): void; // -> rendition.themes / font / override
   onRelocated(cb: (loc: ReaderLocation) => void): () => void; // returns an unsubscribe fn
-  /** Fires when the user finishes selecting text in the book. */
+  /** Fires when the user finishes selecting text in the book. Same event as `onSelected`. */
+  onSelection(cb: (sel: { cfiRange: string; text: string }) => void): () => void;
+  /** Fires when the user finishes selecting text in the book (kept for existing callers). */
   onSelected(cb: (sel: { cfiRange: string; text: string }) => void): () => void;
+  /** Fires the moment a selection that held text collapses (tap, clear, ✕). Not debounced. */
+  onSelectionCleared(cb: () => void): () => void;
+  /** Fires for a tap inside the book iframe, before any page-turn decision. Never for keyboard clicks, link taps or the click that ends a drag-selection. */
+  onContentTap(cb: (tap: ReaderContentTap) => void): () => void;
   /** Paint a highlight. `styles` is supplied by the caller (design layer decides colour). */
   addHighlight(
     cfiRange: string,
@@ -647,6 +663,101 @@ export async function createReader(
     (sel: { cfiRange: string; text: string }) => void
   >();
   let lastSelectionCfi: string | undefined;
+  const selectionClearedSubscribers = new Set<() => void>();
+  const tapSubscribers = new Set<(tap: ReaderContentTap) => void>();
+  // Per book iframe document: the detach fn of its selection/pointer watcher.
+  // Pruned on each `rendered` once epub.js has dropped the document.
+  const watchedDocs = new Map<Document, () => void>();
+  // Where the last pointer went down inside a book iframe. Lets a click that
+  // ends a drag-selection be told apart from a tap. Consumed by the next click.
+  let lastPointerDown: Point | undefined;
+
+  function subscribeSelection(
+    cb: (sel: { cfiRange: string; text: string }) => void,
+  ): () => void {
+    selectionSubscribers.add(cb);
+    return () => {
+      selectionSubscribers.delete(cb);
+    };
+  }
+
+  function handleSelectionCollapsed(): void {
+    // Collapsing forgets the last settled range, so selecting the same text
+    // again is a new selection and fires again.
+    lastSelectionCfi = undefined;
+    for (const cb of selectionClearedSubscribers) {
+      try {
+        cb();
+      } catch {
+        // a bad subscriber must not break selection handling for the others
+      }
+    }
+  }
+
+  function watchContentDocument(view: unknown): void {
+    const holder = view as
+      | { document?: Document; contents?: { document?: Document } }
+      | null
+      | undefined;
+    const doc = holder?.document ?? holder?.contents?.document;
+    if (!doc) return;
+    for (const [known, detach] of watchedDocs) {
+      if (known.defaultView) continue;
+      detach();
+      watchedDocs.delete(known);
+    }
+    if (watchedDocs.has(doc)) return;
+    watchedDocs.set(
+      doc,
+      watchIframeDocument(doc, {
+        onSelectionCollapsed: handleSelectionCollapsed,
+        onPointerDown: (at) => {
+          lastPointerDown = at;
+        },
+      }),
+    );
+  }
+
+  // epub.js forwards the iframe `click` with the ORIGINAL event, so clientX is
+  // iframe-relative. It is mapped onto the reader frame: the viewer element
+  // fills the frame (see SpreadFrame), so its rect is the frame.
+  function handleContentClick(rawEvent: unknown): void {
+    const down = lastPointerDown;
+    lastPointerDown = undefined;
+    try {
+      const ev = rawEvent as MouseEvent | null | undefined;
+      const frame = containerEl?.getBoundingClientRect();
+      const win = ev?.view as
+        | (Window & { frameElement?: Element | null })
+        | null
+        | undefined;
+      const iframe = win?.frameElement as HTMLElement | null | undefined;
+      if (!ev || !frame || frame.width <= 0 || !iframe) return;
+      // detail 0 is a keyboard-activated click, not a tap.
+      if (ev.detail === 0) return;
+      // A tap on a link is epub.js's own link handling, not a page turn.
+      const target = ev.target as Element | null;
+      if (target && typeof target.closest === "function" && target.closest("a[href]")) {
+        return;
+      }
+      // The click that ends a drag-selection is not a tap.
+      if (down && isDragGesture(down, { x: ev.clientX, y: ev.clientY })) return;
+      const ifr = iframe.getBoundingClientRect();
+      const tap: ReaderContentTap = {
+        xFraction: (ifr.left + ev.clientX - frame.left) / frame.width,
+        selectionActive: selectionHasText(win),
+      };
+      for (const cb of tapSubscribers) {
+        try {
+          cb(tap);
+        } catch {
+          // a bad subscriber must not break tap handling for the others
+        }
+      }
+    } catch {
+      // never throw into epub.js
+    }
+  }
 
   function emit(loc: ReaderLocation): void {
     for (const cb of subscribers) {
@@ -819,6 +930,14 @@ export async function createReader(
 
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
+      rendition.on("click", handleContentClick);
+      rendition.on("rendered", (_section: unknown, view: unknown) => {
+        try {
+          watchContentDocument(view);
+        } catch {
+          // best-effort: selection watching must not break rendering
+        }
+      });
       rendition.on("rendered", (section: unknown) => repaintHighlightsFor(section));
 
       // A locations table cached from an earlier open makes `percent` exact
@@ -1060,10 +1179,25 @@ export async function createReader(
       };
     },
 
+    onSelection(cb: (sel: { cfiRange: string; text: string }) => void): () => void {
+      return subscribeSelection(cb);
+    },
+
     onSelected(cb: (sel: { cfiRange: string; text: string }) => void): () => void {
-      selectionSubscribers.add(cb);
+      return subscribeSelection(cb);
+    },
+
+    onSelectionCleared(cb: () => void): () => void {
+      selectionClearedSubscribers.add(cb);
       return () => {
-        selectionSubscribers.delete(cb);
+        selectionClearedSubscribers.delete(cb);
+      };
+    },
+
+    onContentTap(cb: (tap: ReaderContentTap) => void): () => void {
+      tapSubscribers.add(cb);
+      return () => {
+        tapSubscribers.delete(cb);
       };
     },
 
@@ -1135,6 +1269,17 @@ export async function createReader(
       }
       subscribers.clear();
       selectionSubscribers.clear();
+      selectionClearedSubscribers.clear();
+      tapSubscribers.clear();
+      for (const detach of watchedDocs.values()) {
+        try {
+          detach();
+        } catch {
+          // ignore — the document may already be gone
+        }
+      }
+      watchedDocs.clear();
+      lastPointerDown = undefined;
       highlightRegistry.clear();
       try {
         contentPipeline?.destroy();
