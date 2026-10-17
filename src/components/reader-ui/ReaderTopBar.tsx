@@ -51,6 +51,12 @@ export interface ReaderTopBarProps {
    * swapping it never changes the bar's height.
    */
   slot?: ReactNode;
+  /**
+   * A panel that hangs directly under the bar, over the top of the page (the
+   * note card). It is positioned against the bar, so it takes no height in the
+   * flow and the page beneath does not move.
+   */
+  card?: ReactNode;
 }
 
 const controlClass =
@@ -66,6 +72,7 @@ export function ReaderTopBar({
   hidden,
   onToggleImmersive,
   slot,
+  card,
 }: ReaderTopBarProps) {
   return (
     <header
@@ -82,7 +89,8 @@ export function ReaderTopBar({
         "[padding-block:var(--leaf-reader-bar-pad-y)] " +
         "[padding-inline:var(--leaf-reader-bar-pad-x)] " +
         "[transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] " +
-        (overlay ? "absolute inset-x-0 top-0" : "flex-none")
+        // In flow it is also the containing block for `card`, which hangs from its foot.
+        (overlay ? "absolute inset-x-0 top-0" : "relative flex-none")
       }
       style={{
         opacity: hidden ? 0 : 1,
@@ -165,6 +173,7 @@ export function ReaderTopBar({
           </div>
         </>
       )}
+      {card}
     </header>
   );
 }

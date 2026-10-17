@@ -327,12 +327,13 @@ describe("ReaderShell — tapped highlight opens its actions", () => {
     await ready();
     await waitFor(() => expect(h.clicks.has("a1")).toBe(true));
     act(() => h.clicks.get("a1")?.());
-    const toolbar = bar("Highlight actions")!;
-    await user.click(within(toolbar).getByRole("button", { name: "Remove" }));
-    expect(within(toolbar).getByText("Remove note too?")).toBeInTheDocument();
-    await user.click(within(toolbar).getByRole("button", { name: "Keep" }));
+    // A highlight with a note shows its actions in the note card (founder, 2026-10-17).
+    const card = screen.getByRole("region", { name: "Note" });
+    await user.click(within(card).getByRole("button", { name: "Remove" }));
+    expect(within(card).getByText("Remove note too?")).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Keep" }));
     expect(h.enqueueDelete).not.toHaveBeenCalled();
-    expect(within(toolbar).getByRole("button", { name: "Edit note" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Edit note" })).toBeInTheDocument();
   });
 
   it("does not turn the page on the tap that opened it", async () => {
