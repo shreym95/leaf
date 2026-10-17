@@ -484,18 +484,18 @@ describe.skipIf(noKeys)("Annotations: RLS, copy, share link, note sync and quote
     expect(res.error?.code).toBe(DENIED);
   });
 
-  it("a shared mark with only a quote_prefix is refused by the table check", async () => {
+  it("a shared mark with only a quote_prefix is refused by the insert policy (0013)", async () => {
     const rid = await makeRead(sharedGroup, owner.id);
     const id = await makePage(owner, ownerBook);
 
-    // quote_exact is null, so the policy's kind/quote agreement holds; the 0010
-    // table check (quotes only on highlight) is what refuses it.
+    // Under 0012 alone the 0010 table check refused this (23514). 0013 restored
+    // the policy rule that only a highlight may carry quote context, as 0010 had.
     const res = await share(owner, rid, id, {
       user_id: owner.id,
       kind: "mark",
       quote_prefix: "not allowed on a mark",
     });
-    expect(res.error?.code).toBe(CHECK_FAILED);
+    expect(res.error?.code).toBe(DENIED);
   });
 
   it("a shared quote over 300 characters is refused; 300 is accepted", async () => {
