@@ -1,11 +1,12 @@
 // Pure helpers for the Group tab: where the reader is in outline coordinates, how a
 // note's position jumps back into my copy, and how notes are sectioned for display.
-// No React, no network. The copy-href resolution mirrors `resolveCopyHref` in
-// `src/reader/group-progress.ts` (not exported there), so a mark is placed exactly where
-// the progress tracker would place the same page.
+// No React, no network. The copy-href resolution is `resolveCopyHref` from
+// `src/reader/group-progress.ts`, so a mark is placed exactly where the progress
+// tracker would place the same page.
 
 import { NOTE_MAX, notesByChapter } from "@/lib/db/read-notes";
 import { toOutlinePosition } from "@/lib/groups/alignment";
+import { resolveCopyHref } from "@/reader/group-progress";
 import type { Alignment, Outline, OutlinePosition } from "@/lib/groups/types";
 import type { VisibleReadNote } from "@/lib/types";
 
@@ -62,33 +63,6 @@ export function noteLength(text: string): number {
 export function canSaveNote(text: string): boolean {
   const n = noteLength(text);
   return n >= 1 && n <= NOTE_MAX;
-}
-
-/** A TOC href may carry a #fragment; spine hrefs do not. */
-function pathOf(href: string): string {
-  const i = href.indexOf("#");
-  return i === -1 ? href : href.slice(0, i);
-}
-
-function lastSegment(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i === -1 ? path : path.slice(i + 1);
-}
-
-/** Same resolution as group-progress.ts: same path, else a unique same-name file. */
-function resolveCopyHref(alignment: Alignment, spineHref: string): string | null {
-  const mapped = alignment.copyHrefs.filter((h) => alignment.map[h] !== undefined);
-  const path = pathOf(spineHref);
-
-  const exact = mapped.find((h) => pathOf(h) === path);
-  if (exact !== undefined) return exact;
-
-  const base = lastSegment(path);
-  if (!base) return null;
-  const sameName = mapped.filter((h) => lastSegment(pathOf(h)) === base);
-  if (sameName.length === 0) return null;
-  const distinctPaths = new Set(sameName.map(pathOf));
-  return distinctPaths.size === 1 ? sameName[0] : null;
 }
 
 /** The reader's place in this read's outline coordinates, or null when unmappable. */

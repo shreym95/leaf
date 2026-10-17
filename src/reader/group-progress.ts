@@ -65,7 +65,7 @@ function lastSegment(path: string): string {
  * segment. Null when neither exists — the caller then skips the update rather than
  * guessing a chapter.
  */
-function resolveCopyHref(
+export function resolveCopyHref(
   alignment: NonNullable<BookRead["copy"]["alignment"]>,
   spineHref: string,
 ): string | null {
