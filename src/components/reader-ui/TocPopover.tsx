@@ -7,9 +7,10 @@ import type { ReaderTocEntry } from "@/reader/engine";
  * TocPopover — the chapter drawer above the dock's `≡` pod (design iteration 1).
  *
  * Structured as a tabbed panel whose tab bar renders ONLY when there is more
- * than one tab (`TABS`), so a further tab can be added without a redesign.
- * Today: Contents and Bookmarks. Bookmarks moved here when the frame's top-edge
- * ribbon was removed — the pill's bookmark pod creates them, this lists them.
+ * than one tab. The reader passes `notesPanel`, which gives Contents · Notes
+ * (NOTES_PLAN N2b). Without it the popover keeps its legacy tabs (Contents ·
+ * Bookmarks, plus Group when `groupPanel` is passed) — the deprecated path,
+ * kept so callers that have not moved yet render as they did.
  *
  * Non-modal dialog: opens from the trigger, closes on Esc / outside tap (both
  * owned by `ReaderDock`), moves focus to the first chapter on open. Presentational
@@ -21,14 +22,10 @@ interface TocTab {
   label: string;
 }
 
-// Add an entry here (e.g. `{ id: "notes", label: "Notes" }`) and the tab bar
-// grows; the panel body switches on the active tab id.
-const TABS: TocTab[] = [
-  { id: "contents", label: "Contents" },
-  { id: "bookmarks", label: "Bookmarks" },
-];
-
-// Present only when a `groupPanel` is passed (the book is linked to a group read).
+const CONTENTS_TAB: TocTab = { id: "contents", label: "Contents" };
+const NOTES_TAB: TocTab = { id: "notes", label: "Notes" };
+const BOOKMARKS_TAB: TocTab = { id: "bookmarks", label: "Bookmarks" };
+// Present only when a legacy `groupPanel` is passed (deprecated path).
 const GROUP_TAB: TocTab = { id: "group", label: "Group" };
 
 export interface DockBookmark {
@@ -45,12 +42,20 @@ export interface TocPopoverProps {
   /** Current chapter title — marks the matching row `aria-current`. */
   currentLabel: string | null;
   onNavigate: (href: string) => void;
-  bookmarks: DockBookmark[];
-  onGoToBookmark: (cfi: string) => void;
-  onRemoveBookmark: (id: string) => void;
   /**
-   * The Group tab's body. Passing it adds the tab; omitting it leaves the popover
-   * exactly as it was before groups existed.
+   * The Notes tab's body. Passing it selects the Contents · Notes tabs.
+   * Omitting it keeps the deprecated legacy tabs below.
+   */
+  notesPanel?: ReactNode;
+  /** @deprecated Legacy Bookmarks tab (used only when `notesPanel` is absent). */
+  bookmarks?: DockBookmark[];
+  /** @deprecated Legacy Bookmarks tab (used only when `notesPanel` is absent). */
+  onGoToBookmark?: (cfi: string) => void;
+  /** @deprecated Legacy Bookmarks tab (used only when `notesPanel` is absent). */
+  onRemoveBookmark?: (id: string) => void;
+  /**
+   * @deprecated The legacy Group tab's body. Used only when `notesPanel` is
+   * absent; the Group tab's compose form is retired (NOTES_PLAN N2c).
    */
   groupPanel?: ReactNode;
 }
@@ -61,14 +66,15 @@ export function TocPopover({
   entries,
   currentLabel,
   onNavigate,
-  bookmarks,
-  onGoToBookmark,
-  onRemoveBookmark,
+  notesPanel,
+  bookmarks = [],
+  onGoToBookmark = () => {},
+  onRemoveBookmark = () => {},
   groupPanel,
 }: TocPopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLButtonElement>(null);
-  const [tabId, setTabId] = useState(TABS[0].id);
+  const [tabId, setTabId] = useState(CONTENTS_TAB.id);
 
   // Move focus into the popover on open (it unmounts on close, so a mount
   // effect is the open hook). Falls back to the panel when there are no rows.
@@ -79,9 +85,14 @@ export function TocPopover({
 
   // Hooks must run in the same order on every render, so this sits above the
   // `open` early-return, not below it.
-  const tabs = groupPanel !== undefined ? [...TABS, GROUP_TAB] : TABS;
+  const tabs: TocTab[] =
+    notesPanel !== undefined
+      ? [CONTENTS_TAB, NOTES_TAB]
+      : groupPanel !== undefined
+        ? [CONTENTS_TAB, BOOKMARKS_TAB, GROUP_TAB]
+        : [CONTENTS_TAB, BOOKMARKS_TAB];
   const showTabBar = tabs.length > 1;
-  const activeTab = tabs.find((t) => t.id === tabId) ?? TABS[0];
+  const activeTab = tabs.find((t) => t.id === tabId) ?? CONTENTS_TAB;
 
   if (!open) return null;
 
@@ -107,7 +118,9 @@ export function TocPopover({
       {showTabBar ? (
         <div
           role="tablist"
-          aria-label="Contents and bookmarks"
+          aria-label={
+            notesPanel !== undefined ? "Contents and notes" : "Contents and bookmarks"
+          }
           className="flex gap-[var(--leaf-space-2)] border-b pb-[var(--leaf-space-2)]"
           style={{ borderColor: "var(--leaf-dock-border)" }}
         >
@@ -179,6 +192,8 @@ export function TocPopover({
             })}
           </ul>
         )
+      ) : activeTab.id === "notes" ? (
+        notesPanel
       ) : activeTab.id === "group" ? (
         groupPanel
       ) : bookmarks.length === 0 ? (

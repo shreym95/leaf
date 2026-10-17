@@ -23,5 +23,3 @@ export type { TocPopoverProps } from "./TocPopover";
 
 export { SpreadFrame } from "./SpreadFrame";
 export type { SpreadFrameProps } from "./SpreadFrame";
-
-export { NotesPanel } from "./NotesPanel";

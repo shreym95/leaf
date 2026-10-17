@@ -4,7 +4,7 @@
 // notes, and (when the book is linked to a group read) the group's visible items.
 // Presentational only: the data and every write come in as props and callbacks.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/groups-ui/ConfirmDialog";
 import { ANNOTATION_NOTE_MAX } from "@/lib/db/annotations";
 import { QUOTE_SHARE_MAX } from "@/lib/db/read-notes";
@@ -42,6 +42,11 @@ export interface AnnotationListProps {
   onRemove: (id: string) => void;
   onShare: (id: string, readId: string) => void;
   onUnshare: (id: string, readId: string) => void;
+  /**
+   * Whether an item can be placed in a group read's book, so it can be shared
+   * there. Omitted: every item can. A `false` disables Share for that read.
+   */
+  canPlace?: (id: string, readId: string) => boolean;
   /** Share and Unshare are disabled while offline. */
   offline?: boolean;
 }
@@ -84,6 +89,7 @@ export function AnnotationList({
   onRemove,
   onShare,
   onUnshare,
+  canPlace = () => true,
   offline = false,
 }: AnnotationListProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -235,6 +241,7 @@ export function AnnotationList({
                       onRemove={() => removeItem(item.annotation.id)}
                       onShare={(readId) => onShare(item.annotation.id, readId)}
                       onUnshare={(readId) => onUnshare(item.annotation.id, readId)}
+                      canPlace={(readId) => canPlace(item.annotation.id, readId)}
                       offline={offline}
                     />
                   ) : (
@@ -270,6 +277,7 @@ interface MineRowProps {
   onRemove: () => void;
   onShare: (readId: string) => void;
   onUnshare: (readId: string) => void;
+  canPlace: (readId: string) => boolean;
   offline: boolean;
 }
 
@@ -286,6 +294,7 @@ function MineRow({
   onRemove,
   onShare,
   onUnshare,
+  canPlace,
   offline,
 }: MineRowProps) {
   const quote = itemQuote(item);
@@ -476,19 +485,26 @@ function MineRow({
                   )}
                   {group.reads.map((read) => {
                     const shared = sharedIds.includes(read.id);
+                    const unplaceable = !shared && !canPlace(read.id);
                     return (
-                      <button
-                        key={read.id}
-                        type="button"
-                        disabled={offline}
-                        onClick={() => (shared ? onUnshare(read.id) : onShare(read.id))}
-                        className={rowButtonClass}
-                        style={TEXT}
-                      >
-                        {shared
-                          ? `Unshare from ${read.groupName}`
-                          : `Share with ${read.groupName}`}
-                      </button>
+                      <Fragment key={read.id}>
+                        <button
+                          type="button"
+                          disabled={offline || unplaceable}
+                          onClick={() => (shared ? onUnshare(read.id) : onShare(read.id))}
+                          className={rowButtonClass}
+                          style={TEXT}
+                        >
+                          {shared
+                            ? `Unshare from ${read.groupName}`
+                            : `Share with ${read.groupName}`}
+                        </button>
+                        {unplaceable && !offline && (
+                          <p className="font-ui [font-size:var(--leaf-text-xs)]" style={MUTED}>
+                            {"Can't place this item in the group's book."}
+                          </p>
+                        )}
+                      </Fragment>
                     );
                   })}
                   {truncated && (
