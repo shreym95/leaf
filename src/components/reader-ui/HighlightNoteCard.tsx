@@ -1,42 +1,119 @@
 "use client";
 
-import { useState } from "react";
-import { barButtonClass, barNoticeClass } from "./bar-styles";
-import { NoteField } from "./NoteField";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { barButtonClass, barCounterClass, barEdgeStyle, barNoticeClass, barRowClass } from "./bar-styles";
 
 /**
- * HighlightNoteCard — the readable note of a tapped highlight (founder design,
- * 2026-10-17). It drops down under the top bar and overlays the top of the page,
- * so opening it never reflows or repaginates the book.
+ * HighlightNoteCard — the readable note of a highlight, and its editor (founder
+ * design, 2026-10-17). It hangs under the top bar and overlays the top of the
+ * page, so opening it never reflows or repaginates the book.
  *
- * The note is set in the book's own reading face and size (the reader's tokens),
- * at full ink, and shows about four lines before it scrolls. Below it sit Edit
- * note and Remove. Edit swaps the body for the note editor in place; Save and
- * Cancel bring the card back. Remove asks first, as it always has for a note.
+ * The note is set in the book's own reading face and size, at full ink. Read
+ * view shows about four lines before it scrolls, with Edit note and Remove under
+ * it. Editing swaps the same text for a textarea in the same type: it grows to
+ * about four lines and then scrolls, with Save and Cancel under it and the
+ * counter at the far end of that row.
+ *
+ * Every line in the card and the bar row hangs from one left edge (barEdgeStyle),
+ * so the note, the editor and the action labels all start where the bar's label
+ * does.
+ *
+ * The editing state lives with the shell, which owns the draft: a deck open hides
+ * the card and must not lose unsaved text. This component is presentational and
+ * takes no focus on open, except that it moves focus into the editor when editing
+ * starts, and back to Edit note when editing ends.
  *
  * Dismissal is not handled here: ReaderTopBar's ✕, Esc, a page tap, the deck and
- * a page turn all clear the highlight, which unmounts the card.
- *
- * It takes no focus on open. Presentational and token-driven.
+ * a page turn are the shell's (see ReaderShell for the unsaved-text rule).
  */
 
 /** Lines of note visible before the card scrolls. */
 export const NOTE_CARD_MAX_LINES = 4;
+/** Longest note the editor accepts. Matches the store's limit. */
+export const NOTE_MAX = 500;
+
+/** The note's type: the reader's own face, size and leading, at full ink. */
+const noteTextClass =
+  "font-reader-serif text-ink whitespace-pre-wrap [overflow-wrap:anywhere] " +
+  "[font-size:var(--leaf-reader-font-size)] [line-height:var(--leaf-reader-leading)]";
 
 export interface HighlightNoteCardProps {
+  /** The saved note, or "" when the highlight has none. */
   note: string;
-  /** Saves the edited note. An empty note removes it. */
+  /** Whether the editor is open. */
+  editing: boolean;
+  /** The editor's text. Only read while editing. */
+  draft: string;
+  onDraftChange: (draft: string) => void;
+  /** Edit note: the shell opens the editor on the saved text. */
+  onEdit: () => void;
+  /** Saves the draft, trimmed. An empty draft saves as null, which removes the note. */
   onSave: (note: string | null) => void;
+  /** Cancel, and Esc from anywhere in the card while editing. Discards the draft. */
+  onCancel: () => void;
   onRemove: () => void;
 }
 
-export function HighlightNoteCard({ note, onSave, onRemove }: HighlightNoteCardProps) {
-  const [editing, setEditing] = useState(false);
+export function HighlightNoteCard({
+  note,
+  editing,
+  draft,
+  onDraftChange,
+  onEdit,
+  onSave,
+  onCancel,
+  onRemove,
+}: HighlightNoteCardProps) {
   const [confirming, setConfirming] = useState(false);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const editRef = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(editing);
+  const counterId = useId();
+
+  const length = draft.length;
+  const over = length > NOTE_MAX;
+
+  // Focus into the editor with the caret at the end, when editing starts.
+  useEffect(() => {
+    if (!editing) return;
+    const field = fieldRef.current;
+    if (!field) return;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, [editing]);
+
+  // Back to Edit note when editing ends, so keyboard focus is not lost.
+  useEffect(() => {
+    if (wasEditing.current && !editing) editRef.current?.focus();
+    wasEditing.current = editing;
+  }, [editing]);
+
+  // Grow with the text up to the card's line cap; the cap's max-height scrolls it.
+  useLayoutEffect(() => {
+    if (!editing) return;
+    const field = fieldRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [editing, draft]);
+
+  const save = () => {
+    if (over) return;
+    const trimmed = draft.trim();
+    onSave(trimmed.length > 0 ? trimmed : null);
+  };
+
+  // Esc from anywhere in the card cancels the edit; the shell's Esc then has nothing to do.
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Escape" || !editing) return;
+    e.stopPropagation();
+    onCancel();
+  };
 
   return (
     <section
       aria-label="Note"
+      onKeyDown={onKeyDown}
       className={
         "absolute inset-x-0 top-full border-b border-rule bg-page " +
         "[padding-block:var(--leaf-space-4)] " +
@@ -46,20 +123,41 @@ export function HighlightNoteCard({ note, onSave, onRemove }: HighlightNoteCardP
         "[transition:opacity_calc(var(--leaf-dur-ui)*0.4)_var(--leaf-ease)] " +
         "starting:opacity-0"
       }
-      style={{
-        paddingLeft: "calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-left))",
-        paddingRight: "calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-right))",
-      }}
+      style={barEdgeStyle}
     >
       {editing ? (
-        <NoteField
-          initial={note}
-          onSave={(next) => {
-            onSave(next);
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
-        />
+        <>
+          <textarea
+            ref={fieldRef}
+            aria-label="Note"
+            aria-describedby={counterId}
+            aria-invalid={over || undefined}
+            rows={1}
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            className={
+              "block w-full min-w-0 resize-none overflow-y-auto bg-transparent p-0 outline-none " +
+              noteTextClass +
+              " focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+            }
+            style={{ maxHeight: `${NOTE_CARD_MAX_LINES}lh` }}
+          />
+
+          <div className={`${barRowClass} mt-[var(--leaf-space-3)] flex flex-wrap items-center gap-[var(--leaf-space-3)]`}>
+            <button type="button" className={barButtonClass} disabled={over} onClick={save}>
+              Save
+            </button>
+            <button type="button" className={barButtonClass} onClick={onCancel}>
+              Cancel
+            </button>
+            <span
+              id={counterId}
+              className={`${barCounterClass} ml-auto mr-[var(--leaf-space-2)] ${over ? "text-accent" : "text-ink-mid"}`}
+            >
+              {length}/{NOTE_MAX}
+            </span>
+          </div>
+        </>
       ) : (
         <>
           <div
@@ -67,16 +165,16 @@ export function HighlightNoteCard({ note, onSave, onRemove }: HighlightNoteCardP
             // scroll it; the line box is the reader's own text size and leading.
             tabIndex={0}
             className={
-              "overflow-y-auto font-reader-serif text-ink whitespace-pre-wrap [overflow-wrap:anywhere] " +
-              "[font-size:var(--leaf-reader-font-size)] [line-height:var(--leaf-reader-leading)] " +
-              "focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
+              "overflow-y-auto " +
+              noteTextClass +
+              " focus-visible:outline-none focus-visible:[box-shadow:var(--leaf-shadow-focus)]"
             }
             style={{ maxHeight: `${NOTE_CARD_MAX_LINES}lh` }}
           >
             {note}
           </div>
 
-          <div className="mt-[var(--leaf-space-3)] flex flex-wrap items-center gap-[var(--leaf-space-3)]">
+          <div className={`${barRowClass} mt-[var(--leaf-space-3)] flex flex-wrap items-center gap-[var(--leaf-space-3)]`}>
             {confirming ? (
               <>
                 <span className={barNoticeClass}>Remove note too?</span>
@@ -93,7 +191,7 @@ export function HighlightNoteCard({ note, onSave, onRemove }: HighlightNoteCardP
               </>
             ) : (
               <>
-                <button type="button" className={barButtonClass} onClick={() => setEditing(true)}>
+                <button ref={editRef} type="button" className={barButtonClass} onClick={onEdit}>
                   Edit note
                 </button>
                 <button

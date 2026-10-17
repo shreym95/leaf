@@ -1,10 +1,24 @@
 // Shared look for the actions that live in the top bar's slot (SelectionBar,
-// HighlightBar, NoteField). Quiet text controls in the same mono label style as
-// the Library link, so the slot reads as the top bar with different words.
+// HighlightBar, HighlightNoteCard). Quiet text controls in the same mono label
+// style as the Library link, so the slot reads as the top bar with different words.
 //
 // The slot row is exactly one text line tall (see ReaderTopBar), so a control
 // cannot grow the bar. Its touch target is still 44px: `before:` extends the hit
 // area symmetrically around the label, inside the bar's own vertical padding.
+//
+// One left edge: the bar row and the note card hang from the same horizontal
+// inset (barEdgeStyle). Text that sits on that edge carries no horizontal padding
+// of its own. A button keeps its `px` for the label's breathing room, so a row of
+// buttons pulls back by that same token (barRowClass) and its label lands on the edge.
+
+/** The horizontal inset every bar row and card hangs from, safe areas included. */
+export const barEdgeStyle = {
+  paddingLeft: "calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-left))",
+  paddingRight: "calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-right))",
+} as const;
+
+/** Pulls a row of barButtonClass controls back by their own horizontal padding. */
+export const barRowClass = "-mx-[var(--leaf-space-2)]";
 
 export const barButtonClass =
   "relative inline-flex flex-none items-center rounded-sm px-[var(--leaf-space-2)] font-mono font-medium uppercase " +

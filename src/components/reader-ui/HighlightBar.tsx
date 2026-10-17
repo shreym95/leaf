@@ -8,9 +8,10 @@ import { barButtonClass } from "./bar-styles";
  * slot when the reader taps it (NOTES_PLAN N3d). Add note and Remove only; Share
  * stays in the Notes tab, which owns the group state it needs.
  *
- * A highlight WITH a note is different: the slot is a quiet "Note" row with the
- * ✕ at the far end, and the note itself is read in the note card that hangs
- * under the top bar (HighlightNoteCard). Edit and Remove live on that card.
+ * A highlight WITH a note, or one being given its first note, is different: the
+ * slot is a quiet "Note" label on the bar's left edge with the ✕ at the far end.
+ * The note itself is read, and written, in the note card that hangs under the
+ * top bar (HighlightNoteCard). Edit and Remove live on that card.
  *
  * Layout matches SelectionBar: the content is a group centred in the row, with
  * the ✕ at the far end and an equal-width pod at the start to balance it.
@@ -19,6 +20,8 @@ import { barButtonClass } from "./bar-styles";
 export interface HighlightBarProps {
   /** The highlight's note, if it has one. Only its presence is read here. */
   note?: string | null;
+  /** The note card's editor is open: the slot shows the Note label, not the actions. */
+  editing?: boolean;
   onNote: () => void;
   onRemove: () => void;
   onClose: () => void;
@@ -31,8 +34,8 @@ function onEscape(e: KeyboardEvent<HTMLDivElement>, close: () => void): void {
   close();
 }
 
-export function HighlightBar({ note, onNote, onRemove, onClose }: HighlightBarProps) {
-  const hasNote = Boolean(note);
+export function HighlightBar({ note, editing = false, onNote, onRemove, onClose }: HighlightBarProps) {
+  const showsLabel = Boolean(note) || editing;
 
   return (
     <div
@@ -41,9 +44,10 @@ export function HighlightBar({ note, onNote, onRemove, onClose }: HighlightBarPr
       onKeyDown={(e) => onEscape(e, onClose)}
       className="flex h-full w-full min-w-0 items-center gap-[var(--leaf-space-3)]"
     >
-      {hasNote ? (
+      {showsLabel ? (
         <>
-          <span className="min-w-0 flex-1 truncate px-[var(--leaf-space-2)] font-mono font-medium uppercase text-ink-mid [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]">
+          {/* No inner padding: the label sits on the bar's left edge, as the note text does. */}
+          <span className="min-w-0 flex-1 truncate font-mono font-medium uppercase text-ink-mid [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]">
             Note
           </span>
         </>

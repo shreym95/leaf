@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState, type ReactNode } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { SelectionBar } from "./SelectionBar";
-import { NoteField } from "./NoteField";
 import { BarPressHold } from "./BarPressHold";
 
 // The top bar's row, as the shell renders it: the slot while a bar is up, and
@@ -11,6 +10,30 @@ import { BarPressHold } from "./BarPressHold";
 const libraryClick = vi.fn();
 const onAct = vi.fn();
 const onSave = vi.fn();
+
+// Stands in for the editor a Note press opens. The note editor no longer lives
+// in the bar's slot (it is the note card's editor), but this test is about the
+// press hold, which needs a field and Save/Cancel to hold, not the card itself.
+function NoteStandIn({ onSave, onCancel }: { onSave: (note: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <>
+      <input
+        autoFocus
+        type="text"
+        aria-label="Note"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <button type="button" onClick={() => onSave(draft)}>
+        Save
+      </button>
+      <button type="button" onClick={onCancel}>
+        Cancel
+      </button>
+    </>
+  );
+}
 
 function Harness() {
   const [bar, setBar] = useState<"selection" | "note" | null>("selection");
@@ -26,8 +49,7 @@ function Harness() {
         onClose={() => setBar(null)}
       />
     ) : bar === "note" ? (
-      <NoteField
-        initial=""
+      <NoteStandIn
         onSave={(note) => {
           onSave(note);
           setBar(null);
