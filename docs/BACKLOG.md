@@ -105,6 +105,9 @@ built, review the whole app: groups, library, reader chrome, and copy tone. Then
 decide whether a design iteration (as `design-iterations/2026-09-09-shelf-and-dock`) is
 needed.
 
+Include: the contents popover tabs (`TocPopover.tsx`, now with a Group tab) use
+`role="tab"` without a `tabpanel` / `aria-controls` association (found in v1b QA).
+
 ## Dropped
 
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
