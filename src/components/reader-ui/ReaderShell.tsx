@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -34,11 +35,7 @@ import {
   type AnnotationManager,
 } from "@/reader/annotations";
 import { ANNOTATION_QUOTE_MAX, listAnnotationsWithCache } from "@/lib/db/annotations";
-import {
-  enqueueAnnotationCreate,
-  enqueueAnnotationDelete,
-  enqueueAnnotationNote,
-} from "@/lib/offline/outbox";
+import { createAnnotationWriter } from "@/lib/db/annotation-writer";
 import type { Annotation } from "@/lib/types";
 import {
   readCachedBook,
@@ -331,6 +328,8 @@ export function ReaderShell({
   // paints every range, legacy ones included. Mark actions stay disabled until
   // its restore has settled, so a mark cannot be written twice.
   const annotationsRef = useRef<AnnotationManager | null>(null);
+  // Writes go straight to the server while online and queue only on failure.
+  const annotationWriter = useMemo(() => createAnnotationWriter({ userId }), [userId]);
   const [annotationList, setAnnotationList] = useState<Annotation[]>([]);
   const [annotationsReady, setAnnotationsReady] = useState(false);
   // ── Selection and highlight bar (NOTES_PLAN N3a / N3d) ─────────────────
@@ -647,21 +646,7 @@ export function ReaderShell({
             bookId,
             userId,
             load: () => listAnnotationsWithCache(userId, bookId),
-            writer: {
-              create: (a) =>
-                enqueueAnnotationCreate(userId, {
-                  id: a.id,
-                  bookId: a.book_id,
-                  kind: a.kind,
-                  cfi: a.cfi,
-                  quote: a.quote,
-                  note: a.note,
-                  label: a.label,
-                  percent: a.percent,
-                }),
-              setNote: (id, note) => enqueueAnnotationNote(userId, id, note),
-              remove: (id) => enqueueAnnotationDelete(userId, id),
-            },
+            writer: annotationWriter,
             stylesFor: () => highlightStyles("copper", themeRef.current),
             // The engine's highlight click also reaches the content-tap path, so
             // the time of this tap is recorded and the tap policy ignores it.
@@ -1257,6 +1242,7 @@ export function ReaderShell({
             }}
             onSaveNote={saveNote}
             onRemove={removeAnnotation}
+            writer={annotationWriter}
           />
         }
       />
