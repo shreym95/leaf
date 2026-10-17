@@ -229,6 +229,12 @@ export interface ReadNote {
   quote_exact: string | null;
   quote_prefix: string | null;
   quote_suffix: string | null;
+  /**
+   * Link to the personal `annotations` row this copy was shared from (0012).
+   * Optional so fixtures written before 0012 still type-check; the database
+   * always returns it, null for a mark or note that was never linked.
+   */
+  annotation_id?: string | null;
   /** epub.js CFI of the position, when the writer's copy has one. */
   cfi: string | null;
   /** Hash of the copy the position was taken from (for re-anchoring). */
@@ -237,10 +243,15 @@ export interface ReadNote {
 }
 
 /**
- * A row from `visible_notes(rid)` (0010): the `ReadNote` columns without the v2
- * quote anchors. Own notes, plus other members' notes at or behind the caller.
+ * A row from `visible_notes(rid)` (0010, quote columns added in 0012): the `ReadNote`
+ * columns without `annotation_id`. Own notes, plus other members' notes at or behind
+ * the caller. The quote anchors are optional so 0010-shaped fixtures still type-check.
  */
-export type VisibleReadNote = Omit<ReadNote, "quote_exact" | "quote_prefix" | "quote_suffix">;
+export type VisibleReadNote = Omit<
+  ReadNote,
+  "annotation_id" | "quote_exact" | "quote_prefix" | "quote_suffix"
+> &
+  Partial<Pick<ReadNote, "quote_exact" | "quote_prefix" | "quote_suffix">>;
 
 /**
  * `public.read_milestones` (0009) — PK `(read_id, user_id, point)`. Trigger-written,
@@ -251,4 +262,32 @@ export interface ReadMilestone {
   user_id: string;
   point: string;
   reached_at: string;
+}
+
+/** Kind of an `annotations` row (0012): a page mark (a position) or a range (a quoted selection). */
+export type AnnotationKind = "page" | "range";
+
+/**
+ * `public.annotations` (0012) — personal items, owner-only. `page` is a position
+ * (the old bookmark); `range` is a quoted selection (the old highlight). `quote` is null
+ * for `page` and required for `range`. `note` is 1–500 characters when present.
+ */
+export interface Annotation {
+  id: string;
+  user_id: string;
+  book_id: string;
+  kind: AnnotationKind;
+  /** epub.js CFI: the page start for `page`, the range for `range`. */
+  cfi: string;
+  /** The selected text for `range`; null for `page`. Uncapped in the database. */
+  quote: string | null;
+  /** 1–500 characters when present. */
+  note: string | null;
+  /** Chapter title at creation. Denormalised; null when unknown. */
+  label: string | null;
+  /** 0–1 progress at creation. Denormalised; null when unknown. */
+  percent: number | null;
+  created_at: string;
+  /** Stamped by trigger when `note` changes (0012). */
+  updated_at: string;
 }
