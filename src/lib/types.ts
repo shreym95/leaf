@@ -244,7 +244,7 @@ export type VisibleReadNote = Omit<ReadNote, "quote_exact" | "quote_prefix" | "q
 
 /**
  * `public.read_milestones` (0009) — PK `(read_id, user_id, point)`. Trigger-written,
- * append-only. `point` is `part:<n>`, `half` or `end`.
+ * append-only. `point` is `part:<n>`, `half`, `end` or `checkpoint:<n>`.
  */
 export interface ReadMilestone {
   read_id: string;
