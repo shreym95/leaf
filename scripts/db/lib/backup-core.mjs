@@ -13,6 +13,7 @@ import {
 } from "./manifest.mjs";
 import { fetchAllRows, listAllObjects } from "./paginate.mjs";
 import { BUCKET, TABLES } from "./tables.mjs";
+import { selectTables } from "./select-tables.mjs";
 
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
@@ -28,11 +29,23 @@ export function timestampName(date = new Date()) {
 }
 
 /**
- * Back up every table and every bucket object into `outDir` (which must already
- * have passed the path guard). Throws, leaving an INCOMPLETE marker, if anything
- * failed. On success the marker is removed and `manifest.json` is written last.
+ * Back up every core table and every bucket object into `outDir` (which must already
+ * have passed the path guard). With `tableNames`, back up only those tables (any
+ * known table, see select-tables.mjs) and skip bucket objects. Throws, leaving an
+ * INCOMPLETE marker, if anything failed. On success the marker is removed and
+ * `manifest.json` is written last.
+ * @param {{ client: any, outDir: string, projectRef: string, tableNames?: string[] | null, now?: () => Date, log?: (message: string) => void }} args
  */
-export async function runBackup({ client, outDir, projectRef, now = () => new Date(), log = (_message) => {} }) {
+export async function runBackup({
+  client,
+  outDir,
+  projectRef,
+  tableNames = null,
+  now = () => new Date(),
+  log = (_message) => {},
+}) {
+  const scoped = tableNames !== null;
+  const tableDefs = scoped ? selectTables(tableNames) : TABLES;
   mkdirSync(outDir, { recursive: true, mode: DIR_MODE });
   if (readdirSync(outDir).length > 0) {
     throw new Error(`Output directory "${outDir}" is not empty.`);
@@ -44,7 +57,7 @@ export async function runBackup({ client, outDir, projectRef, now = () => new Da
   const errors = [];
   const tables = {};
 
-  for (const table of TABLES) {
+  for (const table of tableDefs) {
     try {
       const rows = await fetchAllRows(client, table.name, table.pk);
       const bytes = Buffer.from(JSON.stringify(rows, null, 2) + "\n", "utf8");
@@ -60,11 +73,15 @@ export async function runBackup({ client, outDir, projectRef, now = () => new Da
 
   const objects = [];
   let paths = [];
-  try {
-    paths = await listAllObjects(client, BUCKET);
-  } catch (err) {
-    errors.push(`storage list: ${err.message}`);
-    log(`storage list: FAILED (${err.message})`);
+  if (scoped) {
+    log("storage: skipped (scoped backup)");
+  } else {
+    try {
+      paths = await listAllObjects(client, BUCKET);
+    } catch (err) {
+      errors.push(`storage list: ${err.message}`);
+      log(`storage list: FAILED (${err.message})`);
+    }
   }
 
   for (const path of paths) {
@@ -82,7 +99,7 @@ export async function runBackup({ client, outDir, projectRef, now = () => new Da
       log(`object ${path}: FAILED (${err.message})`);
     }
   }
-  log(`storage: ${objects.length}/${paths.length} objects`);
+  if (!scoped) log(`storage: ${objects.length}/${paths.length} objects`);
 
   if (errors.length > 0) {
     writeFile(
@@ -102,6 +119,11 @@ export async function runBackup({ client, outDir, projectRef, now = () => new Da
     bucket: BUCKET,
     tables,
     objects,
+    scope: {
+      scoped,
+      tables: tableDefs.map((t) => t.name),
+      storage: !scoped,
+    },
   });
   writeFile(join(outDir, MANIFEST_FILE), JSON.stringify(manifest, null, 2) + "\n");
   rmSync(markerPath);
