@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 /**
@@ -43,6 +44,13 @@ export interface ReaderTopBarProps {
   /** Fade the bar out. Only ever true while `overlay` is — in flow it always shows. */
   hidden: boolean;
   onToggleImmersive: () => void;
+  /**
+   * Replaces the bar's contents while a selection, note or highlight is being
+   * acted on (NOTES_PLAN N3a). Omitted, the bar shows its own controls. The slot
+   * is exactly one line of text tall — the same height as the default row — so
+   * swapping it never changes the bar's height.
+   */
+  slot?: ReactNode;
 }
 
 const controlClass =
@@ -57,6 +65,7 @@ export function ReaderTopBar({
   overlay,
   hidden,
   onToggleImmersive,
+  slot,
 }: ReaderTopBarProps) {
   return (
     <header
@@ -89,60 +98,73 @@ export function ReaderTopBar({
         paddingRight: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-right))`,
       }}
     >
-      <Link
-        href="/library"
-        className={controlClass}
-      >
-        <svg
-          aria-hidden
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-3.5 w-3.5"
+      {slot ? (
+        <div
+          data-bar-slot=""
+          className="flex min-w-0 flex-1 items-center [font-size:var(--leaf-text-2xs)]"
+          // One text line, matching the default row below, so the bar keeps its height.
+          style={{ height: "1lh" }}
         >
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        Library
-      </Link>
-
-      <div className="flex items-center gap-[var(--leaf-space-5)]">
-        <span
-          aria-hidden
-          className="font-mono font-medium uppercase text-accent [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)]"
-        >
-          Leaf
-        </span>
-
-        <button
-          type="button"
-          onClick={onToggleImmersive}
-          aria-pressed={immersive}
-          aria-label={immersive ? "Exit full screen" : "Enter full screen"}
-          className={controlClass}
-        >
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
+          {slot}
+        </div>
+      ) : (
+        <>
+          <Link
+            href="/library"
+            className={controlClass}
           >
-            {immersive ? (
-              /* Arrows pulling inward — collapse. */
-              <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
-            ) : (
-              /* Corner brackets pushing outward — expand. */
-              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-            )}
-          </svg>
-        </button>
-      </div>
+            <svg
+              aria-hidden
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Library
+          </Link>
+  
+          <div className="flex items-center gap-[var(--leaf-space-5)]">
+            <span
+              aria-hidden
+              className="font-mono font-medium uppercase text-accent [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-eyebrow)]"
+            >
+              Leaf
+            </span>
+  
+            <button
+              type="button"
+              onClick={onToggleImmersive}
+              aria-pressed={immersive}
+              aria-label={immersive ? "Exit full screen" : "Enter full screen"}
+              className={controlClass}
+            >
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                {immersive ? (
+                  /* Arrows pulling inward — collapse. */
+                  <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+                ) : (
+                  /* Corner brackets pushing outward — expand. */
+                  <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                )}
+              </svg>
+            </button>
+          </div>
+        </>
+      )}
     </header>
   );
 }

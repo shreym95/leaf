@@ -118,20 +118,26 @@ export function SpreadFrame({
 
             Pointer devices keep the narrow 14% edges and an inert middle: with
             a mouse a click fires after a drag-select too, so wide zones would
-            turn the page every time a reader selected a word to copy. */}
+            turn the page every time a reader selected a word to copy.
+
+            On a coarse (touch) pointer the zones are pass-through
+            (`pointer-coarse:pointer-events-none`). A long-press has to reach the
+            book iframe to select text, and a tap there reaches ReaderShell's
+            touch tap policy through `onContentTap`, which turns the page. The
+            zones stay in the DOM and keep their names for assistive tech. */}
         <button
           type="button"
           aria-label="Previous page"
           tabIndex={-1}
           onClick={onPrev}
-          className="absolute inset-y-0 left-0 z-[7] w-[35%] cursor-pointer lg:w-[14%]"
+          className="absolute inset-y-0 left-0 z-[7] w-[35%] cursor-pointer lg:w-[14%] pointer-coarse:pointer-events-none"
         />
         <button
           type="button"
           aria-label="Next page"
           tabIndex={-1}
           onClick={onNext}
-          className="absolute inset-y-0 right-0 z-[7] w-[65%] cursor-pointer lg:w-[14%]"
+          className="absolute inset-y-0 right-0 z-[7] w-[65%] cursor-pointer lg:w-[14%] pointer-coarse:pointer-events-none"
         />
 
 

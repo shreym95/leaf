@@ -6,10 +6,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   createReader,
+  type ReaderContentTap,
   type ReaderController,
   type ReaderTocEntry,
 } from "@/reader/engine";
@@ -50,6 +52,10 @@ import { ReaderDock } from "./ReaderDock";
 import { useGroupMarkers } from "./useGroupMarkers";
 import { useGroupReads } from "./useGroupReads";
 import { ReaderNotes } from "./ReaderNotes";
+import { SelectionBar } from "./SelectionBar";
+import { HighlightBar } from "./HighlightBar";
+import { NoteField } from "./NoteField";
+import { decideContentTap, isCoarsePointer } from "./tap-policy";
 import { EndOfBookPanel } from "./EndOfBookPanel";
 import { ReturnChip } from "./ReturnChip";
 import { SyncOfferChip } from "./SyncOfferChip";
@@ -140,6 +146,18 @@ function requestReaderCache(bookId: string): void {
 }
 
 /** Subscribes to connectivity changes for `useSyncExternalStore`. */
+// How long a collapsed selection stays actionable, so a tap that collapsed it
+// still reaches the bar's buttons.
+const SELECTION_GRACE_MS = 400;
+
+// Keys typed into a field (the note field, a select or search) must not page
+// the book: the arrow keys and letters belong to the field.
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
 function subscribeConnectivity(onChange: () => void): () => void {
   window.addEventListener("online", onChange);
   window.addEventListener("offline", onChange);
@@ -309,6 +327,36 @@ export function ReaderShell({
   const annotationsRef = useRef<AnnotationManager | null>(null);
   const [annotationList, setAnnotationList] = useState<Annotation[]>([]);
   const [annotationsReady, setAnnotationsReady] = useState(false);
+  // ── Selection and highlight bar (NOTES_PLAN N3a / N3d) ─────────────────
+  // The top bar's slot shows, in priority order: the note field, the actions
+  // for a settled selection, or the actions for a tapped highlight. Refs
+  // mirror what the engine callbacks read, so those stay identity-stable.
+  // `selectionRef` is the one actionable selection: the action clears it, so a
+  // second press cannot act twice. `selection` only drives what is shown, and
+  // is kept for the collapse grace window.
+  const [selection, setSelection] = useState<{ cfiRange: string; text: string } | null>(
+    null,
+  );
+  const selectionRef = useRef<{ cfiRange: string; text: string } | null>(null);
+  const [barItem, setBarItem] = useState<{ kind: "note" | "highlight"; id: string } | null>(
+    null,
+  );
+  const barItemRef = useRef(barItem);
+  useEffect(() => {
+    barItemRef.current = barItem;
+  }, [barItem]);
+  // Epoch-ms of the last collapse / highlight tap. -Infinity means "never", so
+  // the first tap is never inside a guard window.
+  const lastCollapseAt = useRef(Number.NEGATIVE_INFINITY);
+  const lastHighlightTapAt = useRef(Number.NEGATIVE_INFINITY);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const contentTapRef = useRef<(tap: ReaderContentTap) => void>(() => {});
+  useEffect(
+    () => () => {
+      if (collapseTimerRef.current !== undefined) clearTimeout(collapseTimerRef.current);
+    },
+    [],
+  );
   // Offline from `navigator.onLine` and the window events. The server snapshot
   // is online, so server and client agree until the client reads the real value.
   const offline = useSyncExternalStore(
@@ -416,6 +464,8 @@ export function ReaderShell({
     let cancelled = false;
     let unsubRelocated: (() => void) | undefined;
     let unsubSelected: (() => void) | undefined;
+    let unsubSelectionCleared: (() => void) | undefined;
+    let unsubContentTap: (() => void) | undefined;
     let unsubAnnotations: (() => void) | undefined;
     let unsubSyncOffer: (() => void) | undefined;
     // Stage 4 part 2 — debounced, best-effort cache-percent write. Scoped to
@@ -604,6 +654,12 @@ export function ReaderShell({
               remove: (id) => enqueueAnnotationDelete(userId, id),
             },
             stylesFor: () => highlightStyles("copper", themeRef.current),
+            // The engine's highlight click also reaches the content-tap path, so
+            // the time of this tap is recorded and the tap policy ignores it.
+            onHighlightTap: (a) => {
+              lastHighlightTapAt.current = Date.now();
+              setBarItem({ kind: "highlight", id: a.id });
+            },
           });
           annotationsRef.current = annotations;
           unsubAnnotations = annotations.subscribe(setAnnotationList);
@@ -619,13 +675,27 @@ export function ReaderShell({
           // Notes are optional for reading: the marks stay off, the book opens.
         }
 
-        // NOTE: the selection-triggered highlight popover is DISABLED.
-        // It opened on any text selection, sat over the page, and had no way to
-        // dismiss itself — on a phone, where selection is easy to trigger by
-        // accident, it was unusable. Existing highlights still render, and the
-        // notes panel still reads, annotates and deletes them. Creating a
-        // highlight needs a touch-first design first — see docs/BACKLOG.md.
-        // Re-enable by restoring `controller.onSelected(...)` here.
+        // Selection feeds the top bar's slot (SelectionBar). A settled selection
+        // is actionable; its collapse opens a grace window so a tap that
+        // collapsed it can still act. Taps feed the touch page-turn policy.
+        unsubSelected = controller.onSelection((sel) => {
+          if (collapseTimerRef.current !== undefined) {
+            clearTimeout(collapseTimerRef.current);
+            collapseTimerRef.current = undefined;
+          }
+          selectionRef.current = sel;
+          setSelection(sel);
+        });
+        unsubSelectionCleared = controller.onSelectionCleared(() => {
+          lastCollapseAt.current = Date.now();
+          if (collapseTimerRef.current !== undefined) clearTimeout(collapseTimerRef.current);
+          collapseTimerRef.current = setTimeout(() => {
+            collapseTimerRef.current = undefined;
+            selectionRef.current = null;
+            setSelection(null);
+          }, SELECTION_GRACE_MS);
+        });
+        unsubContentTap = controller.onContentTap((tap) => contentTapRef.current(tap));
 
         if (!cancelled) {
           setLoad({ state: "ready" });
@@ -651,6 +721,8 @@ export function ReaderShell({
       if (cacheProgressTimer) clearTimeout(cacheProgressTimer);
       unsubRelocated?.();
       unsubSelected?.();
+      unsubSelectionCleared?.();
+      unsubContentTap?.();
       unsubAnnotations?.();
       unsubSyncOffer?.();
       completionRef.current = null;
@@ -717,6 +789,18 @@ export function ReaderShell({
     [setEndPanelOpen],
   );
 
+  // Clears the book's selection and the bar's record of it. Turning a page and
+  // a touch tap that is not a turn both go through here.
+  const dropSelection = useCallback(() => {
+    selectionRef.current = null;
+    if (collapseTimerRef.current !== undefined) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = undefined;
+    }
+    setSelection(null);
+    controllerRef.current?.clearSelection();
+  }, []);
+
   const turn = useCallback(
     (dir: "next" | "prev") => {
       const controller = controllerRef.current;
@@ -729,6 +813,10 @@ export function ReaderShell({
         setEndPanelOpen(true);
         return;
       }
+      // A page turn clears the selection and any tapped-highlight actions: both
+      // belong to the page on screen.
+      if (selectionRef.current) dropSelection();
+      setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
       turnsSinceJump.current += 1;
       if (turnsSinceJump.current > 8) setReturnTo(null);
       turnsSinceSyncOffer.current += 1;
@@ -752,7 +840,7 @@ export function ReaderShell({
         },
       );
     },
-    [closeEndPanel, setEndPanelOpen],
+    [closeEndPanel, setEndPanelOpen, dropSelection],
   );
 
   const markFinishedByHand = useCallback(() => {
@@ -778,6 +866,43 @@ export function ReaderShell({
       setDeckOpen(false);
     },
     [turn],
+  );
+
+  // ── Touch page turns (NOTES_PLAN N3d) ───────────────────────────────────
+  // Coarse pointers only: the edge buttons are pass-through there, so every
+  // tap in the book lands here. A tap with a selection active only clears it.
+  // Fine pointers get "ignore" and keep the edge buttons. The engine callback
+  // reads this through a ref, so the subscription made at load stays current.
+  useEffect(() => {
+    contentTapRef.current = (tap) => {
+      const now = Date.now();
+      const action = decideContentTap({
+        coarse: isCoarsePointer(),
+        selectionActive: tap.selectionActive,
+        msSinceCollapse: now - lastCollapseAt.current,
+        msSinceHighlightTap: now - lastHighlightTapAt.current,
+        xFraction: tap.xFraction,
+      });
+      if (action === "clear-selection") {
+        dropSelection();
+        return;
+      }
+      if (action === "prev" || action === "next") turnAndCloseDeck(action);
+    };
+  }, [dropSelection, turnAndCloseDeck]);
+
+  // Opening the deck hides the bar, so its selection and highlight actions are
+  // dropped here, on the open itself. A note being written is kept (it is only
+  // hidden, not discarded).
+  const setDeckOpenFromDock = useCallback(
+    (open: boolean) => {
+      if (open) {
+        if (selectionRef.current) dropSelection();
+        setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
+      }
+      setDeckOpen(open);
+    },
+    [dropSelection],
   );
 
   // ── Jump-back ─────────────────────────────────────────────────────────
@@ -876,6 +1001,50 @@ export function ReaderShell({
     void annotationsRef.current?.remove(id);
   }, []);
 
+  // Highlight or Note on the settled selection. The action takes the selection
+  // once and clears the book's selection; the manager paints it and returns the
+  // existing highlight when the range overlaps one. Note then opens the note
+  // field on that highlight.
+  const actOnSelection = useCallback(
+    (then: "highlight" | "note") => {
+      const sel = selectionRef.current;
+      const mgr = annotationsRef.current;
+      if (!sel || !mgr || !annotationsReady) return;
+      // Taking the action drops the bar's record of the selection at once, so
+      // the bar leaves with it rather than lingering through the grace window.
+      dropSelection();
+      const { percent } = hereRef.current;
+      const label = controllerRef.current?.currentChapterLabel() ?? null;
+      void mgr
+        .highlight({ cfiRange: sel.cfiRange, quote: sel.text, label, percent })
+        .then(
+          (saved) => {
+            if (saved && then === "note") setBarItem({ kind: "note", id: saved.id });
+          },
+          () => {
+            // highlight() swallows its own write errors; nothing to add here
+          },
+        );
+    },
+    [annotationsReady, dropSelection],
+  );
+
+  const saveNoteFromBar = useCallback(
+    (id: string, note: string | null) => {
+      saveNote(id, note);
+      setBarItem(null);
+    },
+    [saveNote],
+  );
+
+  const removeFromBar = useCallback(
+    (id: string) => {
+      removeAnnotation(id);
+      setBarItem(null);
+    },
+    [removeAnnotation],
+  );
+
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -884,6 +1053,15 @@ export function ReaderShell({
 
       if (e.key === "Escape") {
         if (deckOpen) return; // ReaderDock owns Esc while the deck is open
+        // The bar goes first: the note field or the highlight sheet, then a selection.
+        if (barItemRef.current) {
+          setBarItem(null);
+          return;
+        }
+        if (selectionRef.current) {
+          dropSelection();
+          return;
+        }
         if (endPanelOpenRef.current) {
           closeEndPanel(true);
           return;
@@ -891,6 +1069,8 @@ export function ReaderShell({
         if (immersive) exitImmersive();
         return;
       }
+
+      if (isTypingTarget(e.target)) return;
 
       if (e.key === "ArrowRight") {
         turnAndCloseDeck("next");
@@ -910,7 +1090,47 @@ export function ReaderShell({
     deckOpen,
     exitImmersive,
     toggleImmersive,
+    dropSelection,
   ]);
+
+  // The bar's content, in priority order. Nothing while the deck is open.
+  let barNode: ReactNode = null;
+  if (!deckOpen) {
+    const activeNote =
+      barItem?.kind === "note" ? annotationList.find((a) => a.id === barItem.id) : undefined;
+    const activeHighlight =
+      barItem?.kind === "highlight"
+        ? annotationList.find((a) => a.id === barItem.id)
+        : undefined;
+    if (activeNote) {
+      barNode = (
+        <NoteField
+          key={activeNote.id}
+          initial={activeNote.note ?? ""}
+          onSave={(note) => saveNoteFromBar(activeNote.id, note)}
+          onCancel={() => setBarItem(null)}
+        />
+      );
+    } else if (selection) {
+      barNode = (
+        <SelectionBar
+          text={selection.text}
+          onHighlight={() => actOnSelection("highlight")}
+          onNote={() => actOnSelection("note")}
+          onClose={dropSelection}
+        />
+      );
+    } else if (activeHighlight) {
+      barNode = (
+        <HighlightBar
+          hasNote={Boolean(activeHighlight.note)}
+          onNote={() => setBarItem({ kind: "note", id: activeHighlight.id })}
+          onRemove={() => removeFromBar(activeHighlight.id)}
+          onClose={() => setBarItem(null)}
+        />
+      );
+    }
+  }
 
   return (
     <>
@@ -921,8 +1141,9 @@ export function ReaderShell({
         // floats instead of occupying height, and merely fades — opening the
         // deck must not move the prose or force a repagination.
         overlay={immersive}
-        hidden={immersive && !deckOpen}
+        hidden={immersive && !deckOpen && barNode === null}
         onToggleImmersive={toggleImmersive}
+        slot={barNode ?? undefined}
       />
 
       {/* Stage 4 part 3 — quiet, non-modal connectivity signal. Fades with
@@ -982,7 +1203,7 @@ export function ReaderShell({
 
       <ReaderDock
         open={deckOpen}
-        onOpenChange={setDeckOpen}
+        onOpenChange={setDeckOpenFromDock}
         percent={percent}
         markers={groupMarkers}
         chapterLabel={chapterLabel}
