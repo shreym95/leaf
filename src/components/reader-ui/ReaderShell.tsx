@@ -41,6 +41,8 @@ import { highlightStyles } from "@/design/highlight-theme";
 import { ReaderTopBar } from "./ReaderTopBar";
 import { ReaderDock } from "./ReaderDock";
 import { useGroupMarkers } from "./useGroupMarkers";
+import { useGroupReads } from "./useGroupReads";
+import { GroupNotesPanel } from "./GroupNotesPanel";
 import { EndOfBookPanel } from "./EndOfBookPanel";
 import { ReturnChip } from "./ReturnChip";
 import { SyncOfferChip } from "./SyncOfferChip";
@@ -167,6 +169,7 @@ export function ReaderShell({
   initialSettings,
 }: ReaderShellProps) {
   const groupMarkers = useGroupMarkers(bookId);
+  const groupReads = useGroupReads(bookId);
   const viewerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<ReaderController | null>(null);
@@ -297,7 +300,12 @@ export function ReaderShell({
   // The page currently on screen: its start CFI + progress, kept so the
   // bookmark toggle knows what to save and whether it is already saved. A ref
   // mirror lets the toggle callback stay identity-stable.
-  const [here, setHere] = useState<{ cfi?: string; percent: number }>({
+  const [here, setHere] = useState<{
+    cfi?: string;
+    percent: number;
+    spineHref?: string;
+    sectionFraction?: number;
+  }>({
     percent: 0,
   });
   const hereRef = useRef(here);
@@ -469,7 +477,12 @@ export function ReaderShell({
           }
           completion.observe(loc);
           setPercent(loc.percent);
-          setHere({ cfi: loc.cfi, percent: loc.percent });
+          setHere({
+            cfi: loc.cfi,
+            percent: loc.percent,
+            spineHref: loc.spineHref,
+            sectionFraction: loc.sectionFraction,
+          });
           // A two-page spread shows facing pages, so the right folio is the
           // next page — not the section's page count. It read "3 … 10" on
           // desktop, which is a page number beside a total. SpreadFrame hides
@@ -941,6 +954,22 @@ export function ReaderShell({
           jumpTo(cfi);
         }}
         onRemoveBookmark={(id) => void bookmarksRef.current?.remove(id)}
+        groupPanel={
+          groupReads ? (
+            <GroupNotesPanel
+              ctx={groupReads}
+              place={{
+                cfi: here.cfi,
+                spineHref: here.spineHref,
+                sectionFraction: here.sectionFraction,
+              }}
+              onJump={(target) => {
+                setDeckOpen(false);
+                jumpTo(target);
+              }}
+            />
+          ) : undefined
+        }
       />
 
       {/* Polite, throttled progress announcement for screen readers. Updated

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { THEME_IDS, THEMES } from "@/design/themes";
 import type { ReaderTheme } from "@/store/reader-settings";
@@ -87,6 +88,8 @@ export interface ReaderDockProps {
    * what the dock rendered before groups existed.
    */
   markers?: GroupMarker[];
+  /** The contents popover's Group tab body. Absent: no Group tab. */
+  groupPanel?: ReactNode;
 }
 
 // ── Icons — flat vector line SVGs, no emoji (handoff §4) ──────────────────
@@ -380,6 +383,7 @@ export function ReaderDock({
   canBookmark,
   onToggleBookmark,
   markers,
+  groupPanel,
 }: ReaderDockProps) {
   const pct = Math.round(clamp(percent, 0, 1) * 100);
   const hasMarkers = markers !== undefined && markers.length > 0;
@@ -654,6 +658,7 @@ export function ReaderDock({
                 onGoToBookmark(cfi);
               }}
               onRemoveBookmark={onRemoveBookmark}
+              groupPanel={groupPanel}
             />
           </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ReaderTocEntry } from "@/reader/engine";
 
 /**
@@ -28,6 +28,9 @@ const TABS: TocTab[] = [
   { id: "bookmarks", label: "Bookmarks" },
 ];
 
+// Present only when a `groupPanel` is passed (the book is linked to a group read).
+const GROUP_TAB: TocTab = { id: "group", label: "Group" };
+
 export interface DockBookmark {
   id: string;
   cfi: string;
@@ -45,6 +48,11 @@ export interface TocPopoverProps {
   bookmarks: DockBookmark[];
   onGoToBookmark: (cfi: string) => void;
   onRemoveBookmark: (id: string) => void;
+  /**
+   * The Group tab's body. Passing it adds the tab; omitting it leaves the popover
+   * exactly as it was before groups existed.
+   */
+  groupPanel?: ReactNode;
 }
 
 export function TocPopover({
@@ -56,6 +64,7 @@ export function TocPopover({
   bookmarks,
   onGoToBookmark,
   onRemoveBookmark,
+  groupPanel,
 }: TocPopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLButtonElement>(null);
@@ -70,8 +79,9 @@ export function TocPopover({
 
   // Hooks must run in the same order on every render, so this sits above the
   // `open` early-return, not below it.
-  const showTabBar = TABS.length > 1;
-  const activeTab = TABS.find((t) => t.id === tabId) ?? TABS[0];
+  const tabs = groupPanel !== undefined ? [...TABS, GROUP_TAB] : TABS;
+  const showTabBar = tabs.length > 1;
+  const activeTab = tabs.find((t) => t.id === tabId) ?? TABS[0];
 
   if (!open) return null;
 
@@ -101,7 +111,7 @@ export function TocPopover({
           className="flex gap-[var(--leaf-space-2)] border-b pb-[var(--leaf-space-2)]"
           style={{ borderColor: "var(--leaf-dock-border)" }}
         >
-          {TABS.map((t) => {
+          {tabs.map((t) => {
             const selected = t.id === activeTab.id;
             return (
               <button
@@ -169,6 +179,8 @@ export function TocPopover({
             })}
           </ul>
         )
+      ) : activeTab.id === "group" ? (
+        groupPanel
       ) : bookmarks.length === 0 ? (
         <p
           className="py-[var(--leaf-space-2)] font-ui [font-size:var(--leaf-text-xs)]"
