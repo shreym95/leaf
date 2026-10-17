@@ -187,6 +187,8 @@ describe("ReaderShell — a selection too long to highlight", () => {
       within(toolbar!).getByRole("button", { name: "Highlight" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     expect(await screen.findByText(TOO_LONG)).toHaveAttribute("role", "status");
     expect(bar("Selected text actions")).not.toBeNull();
     expect(within(bar("Selected text actions")!).getByRole("button", { name: "Highlight" })).toBeEnabled();
@@ -204,6 +206,8 @@ describe("ReaderShell — a selection too long to highlight", () => {
       within(bar("Selected text actions")!).getByRole("button", { name: "Note" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     expect(await screen.findByText(TOO_LONG)).toHaveAttribute("role", "status");
     expect(bar("Selected text actions")).not.toBeNull();
     expect(screen.queryByRole("textbox", { name: "Note" })).toBeNull();
@@ -219,6 +223,8 @@ describe("ReaderShell — a selection too long to highlight", () => {
       within(bar("Selected text actions")!).getByRole("button", { name: "Highlight" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     await waitFor(() => expect(h.enqueueCreate).toHaveBeenCalled());
     expect(screen.queryByText(TOO_LONG)).toBeNull();
   });
@@ -234,6 +240,8 @@ describe("ReaderShell — a highlight that is rejected", () => {
       within(bar("Selected text actions")!).getByRole("button", { name: "Highlight" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     expect(await screen.findByText(FAILED)).toHaveAttribute("role", "status");
     expect(bar("Selected text actions")).toBeNull();
     expect(h.addHighlight).not.toHaveBeenCalled();
@@ -249,6 +257,8 @@ describe("ReaderShell — a highlight that is rejected", () => {
       within(bar("Selected text actions")!).getByRole("button", { name: "Highlight" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     await screen.findByText(FAILED);
     await user.click(screen.getByRole("button", { name: "Dismiss message" }));
     expect(screen.queryByText(FAILED)).toBeNull();

@@ -222,6 +222,8 @@ describe("ReaderShell — selection bar in the top bar slot", () => {
       within(bar("Selected text actions")!).getByRole("button", { name: "Highlight" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     await waitFor(() =>
       expect(h.addHighlight).toHaveBeenCalledWith(
         CFI_RANGE,
@@ -244,6 +246,8 @@ describe("ReaderShell — selection bar in the top bar slot", () => {
       within(bar("Selected text actions")!).getByRole("button", { name: "Note" }),
       { button: 0 },
     );
+    // The finger lifts: the hold releases one frame later.
+    fireEvent.pointerUp(window, { button: 0 });
     const field = await screen.findByRole("textbox", { name: "Note" });
     expect(field).toHaveFocus();
     await user.type(field, "remember this");
