@@ -133,7 +133,7 @@ annotations  id uuid pk, user_id → auth.users on delete cascade,
              book_id → books on delete cascade,
              kind text check in ('page','range'),
              cfi text not null,
-             quote text null,            -- range only; ≤ 300 chars stored, see §4.3
+             quote text null,            -- range only; the full selected text (no DB cap; client caps at 5000). Only the shared copy is capped at 300 (§4.3)
              note text null,             -- 1–500 chars when present
              label text null,            -- chapter label at creation
              percent real null,
