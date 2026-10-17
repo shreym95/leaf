@@ -16,6 +16,7 @@
 // outbox or on Supabase. Colour is injected too: `stylesFor()` is supplied by the
 // caller (the design layer), so no hex value lives here.
 
+import { EpubCFI } from "epubjs";
 import type { ReaderController } from "./engine";
 import {
   validateAnnotationNote,
@@ -93,41 +94,22 @@ export interface AnnotationManager {
 }
 
 // ---------------------------------------------------------------------------
-// CFI ordering and overlap. Pure, no epub.js import: the controller exposes no
-// CFI compare, so positions are read from the CFI text. Each CFI is reduced to
-// its integer steps and offsets, and those are compared in order. A range
-// `epubcfi(P,S,E)` spans `P+S` to `P+E`. Assertions `[...]` are ignored.
+// CFI ordering and overlap. Delegates to epub.js `EpubCFI.compare`, which orders
+// by spine position, then step by step, then character offset, and ignores `[...]`
+// assertions. A range CFI is ordered by its start. A CFI that cannot be parsed
+// falls back to plain string order (compare) or identity (overlap).
 // ---------------------------------------------------------------------------
 
-interface CfiSpan {
-  start: number[];
-  end: number[];
-}
-
-function cfiSpan(cfi: string): CfiSpan | null {
-  const m = /^epubcfi\((.*)\)$/.exec(cfi.trim());
-  if (!m) return null;
-  const parts = m[1].replace(/\[[^\]]*\]/g, "").split(",");
-  const nums = (s: string): number[] => (s.match(/\d+/g) ?? []).map(Number);
-  if (parts.length === 1) {
-    const p = nums(parts[0]);
-    return p.length > 0 ? { start: p, end: p } : null;
+/**
+ * Orders two CFIs by where they point in the book: start first, then end. A CFI
+ * that cannot be parsed falls back to plain string order, so the sort stays total.
+ */
+export function compareCfi(a: string, b: string): number {
+  try {
+    return new EpubCFI().compare(a, b);
+  } catch {
+    return compareText(a, b);
   }
-  if (parts.length === 3) {
-    const base = nums(parts[0]);
-    const start = [...base, ...nums(parts[1])];
-    const end = [...base, ...nums(parts[2])];
-    return start.length > 0 && end.length > 0 ? { start, end } : null;
-  }
-  return null;
-}
-
-function compareSteps(a: number[], b: number[]): number {
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    if (a[i] !== b[i]) return a[i] - b[i];
-  }
-  return a.length - b.length;
 }
 
 function compareText(a: string, b: string): number {
@@ -135,14 +117,16 @@ function compareText(a: string, b: string): number {
 }
 
 /**
- * Orders two CFIs by where they point in the book: start first, then end. A CFI
- * that cannot be parsed falls back to plain string order, so the sort stays total.
+ * The start and end of a CFI as point CFIs. `collapse()` is a no-op on a point,
+ * so a point maps to itself. For a range, the end point is the range's end
+ * position, which `compare` cannot read from a range string.
  */
-export function compareCfi(a: string, b: string): number {
-  const sa = cfiSpan(a);
-  const sb = cfiSpan(b);
-  if (!sa || !sb) return compareText(a, b);
-  return compareSteps(sa.start, sb.start) || compareSteps(sa.end, sb.end);
+function cfiEnds(cfi: string): { start: string; end: string } {
+  const start = new EpubCFI(cfi);
+  const end = new EpubCFI(cfi);
+  start.collapse(true);
+  end.collapse(false);
+  return { start: start.toString(), end: end.toString() };
 }
 
 /**
@@ -151,10 +135,14 @@ export function compareCfi(a: string, b: string): number {
  * only an identical string.
  */
 export function cfisOverlap(a: string, b: string): boolean {
-  const sa = cfiSpan(a);
-  const sb = cfiSpan(b);
-  if (!sa || !sb) return a === b;
-  return compareSteps(sa.start, sb.end) <= 0 && compareSteps(sb.start, sa.end) <= 0;
+  try {
+    const ea = cfiEnds(a);
+    const eb = cfiEnds(b);
+    const cmp = new EpubCFI();
+    return cmp.compare(ea.start, eb.end) <= 0 && cmp.compare(eb.start, ea.end) <= 0;
+  } catch {
+    return a === b;
+  }
 }
 
 function defaultNewId(): string {

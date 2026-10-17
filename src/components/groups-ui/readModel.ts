@@ -245,8 +245,10 @@ export function isPastDue(dueOn: string, today: string): boolean {
 export interface NoteItem {
   id: string;
   kind: ReadNoteKind;
-  /** The note's text; null for a page mark. */
+  /** The note's text; null for a page mark or a highlight without a note. */
   text: string | null;
+  /** The shared quote for a highlight (at most 300 characters); absent or null otherwise. */
+  quote?: string | null;
   /** "You" for the viewer's own items. */
   name: string;
   isSelf: boolean;
@@ -261,15 +263,20 @@ export interface NoteGroup {
 /**
  * Visible notes grouped by outline chapter, in outline order. Chapters with no notes
  * are left out. The input is already gated by `visible_notes`; nothing is revealed or
- * filtered here beyond dropping highlights (not written in v1).
+ * filtered here. Highlights are dropped unless `includeHighlights` is set: the group
+ * read page sets it, and the default keeps the earlier marks-and-notes-only shape.
  */
 export function groupNotes(
   outline: Outline,
   notes: readonly VisibleReadNote[],
   members: GroupMemberName[],
   viewerId: string,
+  options: { includeHighlights?: boolean } = {},
 ): NoteGroup[] {
-  const byChapter = notesByChapter(notes.filter((n) => n.kind !== "highlight"));
+  const kept = options.includeHighlights
+    ? notes
+    : notes.filter((n) => n.kind !== "highlight");
+  const byChapter = notesByChapter(kept);
   const memberById = new Map(members.map((m) => [m.user_id, m]));
   const groups: NoteGroup[] = [];
   for (const entry of outline) {
@@ -284,7 +291,8 @@ export function groupNotes(
         return {
           id: n.id,
           kind: n.kind,
-          text: n.kind === "note" ? n.note : null,
+          text: n.kind === "mark" ? null : n.note,
+          quote: n.kind === "highlight" ? (n.quote_exact ?? null) : null,
           name: isSelf ? "You" : member ? memberDisplayName(member) : "Someone",
           isSelf,
         };
