@@ -102,7 +102,9 @@ export function ReadScreen({
   const schedule = read.schedule ?? null;
   const checkpoints = schedule ? scheduleRows(read.outline, schedule, reached) : [];
   const noteGroups = Array.isArray(notes)
-    ? groupNotes(read.outline, notes, members, currentUserId)
+    ? groupNotes(read.outline, notes, members, currentUserId, {
+        includeHighlights: true,
+      })
     : null;
   const mine = progress.find((p) => p.user_id === currentUserId);
 
