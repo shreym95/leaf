@@ -87,7 +87,8 @@ export default function PrivacyPage() {
           <li>
             <span className="text-ink">Your reading data.</span> Your position in
             each book, your reading settings (font, size, spacing, margins,
-            theme), and any highlights and notes you make.
+            theme), and your marks, highlights and notes. Your marks, highlights
+            and notes are private to you.
           </li>
           <li>
             <span className="text-ink">Basic usage events.</span> Which screens
@@ -120,11 +121,18 @@ export default function PrivacyPage() {
         <Section heading="Reading groups">
           <p className={proseClass}>
             Members of a group you join can see your display name, your reading
-            progress and milestones in that group&apos;s books. They also see the
-            marks and notes you leave in those books, but only once they have read
-            that far. Your book files are never shared; each member reads their
-            own copy. Leaving a group removes your progress, marks and notes from
-            it.
+            progress and milestones in that group&apos;s books.
+          </p>
+          <p className={proseClass}>
+            They also see the marks and notes you leave in those books, but only
+            once they have read that far. Only the items you choose to share reach
+            the group; your other marks, highlights and notes stay private to you.
+          </p>
+          <p className={proseClass}>
+            A shared highlight includes up to 300 characters of its quoted text.
+            Your book files are never shared; each member reads their own copy.
+            Leaving a group removes your progress, marks and notes from it,
+            including anything you shared there.
           </p>
         </Section>
       )}
@@ -167,7 +175,10 @@ export default function PrivacyPage() {
         </p>
         <ul className={listClass}>
           <li>every book in your library and every EPUB file you uploaded;</li>
-          <li>all of your highlights and notes;</li>
+          <li>
+            all of your marks, highlights and notes, including any copies shared
+            with a group;
+          </li>
           <li>your reading positions and reading settings;</li>
           <li>your profile and your Leaf sign-in.</li>
         </ul>
