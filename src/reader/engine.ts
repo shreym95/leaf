@@ -13,6 +13,7 @@
 // never hand-roll it (the prototype proved hand-rolling breaks across widths).
 
 import type { Book, Rendition } from "epubjs";
+import { EpubCFI } from "epubjs";
 import type { ThemeName } from "@/lib/types";
 import { chapterLabelForHref, flattenToc } from "./navigation";
 export type { ReaderTocEntry } from "./navigation";
@@ -101,6 +102,19 @@ export interface ReaderTurnResult {
   atEnd: boolean;
 }
 
+/**
+ * Where an arbitrary CFI sits in the book: the spine section it belongs to and a
+ * 0..1 position inside that section (same scale as `ReaderLocation.sectionFraction`).
+ * `exact` is false when the section is not rendered, in which case the fraction
+ * is the fallback 1 (see `locateCfi`).
+ */
+export interface LocatedCfi {
+  spineIndex: number;
+  spineHref: string;
+  sectionFraction: number;
+  exact: boolean;
+}
+
 export interface ReaderController {
   attach(container: HTMLElement): Promise<void>; // renderTo + display + locations.generate
   next(): Promise<ReaderTurnResult>;
@@ -119,6 +133,14 @@ export interface ReaderController {
    *  jumped to (and may never). `undefined` under the same conditions as
    *  `currentChapterLabel()`. */
   chapterLabelForCfi(cfi: string): string | undefined;
+  /** Locates ANY CFI (point or range; a range uses its start) as a spine section
+   *  plus an in-section fraction, without navigating. Used to place annotations
+   *  elsewhere in the book on a group read's outline. `exact: true` when the
+   *  section is currently rendered (fraction measured from its pagination).
+   *  `exact: false` when it is not rendered: the fraction is then 1, so a member
+   *  only sees the item once they have finished that chapter (spoiler-safe).
+   *  `null` when the CFI cannot be resolved; never throws. */
+  locateCfi(cfi: string): LocatedCfi | null;
   /** The EPUB's own table of contents, flattened to `{ href, label }` in
    *  reading order (nested `subitems` are walked depth-first). `goTo(entry.href)`
    *  navigates to it. Empty when the EPUB ships no navigation document or it
@@ -405,6 +427,52 @@ export function sectionFractionOf(
   }
   if (totalPages <= 1) return 0;
   return Math.min(Math.max((page - 1) / (totalPages - 1), 0), 1);
+}
+
+// The start of a range CFI as a point CFI (a point maps to itself).
+function startPointCfi(cfi: string): string {
+  const point = new EpubCFI(cfi);
+  point.collapse(true);
+  return point.toString();
+}
+
+// In-section fraction of a RENDERED section for the point at `cfi`, measured the
+// way epub.js paginates it (managers/default paginatedLocation): the column the
+// point falls in, 1-based, over the section's page count. `undefined` when the
+// section has no live Contents or the measure is unavailable.
+function renderedSectionFraction(
+  rendition: unknown,
+  sectionIndex: number,
+  cfi: string,
+): number | undefined {
+  const r = rendition as
+    | {
+        getContents?: () => unknown;
+        manager?: {
+          layout?: {
+            pageWidth?: number;
+            count?: (length: number) => { pages?: number };
+          };
+        };
+      }
+    | undefined;
+  const raw = r?.getContents?.();
+  const list: unknown[] = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const contents = list.find(
+    (c) => (c as { sectionIndex?: unknown })?.sectionIndex === sectionIndex,
+  ) as
+    | {
+        locationOf?: (target: string) => { left?: number };
+        textWidth?: () => number;
+      }
+    | undefined;
+  const layout = r?.manager?.layout;
+  if (!contents || !layout?.count || !layout.pageWidth) return undefined;
+  const left = contents.locationOf?.(startPointCfi(cfi)).left;
+  const totalPages = layout.count(contents.textWidth?.() ?? NaN).pages;
+  if (typeof left !== "number" || !Number.isFinite(left)) return undefined;
+  const page = Math.floor(left / layout.pageWidth) + 1;
+  return sectionFractionOf(page, totalPages);
 }
 
 function spreadFor(width: number): "always" | "none" {
@@ -894,6 +962,39 @@ export async function createReader(
         return chapterLabelForHref(book, section?.href ?? undefined);
       } catch {
         return undefined;
+      }
+    },
+
+    locateCfi(cfi: string): LocatedCfi | null {
+      try {
+        const section = book.spine.get(cfi) as
+          | { index?: unknown; href?: unknown }
+          | null
+          | undefined;
+        if (
+          !section ||
+          typeof section.index !== "number" ||
+          !Number.isFinite(section.index) ||
+          typeof section.href !== "string"
+        ) {
+          return null;
+        }
+        const spineIndex = section.index;
+        const spineHref = section.href.split("#")[0] ?? section.href;
+        let sectionFraction: number | undefined;
+        try {
+          sectionFraction = renderedSectionFraction(rendition, spineIndex, cfi);
+        } catch {
+          sectionFraction = undefined; // an unmeasurable section counts as unrendered
+        }
+        // Not rendered (or unmeasurable): fall back to 1, not 0. A member sees the
+        // item only once they finish this chapter, so nothing is revealed early.
+        if (sectionFraction === undefined) {
+          return { spineIndex, spineHref, sectionFraction: 1, exact: false };
+        }
+        return { spineIndex, spineHref, sectionFraction, exact: true };
+      } catch {
+        return null;
       }
     },
 
