@@ -21,20 +21,25 @@ import {
  * lands on the catcher, not on the row. Whatever the action renders next (the
  * note field) mounts only once the hold releases.
  *
- * The hold releases one frame after the press's `click`, or one frame after the
- * `pointerup` or `pointercancel` of the arming pointer. While the arming pointer
- * is still down it never releases, except at PRESS_HOLD_CAP_MS after arming, which
- * releases regardless. Its listeners only observe; nothing is cancelled or
- * swallowed. Keyboard activations never arm it, so they act and leave at once.
+ * The hold releases one frame after the press's `click`, or one frame after every
+ * armed pointer is up (`pointerup`, `pointercancel` or `lostpointercapture`). A
+ * window `blur` or the page turning hidden releases it at once. While any pointer
+ * is down the hold has no timer. Only an armed hold that never saw a pointer go
+ * down is capped, at PRESS_HOLD_CAP_MS, so it cannot stick. Its listeners only
+ * observe; nothing is cancelled or swallowed. Keyboard activations never arm it,
+ * so they act and leave at once.
  *
- * The arming pointer is the latest primary-button pointer seen by a window capture
- * `pointerdown` listener mounted with the provider; `arm()` reads it.
+ * Armed pointers are kept as a set: a second finger that arms the hold does not
+ * strand the first, and the hold releases only when all of them are up. The
+ * primary-button pointers that are down are tracked by window capture listeners
+ * mounted with the provider; `arm()` adds the latest one to the armed set.
  *
  * The bar reaches the hold through context (`useBarPressArm`), so the shell
  * passes the live content in once and the bars need no extra props.
  */
 
-export const PRESS_HOLD_CAP_MS = 3000;
+/** Cap for an armed hold with no pointer seen down. Never applies while a finger is down. */
+export const PRESS_HOLD_CAP_MS = 10000;
 
 const noop = () => {};
 const ArmContext = createContext<(() => void) | null>(null);
@@ -59,16 +64,38 @@ export function BarPressHold({ live, children }: BarPressHoldProps) {
     liveRef.current = live;
   });
 
-  // The latest primary-button pointer, and the pointer that armed the hold.
+  // The latest primary-button pointer, the primary pointers now down, and the
+  // pointers that armed the hold.
   const latestPointerRef = useRef<number | undefined>(undefined);
-  const armedPointerRef = useRef<number | undefined>(undefined);
+  const [down] = useState(() => new Set<number | undefined>());
+  const [armed] = useState(() => new Set<number | undefined>());
   useEffect(() => {
-    const record = (e: PointerEvent) => {
-      if (e.button === 0) latestPointerRef.current = e.pointerId;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      latestPointerRef.current = e.pointerId;
+      down.add(e.pointerId);
     };
-    window.addEventListener("pointerdown", record, true);
-    return () => window.removeEventListener("pointerdown", record, true);
-  }, []);
+    const onUp = (e: PointerEvent) => {
+      down.delete(e.pointerId);
+    };
+    // A blur or a hidden page can swallow the pointer-up that would clear a pointer.
+    const forgetDown = () => down.clear();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") forgetDown();
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    window.addEventListener("blur", forgetDown);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      window.removeEventListener("blur", forgetDown);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [down]);
 
   const [hold, setHold] = useState<{ node: ReactNode } | null>(null);
   const holding = hold !== null;
@@ -76,33 +103,79 @@ export function BarPressHold({ live, children }: BarPressHoldProps) {
   const arm = useCallback(() => {
     const node = liveRef.current;
     if (node === null || node === undefined) return;
-    armedPointerRef.current = latestPointerRef.current;
+    armed.add(latestPointerRef.current);
     setHold((prev) => prev ?? { node });
-  }, []);
+  }, [armed]);
 
   useEffect(() => {
     if (!holding) return;
-    const release = () => setHold(null);
+    // Set once an armed pointer lifts while another is still armed.
+    let lifted = false;
     let frame: number | undefined;
+    let cap: number | undefined;
+
+    const drop = () => {
+      armed.clear();
+      setHold(null);
+    };
     const settle = () => {
       if (frame !== undefined) return;
-      frame = requestAnimationFrame(release);
+      frame = requestAnimationFrame(drop);
     };
-    const onPointerEnd = (e: PointerEvent) => {
-      if (e.pointerId === armedPointerRef.current) settle();
+    const lift = (id: number | undefined) => {
+      if (!armed.has(id)) return;
+      armed.delete(id);
+      if (armed.size === 0) settle();
+      else lifted = true;
     };
-    const cap = setTimeout(release, PRESS_HOLD_CAP_MS);
-    window.addEventListener("pointerup", onPointerEnd, true);
-    window.addEventListener("pointercancel", onPointerEnd, true);
-    window.addEventListener("click", settle, true);
+    // Armed with no pointer down: the pointer-down was never seen, so cap the hold.
+    const syncCap = () => {
+      const idle = down.size === 0 && armed.size > 0;
+      if (idle && cap === undefined) {
+        cap = window.setTimeout(drop, PRESS_HOLD_CAP_MS);
+      } else if (!idle && cap !== undefined) {
+        window.clearTimeout(cap);
+        cap = undefined;
+      }
+    };
+    const onDown = () => syncCap();
+    const onUp = (e: PointerEvent) => {
+      lift(e.pointerId);
+      syncCap();
+    };
+    const onLostCapture = (e: PointerEvent) => {
+      lift(e.pointerId);
+      syncCap();
+    };
+    // A click that follows one armed pointer's lift is that finger's; the hold
+    // waits for the others. Any other click ends the press as before.
+    const onClick = () => {
+      if (armed.size === 0 || !lifted) settle();
+    };
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") drop();
+    };
+
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    window.addEventListener("lostpointercapture", onLostCapture, true);
+    window.addEventListener("click", onClick, true);
+    window.addEventListener("blur", drop);
+    document.addEventListener("visibilitychange", onHidden);
+    syncCap();
     return () => {
-      window.removeEventListener("pointerup", onPointerEnd, true);
-      window.removeEventListener("pointercancel", onPointerEnd, true);
-      window.removeEventListener("click", settle, true);
-      clearTimeout(cap);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      window.removeEventListener("lostpointercapture", onLostCapture, true);
+      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("blur", drop);
+      document.removeEventListener("visibilitychange", onHidden);
+      window.clearTimeout(cap);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [holding]);
+  }, [holding, armed, down]);
 
   const shown = hold ? <HeldBar>{hold.node}</HeldBar> : live;
   return <ArmContext.Provider value={arm}>{children(shown)}</ArmContext.Provider>;

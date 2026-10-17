@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { SelectionBar } from "./SelectionBar";
 import { NoteField } from "./NoteField";
-import { BarPressHold, PRESS_HOLD_CAP_MS } from "./BarPressHold";
+import { BarPressHold } from "./BarPressHold";
 
 // The top bar's row, as the shell renders it: the slot while a bar is up, and
 // the Library link once the slot is empty. The bar's content goes through the
@@ -147,16 +147,17 @@ describe("BarPressHold: a pressed bar action holds the slot", () => {
     expect(screen.getByRole("link", { name: "Library" })).toBeInTheDocument();
   });
 
-  it("with no pointerup and no click, the hold stays up until the 3 s cap", () => {
+  it("held at 5 s with the finger down; released one frame after pointerup", () => {
     render(<Harness />);
     fireEvent.pointerDown(screen.getByRole("button", { name: "Highlight" }), { button: 0 });
     act(() => {
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(5000);
     });
     expect(screen.queryByRole("link", { name: "Library" })).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(PRESS_HOLD_CAP_MS - 1000);
-    });
+
+    fireEvent.pointerUp(toolbar().nextElementSibling as HTMLElement, { button: 0 });
+    expect(screen.queryByRole("link", { name: "Library" })).toBeNull();
+    advanceFrame();
     expect(screen.getByRole("link", { name: "Library" })).toBeInTheDocument();
   });
 });
