@@ -477,6 +477,62 @@ export async function createReader(
   let redisplayTimer: ReturnType<typeof setTimeout> | undefined;
   let lastKnownCfi: string | undefined;
 
+  // Every highlight the engine was asked to paint, keyed by its CFI range.
+  // epub.js builds a mark's Range from the DOM as it stands at `hooks.render`,
+  // which runs BEFORE Leaf's content pipeline (`hooks.content`) normalizes the
+  // chapter, so a mark built on a fresh view comes out collapsed (0x0). The
+  // `rendered` listener in `attach` re-paints these once the DOM is final.
+  type HighlightEntry = {
+    id: string;
+    cb?: () => void;
+    className: string;
+    styles: Record<string, string>;
+  };
+  const highlightRegistry = new Map<string, HighlightEntry>();
+
+  // A failed annotation must never break reading (SPEC §8).
+  function paintHighlight(cfiRange: string, entry: HighlightEntry): void {
+    try {
+      rendition?.annotations.add(
+        "highlight",
+        cfiRange,
+        { id: entry.id },
+        entry.cb,
+        entry.className,
+        entry.styles,
+      );
+    } catch {
+      // ignore — highlight painting is best-effort
+    }
+  }
+
+  // Re-paints the registered highlights whose section was just rendered. Runs
+  // on `rendered`, which epub.js emits after `hooks.content`, so the Range is
+  // built against the normalized DOM.
+  function repaintHighlightsFor(section: unknown): void {
+    try {
+      const index = (section as { index?: unknown } | undefined)?.index;
+      if (typeof index !== "number") return;
+      for (const [cfiRange, entry] of highlightRegistry) {
+        try {
+          // `Spine.get` takes a CFI string and returns the Section it lives in.
+          const owner = book.spine.get(cfiRange) as { index?: number } | null;
+          if (owner?.index !== index) continue;
+          try {
+            rendition?.annotations.remove(cfiRange, "highlight");
+          } catch {
+            // ignore — the mark may not be attached yet
+          }
+          paintHighlight(cfiRange, entry);
+        } catch {
+          // ignore — one unresolvable range must not stop the others
+        }
+      }
+    } catch {
+      // ignore — repainting is best-effort
+    }
+  }
+
   // Which navigation call the NEXT relocation belongs to. epub.js emits
   // `relocated` in a requestAnimationFrame AFTER the promise from
   // `next()` / `prev()` / `display()` has settled, so the relocation cannot be
@@ -695,6 +751,7 @@ export async function createReader(
 
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
+      rendition.on("rendered", (section: unknown) => repaintHighlightsFor(section));
 
       // A locations table cached from an earlier open makes `percent` exact
       // from the very first `relocated` event: no generate pass, no estimate
@@ -913,31 +970,27 @@ export async function createReader(
       cfiRange: string,
       opts: { id: string; styles: Record<string, string>; onClick?: () => void },
     ): void {
-      // A failed annotation must never break reading (SPEC §8).
-      try {
-        const cb = opts.onClick
-          ? () => {
-              try {
-                opts.onClick?.();
-              } catch {
-                // swallow — a click handler must not bubble into epub.js
-              }
+      const cb = opts.onClick
+        ? () => {
+            try {
+              opts.onClick?.();
+            } catch {
+              // swallow — a click handler must not bubble into epub.js
             }
-          : undefined;
-        rendition?.annotations.add(
-          "highlight",
-          cfiRange,
-          { id: opts.id },
-          cb,
-          `leaf-hl-${opts.id}`,
-          opts.styles,
-        );
-      } catch {
-        // ignore — highlight painting is best-effort
-      }
+          }
+        : undefined;
+      const entry: HighlightEntry = {
+        id: opts.id,
+        cb,
+        className: `leaf-hl-${opts.id}`,
+        styles: opts.styles,
+      };
+      highlightRegistry.set(cfiRange, entry);
+      paintHighlight(cfiRange, entry);
     },
 
     removeHighlight(cfiRange: string): void {
+      highlightRegistry.delete(cfiRange);
       try {
         rendition?.annotations.remove(cfiRange, "highlight");
       } catch {
@@ -981,6 +1034,7 @@ export async function createReader(
       }
       subscribers.clear();
       selectionSubscribers.clear();
+      highlightRegistry.clear();
       try {
         contentPipeline?.destroy();
       } catch {
