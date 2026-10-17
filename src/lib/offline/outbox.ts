@@ -419,18 +419,63 @@ export const HANDLER_TIMEOUT_MS = 20_000;
  *  the network is probably down, and every further attempt would only fail. */
 export const TRANSPORT_STREAK_LIMIT = 3;
 
+/**
+ * One handler call still in flight on the wire. It ends when the request itself
+ * settles, not when the timeout fires: a timed-out call is abandoned by the pass
+ * but may still land on the server, so nothing newer for its item may start
+ * until it has settled.
+ */
+interface Attempt {
+  key: string;
+  settled: Promise<void>;
+}
+
+/** Unsettled attempts per store, by entry id. In memory only: a reload forgets
+ *  them, and that is safe because a reload also ends any request in flight. */
+const attemptsByStore = new WeakMap<OutboxStore, Map<string, Attempt>>();
+
+function attemptsFor(store: OutboxStore): Map<string, Attempt> {
+  let attempts = attemptsByStore.get(store);
+  if (!attempts) {
+    attempts = new Map();
+    attemptsByStore.set(store, attempts);
+  }
+  return attempts;
+}
+
+/** An unsettled attempt for any entry of `key`, if one exists. */
+function unsettledAttemptFor(attempts: Map<string, Attempt>, key: string): Attempt | undefined {
+  for (const attempt of attempts.values()) {
+    if (attempt.key === key) return attempt;
+  }
+  return undefined;
+}
+
 /** One handler call, bounded by `HANDLER_TIMEOUT_MS`. A throw or a timeout is a
- *  transport failure: the entry stays queued and `attempted` stays set. */
+ *  transport failure: the entry stays queued and `attempted` stays set. The
+ *  attempt is registered in `attempts` until its request settles, timeout or not. */
 async function applyWithTimeout(
   handler: ReplayHandler,
   entry: QueuedEntry,
+  attempts: Map<string, Attempt>,
 ): Promise<ReplayOutcome> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const call = Promise.resolve().then(() => handler(entry));
+  const attempt: Attempt = {
+    key: entry.key,
+    settled: call.then(
+      () => undefined,
+      () => undefined,
+    ).then(() => {
+      if (attempts.get(entry.id) === attempt) attempts.delete(entry.id);
+    }),
+  };
+  attempts.set(entry.id, attempt);
   const timeout = new Promise<ReplayOutcome>((resolve) => {
     timer = setTimeout(() => resolve("transport"), HANDLER_TIMEOUT_MS);
   });
   try {
-    return await Promise.race([Promise.resolve().then(() => handler(entry)), timeout]);
+    return await Promise.race([call, timeout]);
   } catch {
     // A handler must not throw, but if one slips through, be conservative
     // and retry later rather than lose the write.
@@ -452,6 +497,8 @@ interface PassOutcome {
   changed: boolean;
   /** The transport-failure streak limit stopped the pass. Nothing behind it was attempted. */
   stopped: boolean;
+  /** Settle signals of the unsettled attempts that blocked an item this pass. */
+  waiting: Promise<void>[];
 }
 
 /**
@@ -471,7 +518,8 @@ async function runPass(
   handlers: Partial<Record<OutboxKind, ReplayHandler>>,
 ): Promise<PassOutcome> {
   const result: DrainResult = { applied: 0, skipped: 0, rejected: 0, requeued: 0 };
-  const outcome: PassOutcome = { result, changed: false, stopped: false };
+  const outcome: PassOutcome = { result, changed: false, stopped: false, waiting: [] };
+  const attempts = attemptsFor(store);
   const snapshot = await store.list();
   const blockedKeys = new Set<string>();
   let transportStreak = 0;
@@ -480,6 +528,14 @@ async function runPass(
     if (!handler) continue;
     // An earlier entry of this item failed in transport: this one must not overtake it.
     if (blockedKeys.has(seen.key)) continue;
+    // A timed-out request for this item may still be in flight. Never overlap it:
+    // the item is blocked for this pass (not a transport streak), and the flusher
+    // runs again once that request settles.
+    const inFlight = unsettledAttemptFor(attempts, seen.key);    if (inFlight) {
+      blockedKeys.add(seen.key);
+      outcome.waiting.push(inFlight.settled);
+      continue;
+    }
 
     // Read the live copy: the snapshot can be stale by now (cancelled, replaced).
     const applying = await withQueueLock(async () => {
@@ -492,7 +548,7 @@ async function runPass(
     });
     if (!applying) continue;
 
-    const verdict = await applyWithTimeout(handler, applying);
+    const verdict = await applyWithTimeout(handler, applying, attempts);
 
     const settled = await withQueueLock(async () => {
       const now = await liveEntry(store, applying.id);
@@ -567,6 +623,9 @@ export function createFlusher(
       while (again) {
         requested = false;
         const pass = await lockedPass(store, handlers);
+        // An item was blocked behind a timed-out request that has not settled yet.
+        // Flush again once it does, so the newer write goes out right after it.
+        for (const settled of pass.waiting) void settled.then(() => flush());
         // Re-run for an entry that changed mid-apply, or for a request that
         // arrived while this pass ran. A streak stop waits for the next
         // request (online, load) rather than spinning offline.
@@ -579,15 +638,17 @@ export function createFlusher(
     }
   }
 
-  return {
-    flush() {
-      if (running) {
-        requested = true;
-        return running;
-      }
-      running = loop();
+  function flush(): Promise<void> {
+    if (running) {
+      requested = true;
       return running;
-    },
+    }
+    running = loop();
+    return running;
+  }
+
+  return {
+    flush,
     async idle() {
       while (running) await running;
     },
