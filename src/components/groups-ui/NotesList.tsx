@@ -17,7 +17,10 @@ export interface NotesListProps {
   onDelete: (id: string) => Promise<void>;
 }
 
-/** Marks and notes per chapter. Only the viewer's own items get a Delete action. */
+/**
+ * Marks, highlights and notes per chapter. The viewer's own items get a Delete action;
+ * for a shared highlight it is "Remove from group", which deletes only the group copy.
+ */
 export function NotesList({ groups, onDelete }: NotesListProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,20 +56,42 @@ export function NotesList({ groups, onDelete }: NotesListProps) {
               >
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className={tagClass}>{item.name}</span>
-                  <span className={`${labelClass} break-words whitespace-pre-wrap`}>
-                    {item.kind === "note" ? item.text : "marked this page"}
-                  </span>
+                  {item.kind === "highlight" && item.quote !== null ? (
+                    <span className={`${labelClass} line-clamp-2 break-words`}>
+                      {item.quote}
+                    </span>
+                  ) : null}
+                  {item.kind === "mark" ? (
+                    <span className={`${labelClass} break-words`}>marked this page</span>
+                  ) : null}
+                  {item.text !== null ? (
+                    <span className={`${labelClass} break-words whitespace-pre-wrap`}>
+                      {item.text}
+                    </span>
+                  ) : null}
                 </div>
                 {item.isSelf ? (
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    disabled={pending}
-                    aria-label={`Delete your ${item.kind === "note" ? "note" : "mark"} in ${group.label}`}
-                    onClick={() => remove(item.id)}
-                  >
-                    Delete
-                  </Button>
+                  item.kind === "highlight" ? (
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      disabled={pending}
+                      aria-label={`Remove from group: your highlight in ${group.label}`}
+                      onClick={() => remove(item.id)}
+                    >
+                      Remove from group
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      disabled={pending}
+                      aria-label={`Delete your ${item.kind === "note" ? "note" : "mark"} in ${group.label}`}
+                      onClick={() => remove(item.id)}
+                    >
+                      Delete
+                    </Button>
+                  )
                 ) : null}
               </li>
             ))}
