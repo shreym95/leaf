@@ -32,13 +32,13 @@ two facts.
 | L6 | **The reader hot path cannot fail because of groups.** Group writes go through the outbox; errors are swallowed exactly like position writes. | Reader-hook task contract | Unit test that a throwing group write leaves reading untouched |
 | L7 | **Offline is unchanged.** No service worker or cache changes in v1. Group pages are online-only and show the existing offline fallback. | No task owns `src/lib/offline/service-worker.ts` | Levi |
 | L8 | **Account deletion still works** when the user owns a group or is a member of one. | Ownership-transfer trigger (S1) | RLS integration test |
-| L10 | **Backup before any database change.** No migration is applied to the live project without a fresh, verified backup. | `scripts/db/backup.mjs` (S0); manifest row counts checked | Integrator, before each migration |
+| L10 | **Backup before a major database change.** Not taken every release. Before a major database change, a fresh, verified backup scoped to the blast radius: only the tables the change touches. | `scripts/db/backup.mjs` (S0); manifest row counts checked | Integrator, before each major database change |
 | L9 | **Rollback is one switch.** Turning the flag off hides everything. Each migration ships with a down script that is written and reviewed but never run unless needed. | `supabase/rollback/*.down.sql` | Levi reviews each down script |
 
 ### Rollout order
 
 1. Build on `feat/groups-v1a` (task branches merge into it). Nothing is pushed to `dev`.
-2. Take a backup (L10). The founder applies the migrations to the live project; they are
+2. Take a backup where L10 requires one. The founder applies the migrations to the live project; they are
    additive and sit unused while the flag is off (L2). The integrator runs the RLS
    integration tests (temporary users, deleted afterwards, as today).
 3. Push the integrated branch to `staging`. The founder tests on the staging link, with
@@ -222,7 +222,7 @@ Ownership is serial across waves where a shared file is touched twice:
 
 1. **Levi** reviews the integrated `feat/groups-v1a` diff against L1–L9 and the
    contract.
-2. Backup taken (L10); migrations applied to the live project by the founder. RLS
+2. Backup taken where L10 requires one (before a major database change, scoped to the tables it touches); migrations applied to the live project by the founder. RLS
    integration tests run by the integrator:
    - non-member denial on every table;
    - a member cannot write another member's progress;

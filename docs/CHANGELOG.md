@@ -2,6 +2,47 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — reading groups v1a (Claude, 2026-10-17)
+
+Readers had no way to read the same book together or see where the others were.
+Groups v1a adds small private groups joined by invite link, a shared read of one
+book, and progress and milestones visible within the group. Each member reads their
+own copy of the book.
+
+- **Groups and invites.** Groups of up to 5 members (cap in `group_member_cap()`,
+  `supabase/migrations/0008_groups_core.sql`). Invite links carry a random token with
+  an expiry and a use cap (`src/lib/groups/server/invites.ts`). Routes are under
+  `src/app/api/groups/` and `src/app/api/invites/`.
+- **Bring your own copy.** Book files never cross users. A group read is aligned to
+  the group's chapter outline; each member links their own copy, and the copy is
+  aligned to that outline (`src/lib/groups/alignment.ts`).
+- **Shared position.** Members share a position as chapter index plus chapter
+  fraction, never as a CFI (`src/reader/group-progress.ts`).
+- **Manual progress.** A member without a copy sets their chapter by hand
+  (`src/components/groups-ui/ManualProgress.tsx`).
+- **Milestones.** Part start, half and end are recorded per member, in arrival order.
+  The database trigger writes them (`supabase/migrations/0009_group_reads.sql`);
+  clients cannot write them.
+- **Progress markers.** Members' markers appear in the reader dock.
+- **Removing a book from a group.** The owner may remove any read; a member may remove
+  only a read they added (`canRemoveRead` in `src/components/groups-ui/actions.ts`,
+  route `src/app/api/groups/[groupId]/reads/[readId]/route.ts`). Removal cascades to the
+  read's copy links, progress and milestones. The member's library copy is not touched.
+- **Feature flag.** `NEXT_PUBLIC_LEAF_GROUPS=1` turns groups on (`src/lib/groups/flag.ts`).
+  With the flag off, Leaf behaves as v1.0.0. Demo mode always has groups off.
+- **Migrations.** `0008_groups_core.sql` and `0009_group_reads.sql` are additive.
+  Down scripts: `supabase/rollback/0008_groups_core.down.sql` and
+  `supabase/rollback/0009_group_reads.down.sql`.
+- **Backup and restore.** `npm run db:backup [-- --out <dir>]` (`scripts/db/backup.mjs`).
+  `npm run db:restore` (`scripts/db/restore.mjs`) is a dry run unless given
+  `--apply --project-ref <ref>`.
+- **Privacy.** `/privacy` has a "Reading groups" section, shown only with the flag on
+  (`src/app/(chrome)/privacy/page.tsx`).
+- **Logic/presentation coupling.** For the redesign: copy strings and masking logic live
+  in `src/components/groups-ui/readModel.ts` and `src/components/groups-ui/CopyPanel.tsx`.
+  The permission helper `canRemoveRead` and the fetch helpers live in
+  `src/components/groups-ui/actions.ts`.
+
 ## Feature — finished books: detection, end panel, Completed Books (Claude, 2026-10-02)
 
 Reaching the end of a book used to do nothing; a finished book stayed pinned as

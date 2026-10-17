@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   description: "What Leaf collects, where it is stored, and how to delete it.",
 };
 
-const LAST_UPDATED = "30 August 2026";
+const LAST_UPDATED = "17 October 2026";
 
 /**
  * Contact address shown in the "Contact" section below. MUST be set to a real
@@ -120,10 +120,9 @@ export default function PrivacyPage() {
         <Section heading="Reading groups">
           <p className={proseClass}>
             Members of a group you join can see your display name, your reading
-            progress and milestones in that group&apos;s books, and the notes you
-            share there. Your book files are never shared; each member reads
-            their own copy. Leaving a group removes your progress and notes from
-            it.
+            progress and milestones in that group&apos;s books. Your book files
+            are never shared; each member reads their own copy. Leaving a group
+            removes your progress from it.
           </p>
         </Section>
       )}
