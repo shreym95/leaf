@@ -31,6 +31,7 @@ import {
 import { isThemeId } from "@/design/themes";
 import { trackScreen } from "@/lib/analytics";
 import {
+  cfisOverlap,
   createAnnotationManager,
   type AnnotationManager,
 } from "@/reader/annotations";
@@ -163,6 +164,11 @@ function requestReaderCache(bookId: string): void {
 // How long a collapsed selection stays actionable, so a tap that collapsed it
 // still reaches the bar's buttons.
 const SELECTION_GRACE_MS = 400;
+
+// A selection that settles this soon after a highlight tap, inside that
+// highlight, is the tap's own (Android "Touch to Search" selects the tapped
+// word). Past this window it is a deliberate selection.
+const HIGHLIGHT_TAP_SELECTION_MS = 1000;
 
 // Keys typed into a field (the note field, a select or search) must not page
 // the book: the arrow keys and letters belong to the field.
@@ -368,6 +374,9 @@ export function ReaderShell({
   // the first tap is never inside a guard window.
   const lastCollapseAt = useRef(Number.NEGATIVE_INFINITY);
   const lastHighlightTapAt = useRef(Number.NEGATIVE_INFINITY);
+  // The highlight most recently tapped, and when, for the selection that tap
+  // may produce (see HIGHLIGHT_TAP_SELECTION_MS).
+  const tappedHighlightRef = useRef<{ at: number; cfi: string } | null>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const contentTapRef = useRef<(tap: ReaderContentTap) => void>(() => {});
   useEffect(
@@ -662,7 +671,21 @@ export function ReaderShell({
             // The engine's highlight click also reaches the content-tap path, so
             // the time of this tap is recorded and the tap policy ignores it.
             onHighlightTap: (a) => {
-              lastHighlightTapAt.current = Date.now();
+              const at = Date.now();
+              lastHighlightTapAt.current = at;
+              tappedHighlightRef.current = { at, cfi: a.cfi };
+              // One bar at a time: the highlight bar takes the slot, so any
+              // selection goes with the bar that replaces it.
+              if (selectionRef.current) {
+                selectionRef.current = null;
+                if (collapseTimerRef.current !== undefined) {
+                  clearTimeout(collapseTimerRef.current);
+                  collapseTimerRef.current = undefined;
+                }
+                setSelection(null);
+                setNotice(null);
+                controllerRef.current?.clearSelection();
+              }
               setBarItem({ kind: "highlight", id: a.id });
             },
           });
@@ -684,6 +707,17 @@ export function ReaderShell({
         // is actionable; its collapse opens a grace window so a tap that
         // collapsed it can still act. Taps feed the touch page-turn policy.
         unsubSelected = controller.onSelection((sel) => {
+          // A selection that settles on the highlight just tapped, inside its
+          // range, is part of that tap: it is dropped and the highlight bar stays.
+          const tapped = tappedHighlightRef.current;
+          if (
+            tapped &&
+            Date.now() - tapped.at <= HIGHLIGHT_TAP_SELECTION_MS &&
+            cfisOverlap(sel.cfiRange, tapped.cfi)
+          ) {
+            controller.clearSelection();
+            return;
+          }
           if (collapseTimerRef.current !== undefined) {
             clearTimeout(collapseTimerRef.current);
             collapseTimerRef.current = undefined;
@@ -691,6 +725,10 @@ export function ReaderShell({
           selectionRef.current = sel;
           setSelection(sel);
           setNotice(null);
+          // A new selection replaces a highlight bar, so closing the selection
+          // never reveals that bar underneath. A note field is left alone: its
+          // unsaved text would be lost.
+          setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
         });
         unsubSelectionCleared = controller.onSelectionCleared(() => {
           lastCollapseAt.current = Date.now();
