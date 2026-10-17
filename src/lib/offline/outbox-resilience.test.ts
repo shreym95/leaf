@@ -60,10 +60,16 @@ describe("handler timeout — a hung write cannot hold the flush forever", () =>
     await item(store, "a", "a1");
 
     let calls = 0;
+    let releaseHung: (outcome: ReplayOutcome) => void = () => {};
     const flusher = createFlusher(store, () => ({
       "reading-state": () => {
         calls += 1;
-        if (calls === 1) return new Promise<ReplayOutcome>(() => {}); // never settles
+        if (calls === 1) {
+          // Hangs past the timeout; settled by hand below.
+          return new Promise<ReplayOutcome>((resolve) => {
+            releaseHung = resolve;
+          });
+        }
         return Promise.resolve("applied");
       },
     }));
@@ -82,6 +88,14 @@ describe("handler timeout — a hung write cannot hold the flush forever", () =>
     expect(store.all()).toHaveLength(1);
     expect(store.all()[0].attempted).toBe(true);
 
+    // While the timed-out request is still unsettled, no second request for the
+    // same item may start (it could be overtaken by the late one).
+    await flusher.flush();
+    expect(calls).toBe(1);
+
+    // Once it settles, a later flush runs and applies the entry.
+    releaseHung("applied");
+    await vi.advanceTimersByTimeAsync(0);
     await flusher.flush();
     expect(calls).toBe(2);
     expect(store.all()).toHaveLength(0);
@@ -250,6 +264,92 @@ describe("cross-tab flush lock — Web Locks when present, per-tab otherwise", (
     }));
     await expect(flusher.flush()).resolves.toBeUndefined();
 
+    expect(store.all()).toHaveLength(0);
+  });
+});
+
+/** Edit the queued entry for `key` in place, as the writer does: same id, `rev` + 1. */
+async function editEntry(store: OutboxStore, key: string, label: string): Promise<void> {
+  const current = (await store.list()).find((e) => e.key === key);
+  if (!current) throw new Error(`no queued entry for ${key}`);
+  await store.put?.({ ...current, payload: { label }, rev: (current.rev ?? 0) + 1 });
+}
+
+describe("in-flight attempts — a timed-out request is never overtaken", () => {
+  it("an edited entry is not re-sent while its timed-out request is unsettled; the newest payload lands last", async () => {
+    vi.useFakeTimers();
+    const store = makeStore();
+    await item(store, "a", "a1");
+
+    const payloads: string[] = [];
+    let server = "";
+    let settleOld: (outcome: ReplayOutcome) => void = () => {};
+    const flusher = createFlusher(store, () => ({
+      "reading-state": (entry) => {
+        const label = labelOf(entry);
+        payloads.push(label);
+        if (payloads.length === 1) {
+          // The first request hangs. When it finally lands, it writes its own value.
+          return new Promise<ReplayOutcome>((resolve) => {
+            settleOld = (outcome) => {
+              server = label;
+              resolve(outcome);
+            };
+          });
+        }
+        server = label;
+        return Promise.resolve("applied");
+      },
+    }));
+
+    void flusher.flush();
+    await vi.advanceTimersByTimeAsync(1); // the first request is now in flight
+    await editEntry(store, "a", "a2"); // the user edits it meanwhile
+    await vi.advanceTimersByTimeAsync(HANDLER_TIMEOUT_MS); // the first attempt times out
+
+    expect(payloads).toEqual(["a1"]); // a2 is NOT sent while a1 is unsettled
+    expect(store.all()).toHaveLength(1);
+
+    settleOld("applied"); // the late response lands
+    await vi.advanceTimersByTimeAsync(1); // the settle reaches the flusher, which runs again
+    await flusher.flush();
+    expect(payloads).toEqual(["a1", "a2"]);
+    expect(server).toBe("a2"); // the newest write is the last one the server saw
+    expect(store.all()).toHaveLength(0);
+  });
+
+  it("while the old request is unsettled, other keys keep flowing", async () => {
+    vi.useFakeTimers();
+    const store = makeStore();
+    await item(store, "A", "a1");
+    await item(store, "B", "b1");
+
+    const calls: string[] = [];
+    let settleOld: (outcome: ReplayOutcome) => void = () => {};
+    const flusher = createFlusher(store, () => ({
+      "reading-state": (entry) => {
+        calls.push(labelOf(entry));
+        if (calls.length === 1) {
+          return new Promise<ReplayOutcome>((resolve) => {
+            settleOld = resolve;
+          });
+        }
+        return Promise.resolve("applied");
+      },
+    }));
+
+    void flusher.flush();
+    await vi.advanceTimersByTimeAsync(1);
+    await editEntry(store, "A", "a2");
+    await vi.advanceTimersByTimeAsync(HANDLER_TIMEOUT_MS);
+
+    expect(calls).toEqual(["a1", "b1"]); // A waits; B is written meanwhile
+    expect(store.all().map((e) => labelOf(e))).toEqual(["a2"]);
+
+    settleOld("applied");
+    await vi.advanceTimersByTimeAsync(1); // the settle reaches the flusher, which runs again
+    await flusher.flush();
+    expect(calls).toEqual(["a1", "b1", "a2"]);
     expect(store.all()).toHaveLength(0);
   });
 });
