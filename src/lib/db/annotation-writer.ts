@@ -1,33 +1,27 @@
-// Write-through writer for personal annotations. LOGIC ONLY — no design/component
+// Outbox-first writer for personal annotations. LOGIC ONLY — no design/component
 // imports.
 //
-// Each create, note and delete goes straight to Postgres while online, the way
-// group-progress.ts writes `read_progress`. Only a transport failure, or being
-// offline, hands the write to the outbox, which replays it on the `online` event.
-// A rejection (RLS, bad data) is dropped: a retry cannot succeed.
+// Every create, note and delete is validated, then enqueued (durable in IndexedDB),
+// and only then does a flush go to the network while online. Nothing here calls
+// Supabase directly, so a write in flight when the tab closes is still in the outbox
+// and replays on the next start.
 //
-// Writes for one item run in order through a per-id promise chain. A note or
-// delete issued while its create is still in flight waits for that create to
-// settle, then takes the direct path (or merges into the create if it was queued).
-// Without this, the note would reach the server before its row exists and be lost.
+// Validation runs synchronously: an invalid value throws RangeError to the caller
+// and is never enqueued.
 //
-// Lookups of the outbox fail toward the outbox: if the queued-create check cannot
-// be read, a note is queued (merges into any queued create) and a delete is queued
-// (cancels any queued create). A direct delete on an unknown queued create could
-// resurrect the row later. Nothing here throws.
+// Ordering is the queue's: one FIFO, so a note always replays after its create and
+// the latest queued note wins (`outbox.ts`).
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
 import {
-  createAnnotation,
-  deleteAnnotation,
-  updateAnnotationNote,
+  validateAnnotationNote,
+  validateAnnotationQuote,
 } from "@/lib/db/annotations";
 import {
-  classifyWriteFailure,
   enqueueAnnotationCreate,
   enqueueAnnotationDelete,
   enqueueAnnotationNote,
+  flushIdle,
+  flushOutbox,
   pendingAnnotationEntries,
 } from "@/lib/offline/outbox";
 import type { Annotation } from "@/lib/types";
@@ -35,21 +29,29 @@ import type { Annotation } from "@/lib/types";
 export interface AnnotationWriterOptions {
   /** Owner of every write. RLS requires it to be the signed-in user. */
   userId: string;
-  /** Defaults to the browser client, resolved per write. */
-  client?: SupabaseClient;
   /** Defaults to `navigator.onLine !== false`. */
   isOnline?: () => boolean;
 }
 
 export interface AnnotationWriter {
+  /** Throws `RangeError` synchronously for an invalid annotation; otherwise resolves once queued. */
   create(a: Annotation): Promise<void>;
+  /** Throws `RangeError` synchronously for an invalid note; otherwise resolves once queued. */
   setNote(id: string, note: string | null): Promise<void>;
+  /** Resolves once the delete is queued. */
   remove(id: string): Promise<void>;
-  /** Resolves once every write issued so far for `id` has settled. */
+  /**
+   * Resolves once no flush is running that could still apply this id's queued
+   * writes, or after `SETTLE_TIMEOUT_MS`, whichever comes first. Resolves at once
+   * when nothing is queued for `id`.
+   */
   settled(id: string): Promise<void>;
   /** True while the outbox still holds this item's create (it has not reached the server). */
   isPending(id: string): Promise<boolean>;
 }
+
+/** The longest `settled` waits on a flush that has not finished (a hung request). */
+export const SETTLE_TIMEOUT_MS = 8000;
 
 function defaultIsOnline(): boolean {
   try {
@@ -59,63 +61,49 @@ function defaultIsOnline(): boolean {
   }
 }
 
+/** Resolves when `idle()` does, or after `ms`, whichever comes first. */
+function settleWithin(ms: number, idle: () => Promise<void>): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    void idle().then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 export function createAnnotationWriter(opts: AnnotationWriterOptions): AnnotationWriter {
   const { userId } = opts;
   const isOnline = opts.isOnline ?? defaultIsOnline;
-  // Tail promise per annotation id. An entry is removed once its tail settles.
-  const chains = new Map<string, Promise<void>>();
 
-  const client = (): SupabaseClient => opts.client ?? createClient();
-
-  /** Run `task` after the id's previous write settles. Never rejects. */
-  function serialize(id: string, task: () => Promise<void>): Promise<void> {
-    const prev = chains.get(id) ?? Promise.resolve();
-    const next: Promise<void> = prev.then(task).catch(() => {});
-    chains.set(id, next);
-    void next.then(() => {
-      if (chains.get(id) === next) chains.delete(id);
+  /** The write is durable once `enqueued` resolves. Only then does a flush start. */
+  function afterEnqueue(enqueued: Promise<void>): Promise<void> {
+    return enqueued.then(() => {
+      if (isOnline()) void flushOutbox();
     });
-    return next;
   }
 
-  /** Whether the outbox holds this item's create. Unknown counts as yes (see header). */
-  async function isCreateQueued(id: string): Promise<boolean> {
+  /** The key every annotation kind uses in the outbox: `${userId}:${id}`. */
+  async function queuedFor(id: string): Promise<{ create: boolean; any: boolean }> {
     try {
       const key = `${userId}:${id}`;
       const entries = await pendingAnnotationEntries(userId);
-      return entries.some((e) => e.kind === "annotation-create" && e.key === key);
+      const mine = entries.filter((e) => e.key === key);
+      return {
+        create: mine.some((e) => e.kind === "annotation-create"),
+        any: mine.length > 0,
+      };
     } catch {
-      return true;
-    }
-  }
-
-  /**
-   * Direct write first; only a transport failure goes to the outbox. A failure that
-   * cannot be classified is not known to be a rejection, so it is queued too.
-   */
-  async function writeThrough(
-    direct: (c: SupabaseClient) => Promise<unknown>,
-    queue: () => Promise<void>,
-  ): Promise<void> {
-    try {
-      await direct(client());
-    } catch (err) {
-      if (isTransportFailure(err)) await queue();
-    }
-  }
-
-  function isTransportFailure(err: unknown): boolean {
-    try {
-      return classifyWriteFailure(err) === "transport";
-    } catch {
-      return true;
+      return { create: true, any: true };
     }
   }
 
   return {
     create(a) {
-      return serialize(a.id, async () => {
-        const input = {
+      validateAnnotationQuote(a.kind, a.quote);
+      validateAnnotationNote(a.note);
+      return afterEnqueue(
+        enqueueAnnotationCreate(userId, {
           id: a.id,
           bookId: a.book_id,
           kind: a.kind,
@@ -124,36 +112,26 @@ export function createAnnotationWriter(opts: AnnotationWriterOptions): Annotatio
           note: a.note,
           label: a.label,
           percent: a.percent,
-        };
-        const queue = () => enqueueAnnotationCreate(userId, input);
-        if (!isOnline()) return queue();
-        await writeThrough((c) => createAnnotation({ userId, ...input }, c), queue);
-      });
+        }),
+      );
     },
 
     setNote(id, note) {
-      return serialize(id, async () => {
-        const queue = () => enqueueAnnotationNote(userId, id, note);
-        if (!isOnline() || (await isCreateQueued(id))) return queue();
-        await writeThrough((c) => updateAnnotationNote(id, note, c), queue);
-      });
+      validateAnnotationNote(note);
+      return afterEnqueue(enqueueAnnotationNote(userId, id, note));
     },
 
     remove(id) {
-      return serialize(id, async () => {
-        const queue = () => enqueueAnnotationDelete(userId, id);
-        if (!isOnline() || (await isCreateQueued(id))) return queue();
-        await writeThrough((c) => deleteAnnotation(id, c), queue);
-      });
+      return afterEnqueue(enqueueAnnotationDelete(userId, id));
     },
 
     async settled(id) {
-      let tail: Promise<void> | undefined;
-      while ((tail = chains.get(id)) !== undefined) await tail;
+      if (!(await queuedFor(id)).any) return;
+      await settleWithin(SETTLE_TIMEOUT_MS, flushIdle);
     },
 
-    isPending(id) {
-      return isCreateQueued(id);
+    async isPending(id) {
+      return (await queuedFor(id)).create;
     },
   };
 }
