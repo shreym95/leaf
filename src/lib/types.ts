@@ -5,6 +5,8 @@
 // (planned for M1 tail / M2, once the Supabase CLI is set up — see supabase/README.md).
 // Until then this file is hand-maintained; edit it in lockstep with the migration.
 
+import type { ScheduleCheckpoint } from "@/lib/groups/schedule";
+
 // The canonical set of theme ids. A theme id is persisted data — it is written
 // to `profiles.default_theme` and `reader_settings.theme`, both guarded by a
 // CHECK constraint — so it is declared here, in the logic layer, and NOT in the
@@ -172,8 +174,11 @@ export interface GroupRead {
   source_ref: string | null;
   /** Non-empty array (CHECK in 0009). */
   outline: OutlineJsonEntry[];
-  /** Reserved for v1b; v1a writes null. */
-  schedule: unknown | null;
+  /**
+   * Optional dated checkpoints (0010 types it as jsonb). Null = no schedule. Stored
+   * raw; read it through `parseSchedule`, which drops malformed items.
+   */
+  schedule: ScheduleCheckpoint[] | null;
   /** Null once the creator's account is deleted. */
   created_by: string | null;
   created_at: string;
@@ -202,6 +207,40 @@ export interface ReadProgress {
   manual: boolean;
   updated_at: string;
 }
+
+/** Kind of a `read_notes` row (0010): a bare page mark, a note, or a highlight (v2). */
+export type ReadNoteKind = "mark" | "note" | "highlight";
+
+/**
+ * `public.read_notes` (0010). Owner-only on direct select; other members read through
+ * `visible_notes`. The quote columns are v2 only and are always null in v1.
+ */
+export interface ReadNote {
+  id: string;
+  read_id: string;
+  user_id: string;
+  /** 0-based outline chapter index. */
+  chapter_index: number;
+  /** 0..1 within the chapter. */
+  chapter_fraction: number;
+  kind: ReadNoteKind;
+  /** 1–500 characters; required for `note`, null for `mark`. */
+  note: string | null;
+  quote_exact: string | null;
+  quote_prefix: string | null;
+  quote_suffix: string | null;
+  /** epub.js CFI of the position, when the writer's copy has one. */
+  cfi: string | null;
+  /** Hash of the copy the position was taken from (for re-anchoring). */
+  content_sha256: string | null;
+  created_at: string;
+}
+
+/**
+ * A row from `visible_notes(rid)` (0010): the `ReadNote` columns without the v2
+ * quote anchors. Own notes, plus other members' notes at or behind the caller.
+ */
+export type VisibleReadNote = Omit<ReadNote, "quote_exact" | "quote_prefix" | "quote_suffix">;
 
 /**
  * `public.read_milestones` (0009) — PK `(read_id, user_id, point)`. Trigger-written,
