@@ -42,6 +42,10 @@ vi.mock("@/reader/engine", () => ({
     applySettings: vi.fn(),
     onRelocated: h.onRelocated,
     sectionCount: 12,
+    onSelection: vi.fn(() => () => {}),
+    onSelectionCleared: vi.fn(() => () => {}),
+    onContentTap: vi.fn(() => () => {}),
+    locateCfi: vi.fn(() => null),
     destroy: vi.fn(),
   })),
 }));
