@@ -111,4 +111,5 @@ Include: the contents popover tabs (`TocPopover.tsx`, now with a Group tab) use
 ## Dropped
 
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
+- Highlight creation is being rebuilt in `NOTES_PLAN.md` (2026-10-17). The mode in `REVISED_PLAN.md` §4C is reversed there: highlights use a selection bar on any selection.
 - Custom domain was dropped on 2026-10-02; Leaf stays on `leaf-black.vercel.app`. Google's sign-in consent screen continues to show the Supabase project host rather than a Leaf domain.

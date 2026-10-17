@@ -210,7 +210,7 @@ it is sequenced, and the gaps are named.
 | Open backlog item | Covered by | Note |
 |---|---|---|
 | **Library shelf redesign** (the "UI overhaul", founder-scoped as separate) | §3 Tactile Book Cards + Phase 1.2 | This is the plan's real centre of gravity. The shelf now has covers, progress and a last-read sort (M5/M6), so the redesign inherits data worth showing. |
-| **Highlight creation — DISABLED, needs a touch-first design** | §4C Highlight Mode + Phase 2.3 | **Trigger settled (founder, 2026-08-31):** highlighting is an explicit mode, off by default. A plain selection stays a plain selection — copying a word or looking up its meaning must not offer to annotate it. Re-enable point is marked at `ReaderShell.tsx:202`. |
+| **Highlight creation — DISABLED, needs a touch-first design** | §4C Highlight Mode + Phase 2.3 | **Trigger settled (founder, 2026-08-31):** highlighting is an explicit mode, off by default. A plain selection stays a plain selection — copying a word or looking up its meaning must not offer to annotate it. Re-enable point is marked at `ReaderShell.tsx:202`. **REVERSED (founder, 2026-10-17):** the mode is dropped. Highlight, Note, Copy and Define appear on any selection through a selection bar at the top of the reader. Reason: the founder wants Highlight, Copy and Define on any selection; the mode adds a step the founder does not want. Built in `docs/NOTES_PLAN.md`. The 2026-08-31 text above is kept as history. |
 
 ### B. Backlog items this plan does NOT cover — still open, unscheduled
 

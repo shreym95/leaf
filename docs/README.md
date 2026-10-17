@@ -11,6 +11,7 @@ what you are about to do.
 | [`REVISED_PLAN.md`](./REVISED_PLAN.md) | Planning the next feature. The UI/UX roadmap: §2 theme architecture, §4 reader experience, §6 phasing, §7 how it lines up with the shipped code. |
 | [`FEATURES_PLAN.md`](./FEATURES_PLAN.md) | Planning the next feature set (AI reading aids, reviews, recommendations, social). Research, architecture, build order and open founder decisions. |
 | [`GROUPS_V1_BUILD.md`](./GROUPS_V1_BUILD.md) | Building reading groups v1: task waves, file ownership, schema contract, the "don't break live" guarantees and the subagent guardrails. |
+| [`NOTES_PLAN.md`](./NOTES_PLAN.md) | Building Notes v1: page marks, highlights and notes as one concept, personal and group-shared, with touch-first highlighting. Ships with reading groups v1. |
 | [`BACKLOG.md`](./BACKLOG.md) | Looking for known open work and deferred decisions. |
 | [`TESTING.md`](./TESTING.md) | Test strategy: tiered scoping, what requires a real browser, regression test rules. Read before running any suite. |
 | [`DEPLOY.md`](./DEPLOY.md) | Shipping, or applying a database migration. |
