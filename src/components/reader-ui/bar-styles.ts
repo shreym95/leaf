@@ -15,5 +15,9 @@ export const barButtonClass =
   "before:absolute before:left-0 before:right-0 before:top-1/2 " +
   "before:h-[var(--leaf-dock-pod-size)] before:-translate-y-1/2 before:content-['']";
 
+export const barNoticeClass =
+  "truncate px-[var(--leaf-space-2)] font-mono [font-size:var(--leaf-text-2xs)] " +
+  "[letter-spacing:var(--leaf-tracking-wide)] text-ink-mid";
+
 export const barCounterClass =
   "font-mono tabular-nums [font-size:var(--leaf-text-3xs)] [letter-spacing:var(--leaf-tracking-tight)]";
