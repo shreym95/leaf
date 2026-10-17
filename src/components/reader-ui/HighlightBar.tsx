@@ -1,23 +1,23 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
-import { barButtonClass, barNoticeClass } from "./bar-styles";
+import type { KeyboardEvent } from "react";
+import { barButtonClass } from "./bar-styles";
 
 /**
  * HighlightBar — the actions for a painted highlight, shown in the top bar's
- * slot when the reader taps it (NOTES_PLAN N3d). Note and Remove only. Share
+ * slot when the reader taps it (NOTES_PLAN N3d). Add note and Remove only; Share
  * stays in the Notes tab, which owns the group state it needs.
  *
- * A highlight with a note asks before it is removed, as the Notes list does.
- * A highlight with a note shows that note's text on one line, truncated; the
- * Edit note action opens the editor with the full text.
+ * A highlight WITH a note is different: the slot is a quiet "Note" row with the
+ * ✕ at the far end, and the note itself is read in the note card that hangs
+ * under the top bar (HighlightNoteCard). Edit and Remove live on that card.
  *
  * Layout matches SelectionBar: the content is a group centred in the row, with
  * the ✕ at the far end and an equal-width pod at the start to balance it.
  */
 
 export interface HighlightBarProps {
-  /** The highlight's note, if it has one. Shown on one truncated line. */
+  /** The highlight's note, if it has one. Only its presence is read here. */
   note?: string | null;
   onNote: () => void;
   onRemove: () => void;
@@ -32,7 +32,6 @@ function onEscape(e: KeyboardEvent<HTMLDivElement>, close: () => void): void {
 }
 
 export function HighlightBar({ note, onNote, onRemove, onClose }: HighlightBarProps) {
-  const [confirming, setConfirming] = useState(false);
   const hasNote = Boolean(note);
 
   return (
@@ -42,38 +41,24 @@ export function HighlightBar({ note, onNote, onRemove, onClose }: HighlightBarPr
       onKeyDown={(e) => onEscape(e, onClose)}
       className="flex h-full w-full min-w-0 items-center gap-[var(--leaf-space-3)]"
     >
-      <span aria-hidden className="min-w-[var(--leaf-dock-pod-size)] flex-none" />
-
-      {confirming ? (
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-[var(--leaf-space-3)]">
-          <span className={`${barNoticeClass} min-w-0`}>Remove note too?</span>
-          <button type="button" className={barButtonClass} onClick={onRemove}>
-            Remove
-          </button>
-          <button
-            type="button"
-            className={barButtonClass}
-            onClick={() => setConfirming(false)}
-          >
-            Keep
-          </button>
-        </div>
+      {hasNote ? (
+        <>
+          <span className="min-w-0 flex-1 truncate px-[var(--leaf-space-2)] font-mono font-medium uppercase text-ink-mid [font-size:var(--leaf-text-2xs)] [letter-spacing:var(--leaf-tracking-wide)]">
+            Note
+          </span>
+        </>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-[var(--leaf-space-3)]">
-          {hasNote && (
-            <span className={`${barNoticeClass} min-w-0 flex-1 text-center`}>{note}</span>
-          )}
-          <button type="button" className={`${barButtonClass} flex-none`} onClick={onNote}>
-            {hasNote ? "Edit note" : "Add note"}
-          </button>
-          <button
-            type="button"
-            className={`${barButtonClass} flex-none`}
-            onClick={() => (hasNote ? setConfirming(true) : onRemove())}
-          >
-            Remove
-          </button>
-        </div>
+        <>
+          <span aria-hidden className="min-w-[var(--leaf-dock-pod-size)] flex-none" />
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-[var(--leaf-space-3)]">
+            <button type="button" className={`${barButtonClass} flex-none`} onClick={onNote}>
+              Add note
+            </button>
+            <button type="button" className={`${barButtonClass} flex-none`} onClick={onRemove}>
+              Remove
+            </button>
+          </div>
+        </>
       )}
 
       <button

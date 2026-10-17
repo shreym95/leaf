@@ -64,7 +64,8 @@ import { SelectionBar, SelectionNotice } from "./SelectionBar";
 import { HighlightBar } from "./HighlightBar";
 import { BarPressHold } from "./BarPressHold";
 import { NoteField } from "./NoteField";
-import { decideContentTap, isCoarsePointer } from "./tap-policy";
+import { HighlightNoteCard } from "./HighlightNoteCard";
+import { decideContentTap, HIGHLIGHT_TAP_GUARD_MS, isCoarsePointer } from "./tap-policy";
 import { EndOfBookPanel } from "./EndOfBookPanel";
 import { ReturnChip } from "./ReturnChip";
 import { SyncOfferChip } from "./SyncOfferChip";
@@ -370,6 +371,9 @@ export function ReaderShell({
   useEffect(() => {
     barItemRef.current = barItem;
   }, [barItem]);
+  // Whether the note card is up. Mirrored for the engine's tap callback, which
+  // dismisses the card on a page tap rather than turning the page.
+  const noteCardShownRef = useRef(false);
   // Epoch-ms of the last collapse / highlight tap. -Infinity means "never", so
   // the first tap is never inside a guard window.
   const lastCollapseAt = useRef(Number.NEGATIVE_INFINITY);
@@ -921,6 +925,16 @@ export function ReaderShell({
   useEffect(() => {
     contentTapRef.current = (tap) => {
       const now = Date.now();
+      // A page tap with a note card up only dismisses the card: it turns nothing.
+      // The highlight guard keeps the tap that opened or switched the card from
+      // closing it, as it keeps that tap from turning the page.
+      if (
+        noteCardShownRef.current &&
+        now - lastHighlightTapAt.current >= HIGHLIGHT_TAP_GUARD_MS
+      ) {
+        setBarItem(null);
+        return;
+      }
       const action = decideContentTap({
         coarse: isCoarsePointer(),
         selectionActive: tap.selectionActive,
@@ -1098,6 +1112,15 @@ export function ReaderShell({
     [removeAnnotation],
   );
 
+  // The note card saves in place: unlike the slot's note field, it stays on the
+  // highlight, so the card returns to its read view with the new text.
+  const saveNoteFromCard = useCallback(
+    (id: string, note: string | null) => {
+      saveNote(id, note);
+    },
+    [saveNote],
+  );
+
   // ── Keyboard (SPEC §3.6): ←/→ pages · F immersive · Esc exits ─────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1148,6 +1171,8 @@ export function ReaderShell({
 
   // The bar's content, in priority order. Nothing while the deck is open.
   let barNode: ReactNode = null;
+  // The highlight whose note card is up, if any.
+  let noteCard: Annotation | null = null;
   if (!deckOpen) {
     const activeNote =
       barItem?.kind === "note" ? annotationList.find((a) => a.id === barItem.id) : undefined;
@@ -1187,8 +1212,14 @@ export function ReaderShell({
           onClose={() => setBarItem(null)}
         />
       );
+      if (activeHighlight.note) noteCard = activeHighlight;
     }
   }
+  const cardItem: Annotation | null = noteCard;
+  const noteCardShown = cardItem !== null;
+  useEffect(() => {
+    noteCardShownRef.current = noteCardShown;
+  }, [noteCardShown]);
 
   return (
     <>
@@ -1206,6 +1237,16 @@ export function ReaderShell({
             hidden={immersive && !deckOpen && shown === null}
             onToggleImmersive={toggleImmersive}
             slot={shown ?? undefined}
+            card={
+              cardItem?.note ? (
+                <HighlightNoteCard
+                  key={cardItem.id}
+                  note={cardItem.note}
+                  onSave={(note) => saveNoteFromCard(cardItem.id, note)}
+                  onRemove={() => removeFromBar(cardItem.id)}
+                />
+              ) : undefined
+            }
           />
         )}
       </BarPressHold>
