@@ -6,21 +6,33 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/primitives";
 import { createClient } from "@/lib/supabase/client";
 import { setManualProgress } from "@/lib/db/groups";
+import { deleteReadNote } from "@/lib/db/read-notes";
+import type { ScheduleCheckpoint } from "@/lib/groups/schedule";
 import type { Outline } from "@/lib/groups/types";
 import type {
   BookSource,
   GroupMemberName,
   ReadMilestone,
   ReadProgress,
+  VisibleReadNote,
 } from "@/lib/types";
 import { addMyCopy, canRemoveRead, removeGroupRead } from "./actions";
 import { BookPickerDialog } from "./BookPickerDialog";
 import { CopyPanel, type CopyPanelState } from "./CopyPanel";
 import { ManualProgress } from "./ManualProgress";
 import { MilestoneFeed } from "./MilestoneFeed";
+import { NotesList } from "./NotesList";
 import { OutlineView } from "./OutlineView";
 import { RemoveReadDialog } from "./RemoveReadDialog";
-import { buildFeed, placeMembers, reachedPoints } from "./readModel";
+import { ScheduleDialog } from "./ScheduleDialog";
+import { ScheduleList } from "./ScheduleList";
+import {
+  buildFeed,
+  groupNotes,
+  placeMembers,
+  reachedPoints,
+  scheduleRows,
+} from "./readModel";
 import { backLinkClass, bodyClass, sectionHeadingClass } from "./styles";
 import { useOwnBooks, type OwnBook } from "./useOwnBooks";
 
@@ -36,12 +48,19 @@ export interface ReadScreenProps {
     outline: Outline;
     /** User id of the member who added the read, or null. */
     createdBy?: string | null;
+    /** The read's checkpoints, or null when no schedule is set. */
+    schedule?: ScheduleCheckpoint[] | null;
   };
   members: GroupMemberName[];
   progress: ReadProgress[];
   milestones: ReadMilestone[];
   /** The caller's own copy, or null when they have none. */
   copy: { bookId: string; confidence: number | null } | null;
+  /**
+   * Visible marks and notes (`visible_notes`, already gated by the server). Null or
+   * absent when they could not be loaded: the section is then hidden.
+   */
+  notes?: VisibleReadNote[] | null;
 }
 
 export function ReadScreen({
@@ -53,12 +72,14 @@ export function ReadScreen({
   progress,
   milestones,
   copy,
+  notes,
 }: ReadScreenProps) {
   const router = useRouter();
   const [chooseOpen, setChooseOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [added, setAdded] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const ownBooks = useOwnBooks(currentUserId, chooseOpen);
 
@@ -66,6 +87,8 @@ export function ReadScreen({
     (m) => m.user_id === currentUserId && m.role === "owner",
   );
   const canRemove = canRemoveRead(isOwner, currentUserId, read.createdBy);
+  // Same rule as removing the read: the owner, or the member who added it.
+  const canEditSchedule = canRemove;
 
   const placements = placeMembers(read.outline, progress, members, currentUserId);
   const reached = reachedPoints(milestones, currentUserId);
@@ -74,7 +97,13 @@ export function ReadScreen({
     milestones,
     members,
     viewerId: currentUserId,
+    schedule: read.schedule,
   });
+  const schedule = read.schedule ?? null;
+  const checkpoints = schedule ? scheduleRows(read.outline, schedule, reached) : [];
+  const noteGroups = Array.isArray(notes)
+    ? groupNotes(read.outline, notes, members, currentUserId)
+    : null;
   const mine = progress.find((p) => p.user_id === currentUserId);
 
   const copyState: CopyPanelState = copy
@@ -117,6 +146,11 @@ export function ReadScreen({
       { chapterIndex, chapterFraction: 0 },
       createClient(),
     );
+    router.refresh();
+  }
+
+  async function handleDeleteNote(id: string) {
+    await deleteReadNote(id, createClient());
     router.refresh();
   }
 
@@ -164,6 +198,30 @@ export function ReadScreen({
         />
       </section>
 
+      {checkpoints.length > 0 || canEditSchedule ? (
+        <section className="flex flex-col gap-3" aria-labelledby="read-schedule">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="read-schedule" className={sectionHeadingClass}>
+              Schedule
+            </h2>
+            {canEditSchedule ? (
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => setScheduleOpen(true)}
+              >
+                {schedule ? "Edit schedule" : "Set schedule"}
+              </Button>
+            ) : null}
+          </div>
+          {checkpoints.length > 0 ? (
+            <ScheduleList rows={checkpoints} />
+          ) : (
+            <p className={bodyClass}>No schedule set.</p>
+          )}
+        </section>
+      ) : null}
+
       <section className="flex flex-col gap-3" aria-labelledby="read-progress">
         <h2 id="read-progress" className={sectionHeadingClass}>
           Your place
@@ -177,6 +235,15 @@ export function ReadScreen({
         />
       </section>
 
+      {noteGroups ? (
+        <section className="flex flex-col gap-3" aria-labelledby="read-notes">
+          <h2 id="read-notes" className={sectionHeadingClass}>
+            Marks and notes
+          </h2>
+          <NotesList groups={noteGroups} onDelete={handleDeleteNote} />
+        </section>
+      ) : null}
+
       <section className="flex flex-col gap-3" aria-labelledby="read-milestones">
         <h2 id="read-milestones" className={sectionHeadingClass}>
           Milestones
@@ -189,6 +256,18 @@ export function ReadScreen({
         onOpenChange={setRemoveOpen}
         onConfirm={handleRemove}
       />
+
+      {canEditSchedule ? (
+        <ScheduleDialog
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+          groupId={groupId}
+          readId={read.id}
+          outline={read.outline}
+          schedule={schedule}
+          onSaved={() => router.refresh()}
+        />
+      ) : null}
 
       <BookPickerDialog
         open={chooseOpen}

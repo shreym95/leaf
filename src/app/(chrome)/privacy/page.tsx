@@ -120,9 +120,11 @@ export default function PrivacyPage() {
         <Section heading="Reading groups">
           <p className={proseClass}>
             Members of a group you join can see your display name, your reading
-            progress and milestones in that group&apos;s books. Your book files
-            are never shared; each member reads their own copy. Leaving a group
-            removes your progress from it.
+            progress and milestones in that group&apos;s books. They also see the
+            marks and notes you leave in those books, but only once they have read
+            that far. Your book files are never shared; each member reads their
+            own copy. Leaving a group removes your progress, marks and notes from
+            it.
           </p>
         </Section>
       )}
