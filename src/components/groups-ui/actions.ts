@@ -125,3 +125,34 @@ export async function addMyCopy(
   );
   return { confidence: body.alignment?.confidence ?? null };
 }
+
+const REMOVE_READ_ERROR = "Couldn't remove the book. Try again.";
+
+/**
+ * Remove a read from its group (owner, or the member who added it). Resolves on
+ * success (204); any failure throws the same plain message.
+ */
+export async function removeGroupRead(
+  groupId: string,
+  readId: string,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `/api/groups/${encodeURIComponent(groupId)}/reads/${encodeURIComponent(readId)}`,
+      { method: "DELETE" },
+    );
+  } catch {
+    throw new Error(REMOVE_READ_ERROR);
+  }
+  if (!res.ok) throw new Error(REMOVE_READ_ERROR);
+}
+
+/** Who may remove a read: the group owner, or the member who added it. */
+export function canRemoveRead(
+  isOwner: boolean,
+  currentUserId: string,
+  createdBy: string | null | undefined,
+): boolean {
+  return isOwner || (createdBy != null && createdBy === currentUserId);
+}

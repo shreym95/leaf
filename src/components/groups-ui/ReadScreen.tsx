@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/primitives";
 import { createClient } from "@/lib/supabase/client";
 import { setManualProgress } from "@/lib/db/groups";
 import type { Outline } from "@/lib/groups/types";
@@ -12,12 +13,13 @@ import type {
   ReadMilestone,
   ReadProgress,
 } from "@/lib/types";
-import { addMyCopy } from "./actions";
+import { addMyCopy, canRemoveRead, removeGroupRead } from "./actions";
 import { BookPickerDialog } from "./BookPickerDialog";
 import { CopyPanel, type CopyPanelState } from "./CopyPanel";
 import { ManualProgress } from "./ManualProgress";
 import { MilestoneFeed } from "./MilestoneFeed";
 import { OutlineView } from "./OutlineView";
+import { RemoveReadDialog } from "./RemoveReadDialog";
 import { buildFeed, placeMembers, reachedPoints } from "./readModel";
 import { backLinkClass, bodyClass, sectionHeadingClass } from "./styles";
 import { useOwnBooks, type OwnBook } from "./useOwnBooks";
@@ -32,6 +34,8 @@ export interface ReadScreenProps {
     author: string;
     source: BookSource;
     outline: Outline;
+    /** User id of the member who added the read, or null. */
+    createdBy?: string | null;
   };
   members: GroupMemberName[];
   progress: ReadProgress[];
@@ -54,8 +58,14 @@ export function ReadScreen({
   const [chooseOpen, setChooseOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [added, setAdded] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const ownBooks = useOwnBooks(currentUserId, chooseOpen);
+
+  const isOwner = members.some(
+    (m) => m.user_id === currentUserId && m.role === "owner",
+  );
+  const canRemove = canRemoveRead(isOwner, currentUserId, read.createdBy);
 
   const placements = placeMembers(read.outline, progress, members, currentUserId);
   const reached = reachedPoints(milestones, currentUserId);
@@ -94,6 +104,12 @@ export function ReadScreen({
     router.refresh();
   }
 
+  async function handleRemove() {
+    await removeGroupRead(groupId, read.id);
+    router.push(`/groups/${groupId}`);
+    router.refresh();
+  }
+
   async function handleSetChapter(chapterIndex: number) {
     await setManualProgress(
       currentUserId,
@@ -114,6 +130,13 @@ export function ReadScreen({
           {read.title}
         </h1>
         {read.author ? <p className={bodyClass}>{read.author}</p> : null}
+        {canRemove ? (
+          <div>
+            <Button variant="quiet" size="sm" onClick={() => setRemoveOpen(true)}>
+              Remove book
+            </Button>
+          </div>
+        ) : null}
       </header>
 
       <section className="flex flex-col gap-3" aria-labelledby="read-copy">
@@ -160,6 +183,12 @@ export function ReadScreen({
         </h2>
         <MilestoneFeed items={feed} />
       </section>
+
+      <RemoveReadDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        onConfirm={handleRemove}
+      />
 
       <BookPickerDialog
         open={chooseOpen}
