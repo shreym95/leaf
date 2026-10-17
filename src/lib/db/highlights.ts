@@ -1,7 +1,7 @@
 // Typed convenience wrappers over the `highlights` table (SPEC §5, §8).
 //
 // Like `reading-state.ts`, these take an EXPLICIT Supabase client so the module
-// stays browser-safe — the reader's highlight manager (`src/reader/highlights.ts`)
+// stays browser-safe — the reader's annotation manager (`src/reader/annotations.ts`)
 // imports it into a client bundle, so it must never reach through to
 // `@/lib/supabase/server` (which pulls `next/headers`). Callers provide the client:
 //   - browser (highlight manager): the browser client; RLS (`user_id =

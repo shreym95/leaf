@@ -12,7 +12,7 @@
  * two in lockstep.
  *
  * The reader logic layer never imports this: it passes a colour NAME around and
- * receives `stylesFor` from the UI (see `src/reader/highlights.ts`).
+ * receives `stylesFor` from the UI (see `src/reader/annotations.ts`).
  */
 
 import type { ThemeId } from "./themes";

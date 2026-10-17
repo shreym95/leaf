@@ -2,8 +2,8 @@
 // browser Supabase client to Postgres and, today, silently drop on failure
 // (`docs/REVISED_PLAN.md` §8, `DEFECTS.md` D8):
 //   - reading position    (src/reader/position.ts)
-//   - bookmarks           (src/reader/bookmarks.ts)
-//   - highlights          (src/reader/highlights.ts)
+//   - bookmarks           (src/reader/annotations.ts)
+//   - highlights          (src/reader/annotations.ts)
 //   - reader settings     (src/store/reader-settings.ts)
 //   - finished / unread   (src/reader/book-status.ts)
 //   - group read progress (src/lib/db/groups.ts, enqueued by the reader hook)

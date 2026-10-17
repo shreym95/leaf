@@ -4,8 +4,7 @@
 // One manager for the book's personal notes:
 //   - page marks (`kind: "page"`, the old bookmark) — a position, nothing painted;
 //   - quoted ranges (`kind: "range"`, the old highlight) — painted on the rendition.
-// It replaces `./bookmarks.ts` and `./highlights.ts` in behaviour. Those files stay
-// until NOTES Phase 2 removes them.
+// It replaced the old bookmarks and highlights managers (removed in NOTES Phase 2).
 //
 // Writes are optimistic: state changes first, then the injected `writer` is called.
 // A writer that throws or rejects is swallowed, so the item stays listed and painted

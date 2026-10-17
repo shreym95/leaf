@@ -2,6 +2,62 @@
 
 All notable changes to Leaf. Kept per milestone (see SPEC §9).
 
+## Feature — reading groups v1b and Notes (Claude, 2026-10-17)
+
+Group reads had shared progress and milestones. This adds group schedules with checkpoint
+milestones, a spoiler-gated view of other members' notes, and one personal Notes list of
+page marks, highlights and notes. Each item can be shared to a group read on its own.
+
+- **Schedules and checkpoints.** A group read can carry a schedule: a list of chapter
+  index and due date (`supabase/migrations/0010_read_notes.sql`). A member reaches a
+  checkpoint at that chapter with fraction 0.98 or more, past it, or on finishing the
+  book. Setting or editing a schedule records checkpoints at once for members already
+  past them, at their progress time (`supabase/migrations/0011_schedule_backfill.sql`).
+  UI: `src/components/groups-ui/ScheduleDialog.tsx`, `src/components/groups-ui/ScheduleList.tsx`.
+- **Spoiler gate.** `visible_notes(read_id)` returns another member's note only when the
+  caller has reached it or finished the book, and only while that member is in the
+  group. Direct selects on `read_notes` are owner-only, so the gate is in the database
+  (`0010_read_notes.sql`, `0012_annotations.sql`).
+- **One concept: Notes.** Page marks (kind `page`, from bookmarks), highlights (kind
+  `range`, from highlights) and notes are one table, `annotations`
+  (`supabase/migrations/0012_annotations.sql`). `copy_legacy_annotations()` copies
+  `bookmarks` and `highlights` rows with the same ids. Both old tables are kept until a
+  later cleanup. A note is 1 to 500 characters. After creation, only the note can change.
+- **Contents · Notes.** The contents popover has Contents and Notes tabs
+  (`src/components/reader-ui/TocPopover.tsx`). Notes has a Mine / Group filter. The Group
+  filter appears only when the book is linked to a group read
+  (`src/components/reader-ui/AnnotationList.tsx`, `src/components/reader-ui/ReaderNotes.tsx`).
+  Group items sit behind the groups flag; personal Notes do not (`ReaderNotes.tsx:75`).
+- **Per-item share.** Everything is private until shared. Sharing writes one `read_notes`
+  row that links to the item (`shareAnnotation` in `src/lib/db/read-notes.ts`). A shared
+  highlight quote is cut to 300 characters, and the result reports `truncated`. The
+  position comes from `locateCfi` (`src/reader/engine.ts:153`). An item whose section has
+  not rendered takes fraction 1, the end of its chapter (`src/reader/engine.ts:150`).
+  Unshare and deleting the item remove the group copy (cascade in `0012_annotations.sql`).
+- **Offline.** Outbox kinds `annotation-create`, `annotation-note` and `annotation-delete`
+  (`src/lib/offline/outbox.ts:59-61`). Queued `bookmark-*` and `highlight-*` entries
+  replay through shims (`src/lib/offline/outbox.ts:678`). Personal items are cached per
+  user and book for offline listing. Group items are not cached (`src/lib/db/annotations.ts:179`).
+  Group items and share/unshare are unavailable offline (`ReaderNotes.tsx:38`).
+- **Migrations.** `0010` creates `read_notes`, `visible_notes` and the milestone trigger
+  (it also replaces `record_read_milestones()`). `0011` adds the schedule backfill trigger
+  and replaces `read_notes_insert_own`. `0012` adds `annotations`, the `read_notes.annotation_id`
+  link and the copy step, and replaces `visible_notes` and `read_notes_insert_own`.
+- **Fixes.**
+  - Highlights were not painted, in production too, since `86f1f7a`. The class name is now one token, `leaf-hl-<id>`
+    (`src/reader/engine.ts:1220`).
+  - Highlights repaint after a chapter re-renders. The repaint runs on epub.js `rendered`,
+    which fires after `hooks.content` (`src/reader/engine.ts:593-596`).
+  - The annotation list sorts by position with epub.js `EpubCFI.compare`
+    (`src/reader/annotations.ts:103-113`).
+- **Not done.** The selection bar and touch page-turning are in progress (Phase 3,
+  `docs/NOTES_PLAN.md`).
+- **Logic/presentation coupling.** For the redesign: share and position logic is in
+  `src/components/reader-ui/ReaderNotes.tsx` and `src/components/reader-ui/group-notes.ts`.
+  The group note row is written twice: `GroupRow` in `src/components/reader-ui/AnnotationList.tsx`
+  and inline markup in `src/components/groups-ui/NotesList.tsx`. Masking and copy are in
+  `src/components/groups-ui/readModel.ts`.
+
 ## Feature — reading groups v1a (Claude, 2026-10-17)
 
 Readers had no way to read the same book together or see where the others were.

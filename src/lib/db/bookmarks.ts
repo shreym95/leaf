@@ -2,7 +2,7 @@
 // `highlights.ts` in shape and reasoning.
 //
 // These take an EXPLICIT Supabase client so the module stays browser-safe — the
-// reader's bookmark manager (`src/reader/bookmarks.ts`) imports it into a client
+// reader's annotation manager (`src/reader/annotations.ts`) imports it into a client
 // bundle, so it must never reach through to `@/lib/supabase/server` (which pulls
 // `next/headers`). Callers provide the client:
 //   - browser (bookmark manager): the browser client; RLS (`user_id =

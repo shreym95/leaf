@@ -1,5 +1,7 @@
 # Notes v1 — build plan
 
+**Status (2026-10-17):** Phases 0–2 built on `feat/groups-v1a`. Phase 3 in progress. Migration `0012` not yet applied.
+
 _Written 2026-10-17. Decisions from the founder, 2026-10-17. Ships in the same version as
 reading groups v1 (`feat/groups-v1a`). Nothing goes to `dev` until the whole version is
 done. Built with the same rules as `GROUPS_V1_BUILD.md`; this file says what changes and
@@ -109,8 +111,10 @@ Extends `GROUPS_V1_BUILD.md` §1. L1, L3–L10 apply as written, with one amendm
 
 ## 3. Outbox
 
-- **New annotation kinds** in the `OutboxKind` union: create, update (note text), delete,
-  share, unshare. Each has a payload type and a handler in `realHandlers()`.
+- **New annotation kinds** in the `OutboxKind` union: create, update (note text), delete.
+  Each has a payload type and a handler in `realHandlers()`. Share and unshare are not
+  queued: they need a connection and a synced item (§1). As built, a share sends an empty
+  prefix and suffix; anchoring context for other editions is a later step.
 - **Replay shims** for old queued `bookmark` and `highlight` entries. A queued entry from
   before the release replays as the matching annotation kind.
 - **Coalescing:** an update to the same item coalesces on its id. The latest intent wins.
