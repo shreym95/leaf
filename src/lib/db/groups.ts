@@ -27,6 +27,7 @@ import type {
   OutlineEntry,
   OutlinePosition,
 } from "@/lib/groups/types";
+import { parseSchedule } from "@/lib/groups/schedule";
 
 function resolveClient(client?: SupabaseClient): SupabaseClient {
   if (client) return client;
@@ -119,7 +120,7 @@ export interface GroupDetail {
   members: GroupMemberName[];
 }
 
-/** A `group_reads` row with its outline parsed. */
+/** A `group_reads` row with its outline and schedule parsed. */
 export type ParsedGroupRead = Omit<GroupRead, "outline"> & { outline: Outline };
 
 /** My `read_copies` row with its alignment parsed. */
@@ -147,7 +148,11 @@ export interface GroupProgressWrite {
 }
 
 function parseRead(row: GroupRead): ParsedGroupRead {
-  return { ...row, outline: parseOutline(row.outline) };
+  return {
+    ...row,
+    outline: parseOutline(row.outline),
+    schedule: parseSchedule(row.schedule),
+  };
 }
 
 function parseCopy(row: {

@@ -1,11 +1,11 @@
 import type {
   MilestonePoint,
-  MilestonePointDef,
   Outline,
   OutlineEntry,
   OutlinePosition,
   TocInput,
 } from "./types";
+import type { ScheduleCheckpoint } from "./schedule";
 
 /** A chapter at or past this fraction counts as finished. */
 // Must match the `end` rule in supabase/migrations/0009_group_reads.sql (record_read_milestones).
@@ -78,14 +78,34 @@ export function buildOutline(toc: readonly TocInput[]): Outline {
   return out;
 }
 
+/** `checkpoint:<i>`: a scheduled checkpoint at outline chapter `i` (0-based). */
+export type CheckpointPoint = `checkpoint:${number}`;
+
+/** Every point a position can reach: the milestone kinds plus scheduled checkpoints. */
+export type AnyMilestonePoint = MilestonePoint | CheckpointPoint;
+
+/** A milestone point definition in outline coordinates, scheduled checkpoints included. */
+export interface OutlinePointDef {
+  point: AnyMilestonePoint;
+  chapterIndex: number;
+  chapterFraction: number;
+  /** Part label for `part:<n>`; the chapter label for `checkpoint:<i>`; null otherwise. */
+  label: string | null;
+}
+
 /**
  * The milestone points of an outline, in reading order: one `part:<n>` per Part (at its
  * first chapter), `half` (start of the chapter at the middle of the outline; omitted
  * for a single-chapter book) and `end` (the last chapter at END_FRACTION_THRESHOLD).
+ * With a schedule, one `checkpoint:<i>` per checkpoint whose chapter is in the outline,
+ * at END_FRACTION_THRESHOLD of that chapter. Without one the result is unchanged.
  */
-export function milestonePoints(outline: Outline): MilestonePointDef[] {
+export function milestonePoints(
+  outline: Outline,
+  schedule?: readonly ScheduleCheckpoint[] | null,
+): OutlinePointDef[] {
   if (outline.length === 0) return [];
-  const defs: MilestonePointDef[] = [];
+  const defs: OutlinePointDef[] = [];
 
   const seen = new Set<number>();
   for (const e of outline) {
@@ -115,6 +135,18 @@ export function milestonePoints(outline: Outline): MilestonePointDef[] {
     label: null,
   });
 
+  for (const c of schedule ?? []) {
+    if (!Number.isInteger(c.chapter_index)) continue;
+    if (c.chapter_index < 0 || c.chapter_index > outline.length - 1) continue;
+    const entry = outline[c.chapter_index];
+    defs.push({
+      point: `checkpoint:${c.chapter_index}`,
+      chapterIndex: c.chapter_index,
+      chapterFraction: END_FRACTION_THRESHOLD,
+      label: entry.label,
+    });
+  }
+
   // Stable sort keeps part < half < end when they land on the same spot.
   return defs.sort(
     (a, b) =>
@@ -122,19 +154,37 @@ export function milestonePoints(outline: Outline): MilestonePointDef[] {
   );
 }
 
-/** Which milestone points a position has reached (at or behind it), in reading order. */
+/** The label a reader sees for a checkpoint: "Through <chapter label>". */
+export function checkpointLabel(chapterLabel: string): string {
+  return `Through ${chapterLabel}`;
+}
+
+/**
+ * Which milestone points a position has reached (at or behind it), in reading order.
+ *
+ * `finished` (the read's `read_progress.finished_at` is set) reaches `end` and every
+ * checkpoint, as the trigger does. Part and half are position-only.
+ *
+ * Mirrors `record_read_milestones()` in supabase/migrations/0010_read_notes.sql.
+ * Keep the two in lockstep: the trigger records what this function reports.
+ */
 export function pointsReached(
   outline: Outline,
   position: OutlinePosition,
-): MilestonePoint[] {
+  schedule?: readonly ScheduleCheckpoint[] | null,
+  finished = false,
+): AnyMilestonePoint[] {
   const { chapterIndex } = position;
-  if (!Number.isFinite(chapterIndex) || chapterIndex < 0) return [];
+  const validPosition = Number.isFinite(chapterIndex) && chapterIndex >= 0;
+  if (!validPosition && !finished) return [];
   const fraction = clamp01(position.chapterFraction);
-  return milestonePoints(outline)
+  return milestonePoints(outline, schedule)
     .filter(
       (d) =>
-        chapterIndex > d.chapterIndex ||
-        (chapterIndex === d.chapterIndex && fraction >= d.chapterFraction),
+        (validPosition &&
+          (chapterIndex > d.chapterIndex ||
+            (chapterIndex === d.chapterIndex && fraction >= d.chapterFraction))) ||
+        (finished && (d.point === "end" || d.point.startsWith("checkpoint:"))),
     )
     .map((d) => d.point);
 }
