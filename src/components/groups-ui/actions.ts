@@ -3,6 +3,8 @@
  * throws an Error carrying the server's plain message otherwise.
  */
 
+import type { ScheduleCheckpoint } from "@/lib/groups/schedule";
+
 const NETWORK_ERROR = "Could not reach the server. Try again.";
 
 async function call<T>(
@@ -146,6 +148,34 @@ export async function removeGroupRead(
     throw new Error(REMOVE_READ_ERROR);
   }
   if (!res.ok) throw new Error(REMOVE_READ_ERROR);
+}
+
+const SCHEDULE_ERROR = "Couldn't save. Try again.";
+
+/**
+ * Replace a read's schedule (owner, or the member who added the read). `null` clears
+ * it. A 400 shows the route's own message; any other failure shows the plain one.
+ */
+export async function setReadSchedule(
+  groupId: string,
+  readId: string,
+  schedule: ScheduleCheckpoint[] | null,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `/api/groups/${encodeURIComponent(groupId)}/reads/${encodeURIComponent(readId)}`,
+      jsonInit("PATCH", { schedule }),
+    );
+  } catch {
+    throw new Error(SCHEDULE_ERROR);
+  }
+  if (res.ok) return;
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    if (typeof body?.error === "string" && body.error) throw new Error(body.error);
+  }
+  throw new Error(SCHEDULE_ERROR);
 }
 
 /** Who may remove a read: the group owner, or the member who added it. */

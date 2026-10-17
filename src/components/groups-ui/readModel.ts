@@ -2,12 +2,21 @@
 // the milestone feed. No React, no data access.
 //
 // Masking rule (one rule, used by the feed): a Part you have not reached is named by
-// its number only ("Part 3"), never by its title. "Halfway" and "The end" are never
+// its number only ("Part 3"), never by its title. A checkpoint you have not reached is
+// named by its position only ("Checkpoint 2"). "Halfway" and "The end" are never
 // masked. Arrival order is shown; time gaps and pace never are.
 
-import { milestonePoints } from "@/lib/groups/outline";
+import { checkpointLabel, milestonePoints } from "@/lib/groups/outline";
+import type { ScheduleCheckpoint } from "@/lib/groups/schedule";
 import type { Outline } from "@/lib/groups/types";
-import type { GroupMemberName, ReadMilestone, ReadProgress } from "@/lib/types";
+import { notesByChapter } from "@/lib/db/read-notes";
+import type {
+  GroupMemberName,
+  ReadMilestone,
+  ReadNoteKind,
+  ReadProgress,
+  VisibleReadNote,
+} from "@/lib/types";
 import { memberDisplayName } from "./MemberList";
 
 export interface Placement {
@@ -70,6 +79,21 @@ export function reachedPoints(
   );
 }
 
+/**
+ * A checkpoint's label once the viewer has reached it; otherwise its position among the
+ * checkpoints only ("Checkpoint 2"), the same way an unreached Part shows its number.
+ */
+function checkpointName(
+  reached: Set<string>,
+  point: string,
+  chapterLabel: string | null,
+  ordinal: number,
+): string {
+  return reached.has(point) && chapterLabel
+    ? checkpointLabel(chapterLabel)
+    : `Checkpoint ${ordinal}`;
+}
+
 /** A Part's title once the viewer has reached it; otherwise its number only. */
 export function partTitle(
   reached: Set<string>,
@@ -93,14 +117,19 @@ export function buildFeed({
   milestones,
   members,
   viewerId,
+  schedule,
 }: {
   outline: Outline;
   milestones: ReadMilestone[];
   members: GroupMemberName[];
   viewerId: string;
+  schedule?: readonly ScheduleCheckpoint[] | null;
 }): FeedItem[] {
-  const defs = new Map(milestonePoints(outline).map((d) => [d.point as string, d]));
+  const defs = new Map(
+    milestonePoints(outline, schedule).map((d) => [d.point as string, d]),
+  );
   const order = [...defs.keys()];
+  const checkpointKeys = order.filter((k) => k.startsWith("checkpoint:"));
   const memberById = new Map(members.map((m) => [m.user_id, m]));
 
   // Current members' arrivals only, oldest first.
@@ -117,6 +146,14 @@ export function buildFeed({
   function labelOf(point: string, n: number | null): string {
     if (point === "half") return "Halfway";
     if (point === "end") return "The end";
+    if (point.startsWith("checkpoint:")) {
+      return checkpointName(
+        viewerReached,
+        point,
+        defs.get(point)?.label ?? null,
+        checkpointKeys.indexOf(point) + 1,
+      );
+    }
     return partTitle(viewerReached, n ?? 0, defs.get(point)?.label ?? null);
   }
 
@@ -161,4 +198,98 @@ const dateFormat = new Intl.DateTimeFormat("en", {
 export function formatDay(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : dateFormat.format(date);
+}
+
+/** One checkpoint of a read's schedule, ready to show. */
+export interface ScheduleRow {
+  chapterIndex: number;
+  /** "Through <chapter label>". */
+  label: string;
+  /** `YYYY-MM-DD`. */
+  dueOn: string;
+  /** True when the viewer has reached this checkpoint. */
+  reached: boolean;
+}
+
+/** Schedule rows in order. Checkpoints whose chapter is not in the outline are dropped. */
+export function scheduleRows(
+  outline: Outline,
+  schedule: readonly ScheduleCheckpoint[],
+  reached: Set<string>,
+): ScheduleRow[] {
+  const rows: ScheduleRow[] = [];
+  for (const c of schedule) {
+    const entry = outline[c.chapter_index];
+    if (!entry) continue;
+    rows.push({
+      chapterIndex: c.chapter_index,
+      label: checkpointLabel(entry.label),
+      dueOn: c.due_on,
+      reached: reached.has(`checkpoint:${c.chapter_index}`),
+    });
+  }
+  return rows;
+}
+
+/** Local calendar date as `YYYY-MM-DD`. */
+export function todayIso(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** True when a checkpoint date is before today. Both arguments are `YYYY-MM-DD`. */
+export function isPastDue(dueOn: string, today: string): boolean {
+  return dueOn < today;
+}
+
+export interface NoteItem {
+  id: string;
+  kind: ReadNoteKind;
+  /** The note's text; null for a page mark. */
+  text: string | null;
+  /** "You" for the viewer's own items. */
+  name: string;
+  isSelf: boolean;
+}
+
+export interface NoteGroup {
+  chapterIndex: number;
+  label: string;
+  items: NoteItem[];
+}
+
+/**
+ * Visible notes grouped by outline chapter, in outline order. Chapters with no notes
+ * are left out. The input is already gated by `visible_notes`; nothing is revealed or
+ * filtered here beyond dropping highlights (not written in v1).
+ */
+export function groupNotes(
+  outline: Outline,
+  notes: readonly VisibleReadNote[],
+  members: GroupMemberName[],
+  viewerId: string,
+): NoteGroup[] {
+  const byChapter = notesByChapter(notes.filter((n) => n.kind !== "highlight"));
+  const memberById = new Map(members.map((m) => [m.user_id, m]));
+  const groups: NoteGroup[] = [];
+  for (const entry of outline) {
+    const here = byChapter.get(entry.index);
+    if (!here || here.length === 0) continue;
+    groups.push({
+      chapterIndex: entry.index,
+      label: entry.label,
+      items: here.map((n) => {
+        const isSelf = n.user_id === viewerId;
+        const member = memberById.get(n.user_id);
+        return {
+          id: n.id,
+          kind: n.kind,
+          text: n.kind === "note" ? n.note : null,
+          name: isSelf ? "You" : member ? memberDisplayName(member) : "Someone",
+          isSelf,
+        };
+      }),
+    });
+  }
+  return groups;
 }

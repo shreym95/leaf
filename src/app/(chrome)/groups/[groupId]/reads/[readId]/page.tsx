@@ -9,6 +9,7 @@ import {
   listMilestones,
   listReads,
 } from "@/lib/db/groups";
+import { listVisibleNotes } from "@/lib/db/read-notes";
 import { GROUPS_ENABLED } from "@/lib/groups/flag";
 import { ReadScreen } from "@/components/groups-ui";
 
@@ -41,10 +42,12 @@ export default async function GroupReadPage({
   const read = reads.find((r) => r.id === readId);
   if (!read) notFound();
 
-  const [progress, milestones, copy] = await Promise.all([
+  // A failed notes read hides the notes section only; the rest of the page still renders.
+  const [progress, milestones, copy, notes] = await Promise.all([
     getReadProgress(readId, supabase),
     listMilestones(readId, supabase),
     getMyCopy(user.id, readId, supabase),
+    listVisibleNotes(readId, supabase).catch(() => null),
   ]);
 
   // Owner first, then by join order.
@@ -65,6 +68,7 @@ export default async function GroupReadPage({
         source: read.source,
         outline: read.outline,
         createdBy: read.created_by,
+        schedule: read.schedule,
       }}
       members={members}
       progress={progress}
@@ -74,6 +78,7 @@ export default async function GroupReadPage({
           ? { bookId: copy.bookId, confidence: copy.alignment?.confidence ?? null }
           : null
       }
+      notes={notes}
     />
   );
 }
