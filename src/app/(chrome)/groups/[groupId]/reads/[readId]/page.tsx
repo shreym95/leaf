@@ -64,6 +64,7 @@ export default async function GroupReadPage({
         author: read.author,
         source: read.source,
         outline: read.outline,
+        createdBy: read.created_by,
       }}
       members={members}
       progress={progress}

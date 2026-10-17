@@ -44,7 +44,12 @@ export default async function GroupPage({
       name={detail.group.name}
       currentUserId={user.id}
       members={members}
-      reads={reads.map((r) => ({ id: r.id, title: r.title, author: r.author }))}
+      reads={reads.map((r) => ({
+        id: r.id,
+        title: r.title,
+        author: r.author,
+        createdBy: r.created_by,
+      }))}
     />
   );
 }

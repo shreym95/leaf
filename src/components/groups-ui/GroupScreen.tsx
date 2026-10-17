@@ -5,13 +5,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/primitives";
 import type { GroupMemberName } from "@/lib/types";
-import { addRead, leaveGroup, removeMember, renameGroup } from "./actions";
+import {
+  addRead,
+  canRemoveRead,
+  leaveGroup,
+  removeGroupRead,
+  removeMember,
+  renameGroup,
+} from "./actions";
 import { BookPickerDialog } from "./BookPickerDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GroupNameDialog } from "./GroupNameDialog";
 import { InviteLinkControl } from "./InviteLinkControl";
 import { MemberList, memberDisplayName } from "./MemberList";
 import { ReadList, type ReadListItem } from "./ReadList";
+import { RemoveReadDialog } from "./RemoveReadDialog";
 import { backLinkClass, sectionHeadingClass } from "./styles";
 import { useInviteLink } from "./useInviteLink";
 import { useOwnBooks, type OwnBook } from "./useOwnBooks";
@@ -38,6 +46,7 @@ export function GroupScreen({
   const [renameOpen, setRenameOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [removing, setRemoving] = useState<GroupMemberName | null>(null);
+  const [removingRead, setRemovingRead] = useState<ReadListItem | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const invite = useInviteLink(groupId);
   const ownBooks = useOwnBooks(currentUserId, addOpen);
@@ -56,6 +65,12 @@ export function GroupScreen({
   async function handleRemove() {
     if (!removing) return;
     await removeMember(groupId, removing.user_id);
+    router.refresh();
+  }
+
+  async function handleRemoveRead() {
+    if (!removingRead) return;
+    await removeGroupRead(groupId, removingRead.id);
     router.refresh();
   }
 
@@ -113,7 +128,12 @@ export function GroupScreen({
             Add a book
           </Button>
         </div>
-        <ReadList groupId={groupId} reads={reads} />
+        <ReadList
+          groupId={groupId}
+          reads={reads}
+          canRemove={(r) => canRemoveRead(isOwner, currentUserId, r.createdBy)}
+          onRemove={setRemovingRead}
+        />
       </section>
 
       <div>
@@ -140,6 +160,14 @@ export function GroupScreen({
         title="Add a book"
         books={ownBooks}
         onPick={handleAddBook}
+      />
+
+      <RemoveReadDialog
+        open={removingRead !== null}
+        onOpenChange={(next) => {
+          if (!next) setRemovingRead(null);
+        }}
+        onConfirm={handleRemoveRead}
       />
 
       <ConfirmDialog
