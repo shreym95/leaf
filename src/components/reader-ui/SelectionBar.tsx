@@ -1,7 +1,7 @@
 "use client";
 
 import type { PointerEvent, MouseEvent } from "react";
-import { barButtonClass } from "./bar-styles";
+import { barButtonClass, barNoticeClass } from "./bar-styles";
 
 /**
  * SelectionBar — the actions for a settled text selection, shown in the top
@@ -21,6 +21,8 @@ export interface SelectionBarProps {
   onHighlight: () => void;
   onNote: () => void;
   onClose: () => void;
+  /** A short status shown in the bar, e.g. why the selection could not be highlighted. */
+  notice?: string | null;
 }
 
 const DEFINE_MAX_WORDS = 3;
@@ -57,7 +59,7 @@ function onKeyboardClick(e: MouseEvent<HTMLButtonElement>, act: () => void): voi
   if (e.detail === 0) act();
 }
 
-export function SelectionBar({ text, onHighlight, onNote, onClose }: SelectionBarProps) {
+export function SelectionBar({ text, onHighlight, onNote, onClose, notice }: SelectionBarProps) {
   const eligible = canDefine(text);
 
   return (
@@ -95,6 +97,11 @@ export function SelectionBar({ text, onHighlight, onNote, onClose }: SelectionBa
             Define
           </a>
         )}
+        {notice && (
+          <span role="status" className={barNoticeClass}>
+            {notice}
+          </span>
+        )}
       </div>
 
       <button
@@ -102,6 +109,30 @@ export function SelectionBar({ text, onHighlight, onNote, onClose }: SelectionBa
         aria-label="Clear selection"
         className={`${barButtonClass} min-w-[var(--leaf-dock-pod-size)] justify-center`}
         onClick={onClose}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+export interface SelectionNoticeProps {
+  text: string;
+  onDismiss: () => void;
+}
+
+/** A status that stays in the top bar after the selection is gone, until dismissed. */
+export function SelectionNotice({ text, onDismiss }: SelectionNoticeProps) {
+  return (
+    <div className="flex h-full w-full min-w-0 items-center justify-between gap-[var(--leaf-space-3)]">
+      <span role="status" className={`${barNoticeClass} min-w-0`}>
+        {text}
+      </span>
+      <button
+        type="button"
+        aria-label="Dismiss message"
+        className={`${barButtonClass} min-w-[var(--leaf-dock-pod-size)] justify-center`}
+        onClick={onDismiss}
       >
         ✕
       </button>

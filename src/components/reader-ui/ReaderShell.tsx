@@ -33,7 +33,7 @@ import {
   createAnnotationManager,
   type AnnotationManager,
 } from "@/reader/annotations";
-import { listAnnotationsWithCache } from "@/lib/db/annotations";
+import { ANNOTATION_QUOTE_MAX, listAnnotationsWithCache } from "@/lib/db/annotations";
 import {
   enqueueAnnotationCreate,
   enqueueAnnotationDelete,
@@ -52,7 +52,7 @@ import { ReaderDock } from "./ReaderDock";
 import { useGroupMarkers } from "./useGroupMarkers";
 import { useGroupReads } from "./useGroupReads";
 import { ReaderNotes } from "./ReaderNotes";
-import { SelectionBar } from "./SelectionBar";
+import { SelectionBar, SelectionNotice } from "./SelectionBar";
 import { HighlightBar } from "./HighlightBar";
 import { NoteField } from "./NoteField";
 import { decideContentTap, isCoarsePointer } from "./tap-policy";
@@ -63,6 +63,12 @@ import { OfflineIndicator } from "./OfflineIndicator";
 import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
 import { useImmersive } from "./useImmersive";
+
+// Statuses for a Highlight or Note the shell could not make.
+const NOTICE_TEXT = {
+  long: "Selection too long to highlight.",
+  failed: "Couldn't highlight. Try again.",
+} as const;
 
 /**
  * ReaderShell — the client reader (SPEC §8). Owns the epub.js container + the
@@ -338,6 +344,9 @@ export function ReaderShell({
     null,
   );
   const selectionRef = useRef<{ cfiRange: string; text: string } | null>(null);
+  // Why the last Highlight or Note did not happen. "long" stays with the
+  // selection in the bar; "failed" outlives it until dismissed.
+  const [notice, setNotice] = useState<"long" | "failed" | null>(null);
   const [barItem, setBarItem] = useState<{ kind: "note" | "highlight"; id: string } | null>(
     null,
   );
@@ -685,6 +694,7 @@ export function ReaderShell({
           }
           selectionRef.current = sel;
           setSelection(sel);
+          setNotice(null);
         });
         unsubSelectionCleared = controller.onSelectionCleared(() => {
           lastCollapseAt.current = Date.now();
@@ -798,6 +808,7 @@ export function ReaderShell({
       collapseTimerRef.current = undefined;
     }
     setSelection(null);
+    setNotice(null);
     controllerRef.current?.clearSelection();
   }, []);
 
@@ -1010,6 +1021,12 @@ export function ReaderShell({
       const sel = selectionRef.current;
       const mgr = annotationsRef.current;
       if (!sel || !mgr || !annotationsReady) return;
+      // A quote over the manager's limit is refused before anything is painted.
+      // The selection stays in the bar so the reader can trim it or dismiss it.
+      if (Array.from(sel.text).length > ANNOTATION_QUOTE_MAX) {
+        setNotice("long");
+        return;
+      }
       // Taking the action drops the bar's record of the selection at once, so
       // the bar leaves with it rather than lingering through the grace window.
       dropSelection();
@@ -1022,7 +1039,9 @@ export function ReaderShell({
             if (saved && then === "note") setBarItem({ kind: "note", id: saved.id });
           },
           () => {
-            // highlight() swallows its own write errors; nothing to add here
+            // highlight() rejects on invalid input (it does not reach the write);
+            // the reader is told, not left with a bar that closed for nothing
+            setNotice("failed");
           },
         );
     },
@@ -1118,7 +1137,12 @@ export function ReaderShell({
           onHighlight={() => actOnSelection("highlight")}
           onNote={() => actOnSelection("note")}
           onClose={dropSelection}
+          notice={notice === "long" ? NOTICE_TEXT.long : null}
         />
+      );
+    } else if (notice === "failed") {
+      barNode = (
+        <SelectionNotice text={NOTICE_TEXT.failed} onDismiss={() => setNotice(null)} />
       );
     } else if (activeHighlight) {
       barNode = (
