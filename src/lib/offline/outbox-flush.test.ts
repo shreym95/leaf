@@ -132,23 +132,29 @@ describe("drain — revision check (B2)", () => {
   });
 });
 
-describe("drain — a transport failure stops the pass, in order", () => {
-  it("entries behind a transport failure are not attempted", async () => {
+describe("drain — a transport failure blocks only its own item, in order", () => {
+  // Replaces the earlier "entries behind a transport failure are not attempted"
+  // case, which pinned the old stop-everything rule. The new rule: a transport
+  // failure skips later entries of the SAME key (per-item FIFO), and other keys
+  // carry on. Covered in depth by outbox-resilience.test.ts.
+  it("entries of the same item behind a transport failure are not attempted; other items are", async () => {
     const store = makeStore();
     await store.enqueue({ kind: "reading-state", key: "a", payload: {}, ts: 1 });
-    await store.enqueue({ kind: "reading-state", key: "b", payload: {}, ts: 2 });
+    await store.enqueue({ kind: "reading-state", key: "a", payload: {}, ts: 2 });
+    await store.enqueue({ kind: "reading-state", key: "b", payload: {}, ts: 3 });
 
     const seen: string[] = [];
     const result = await drain(store, {
       "reading-state": async (entry) => {
         seen.push(entry.key);
-        return "transport";
+        return entry.key === "a" ? "transport" : "applied";
       },
     });
 
-    expect(seen).toEqual(["a"]);
+    expect(seen).toEqual(["a", "b"]);
     expect(result.requeued).toBe(1);
-    expect(store.all()).toHaveLength(2);
+    expect(result.applied).toBe(1);
+    expect(store.all().map((e) => e.key)).toEqual(["a", "a"]);
   });
 });
 

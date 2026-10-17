@@ -373,17 +373,71 @@ export interface DrainResult {
   requeued: number;
 }
 
+/** Web Lock held for one whole flush pass, across every tab of this origin. */
+const FLUSH_LOCK = "leaf-outbox-flush";
+/** Web Lock held for one queue read-modify-write, across every tab. Short: IndexedDB only, never the network. */
+const QUEUE_LOCK = "leaf-outbox-queue";
+
 /**
- * Serialises every read-modify-write of the queue in this tab. Without it a
- * flush could mark an entry `attempted` after an enqueue had cancelled it, and
- * `IDBObjectStore.put` would silently resurrect the cancelled entry.
+ * Runs `task` under a cross-tab Web Lock when the browser has one. Without it
+ * (no Web Locks API) the per-tab chain / single-flight is the only guard.
+ */
+function withCrossTabLock<T>(name: string, task: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks || typeof locks.request !== "function") return task();
+  // The lock is held until the callback's promise settles; `task`'s outcome is
+  // forwarded to the caller, so the lock promise itself carries no value.
+  return new Promise<T>((resolve, reject) => {
+    locks.request(name, () => task().then(resolve, reject)).catch(reject);
+  });
+}
+
+/**
+ * Serialises every read-modify-write of the queue. Per tab it is a chain; across
+ * tabs it is the `QUEUE_LOCK` Web Lock. Without the cross-tab part, a flush in
+ * another tab could settle an entry (read its rev, then discard it) between an
+ * enqueue's read and its `put`, and the discard would drop the newer payload.
+ * Without the per-tab part, a flush could mark an entry `attempted` after an
+ * enqueue had cancelled it, and `IDBObjectStore.put` would resurrect it.
  * Nothing run under the lock awaits another locked call.
  */
 let queueChain: Promise<unknown> = Promise.resolve();
 function withQueueLock<T>(task: () => Promise<T>): Promise<T> {
-  const run = queueChain.then(() => task());
+  const run = queueChain.then(() => withCrossTabLock(QUEUE_LOCK, task));
   queueChain = run.catch(() => undefined);
   return run;
+}
+
+/**
+ * Per-request ceiling for one replay handler call. A handler whose request
+ * never settles (a dead socket with no error, a stalled tab) would otherwise
+ * hold the single-flight `running` promise forever: no later pass would run.
+ */
+export const HANDLER_TIMEOUT_MS = 20_000;
+
+/** This many transport failures in a row, on different items, end the pass:
+ *  the network is probably down, and every further attempt would only fail. */
+export const TRANSPORT_STREAK_LIMIT = 3;
+
+/** One handler call, bounded by `HANDLER_TIMEOUT_MS`. A throw or a timeout is a
+ *  transport failure: the entry stays queued and `attempted` stays set. */
+async function applyWithTimeout(
+  handler: ReplayHandler,
+  entry: QueuedEntry,
+): Promise<ReplayOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<ReplayOutcome>((resolve) => {
+    timer = setTimeout(() => resolve("transport"), HANDLER_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(() => handler(entry)), timeout]);
+  } catch {
+    // A handler must not throw, but if one slips through, be conservative
+    // and retry later rather than lose the write.
+    return "transport";
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The stored copy of an entry, or undefined once it has been discarded. */
@@ -396,7 +450,7 @@ interface PassOutcome {
   /** An entry was edited while it applied. It is kept, and the pass stops so
    *  that it re-applies before anything queued behind it. */
   changed: boolean;
-  /** A transport failure stopped the pass. Nothing behind it was attempted. */
+  /** The transport-failure streak limit stopped the pass. Nothing behind it was attempted. */
   stopped: boolean;
 }
 
@@ -404,11 +458,13 @@ interface PassOutcome {
  * One FIFO pass over the queue. Per entry:
  *   1. mark it `attempted` (persisted before the network, so a reload or a
  *      lost response still knows a request may have landed);
- *   2. apply it through its handler;
+ *   2. apply it through its handler (bounded by `HANDLER_TIMEOUT_MS`);
  *   3. discard it only if its `rev` is unchanged. A changed entry is kept and
  *      the pass stops, so the latest payload is re-applied first (B2).
- * A transport failure leaves the entry queued and stops the pass: the network
- * is down, and later entries must not overtake it.
+ * A transport failure leaves the entry queued and blocks only its own item
+ * key for the rest of this pass: later entries with that key are skipped (per-
+ * item FIFO, B3), and entries of other keys carry on. After
+ * `TRANSPORT_STREAK_LIMIT` transport failures in a row the pass stops.
  */
 async function runPass(
   store: OutboxStore,
@@ -417,9 +473,13 @@ async function runPass(
   const result: DrainResult = { applied: 0, skipped: 0, rejected: 0, requeued: 0 };
   const outcome: PassOutcome = { result, changed: false, stopped: false };
   const snapshot = await store.list();
+  const blockedKeys = new Set<string>();
+  let transportStreak = 0;
   for (const seen of snapshot) {
     const handler = handlers[seen.kind];
     if (!handler) continue;
+    // An earlier entry of this item failed in transport: this one must not overtake it.
+    if (blockedKeys.has(seen.key)) continue;
 
     // Read the live copy: the snapshot can be stale by now (cancelled, replaced).
     const applying = await withQueueLock(async () => {
@@ -432,14 +492,7 @@ async function runPass(
     });
     if (!applying) continue;
 
-    let verdict: ReplayOutcome;
-    try {
-      verdict = await handler(applying);
-    } catch {
-      // A handler must not throw, but if one slips through, be conservative
-      // and retry later rather than lose the write.
-      verdict = "transport";
-    }
+    const verdict = await applyWithTimeout(handler, applying);
 
     const settled = await withQueueLock(async () => {
       const now = await liveEntry(store, applying.id);
@@ -455,9 +508,15 @@ async function runPass(
     }
     if (verdict === "transport") {
       result.requeued += 1;
-      outcome.stopped = true;
-      break;
+      blockedKeys.add(seen.key);
+      transportStreak += 1;
+      if (transportStreak >= TRANSPORT_STREAK_LIMIT) {
+        outcome.stopped = true;
+        break;
+      }
+      continue;
     }
+    transportStreak = 0;
     if (verdict === "applied") result.applied += 1;
     else if (verdict === "skipped") result.skipped += 1;
     else result.rejected += 1;
@@ -465,20 +524,30 @@ async function runPass(
   return outcome;
 }
 
+/** One pass under the cross-tab flush lock. Two tabs must never replay the same
+ *  queue at once: the older payload could land after the newer one. */
+function lockedPass(
+  store: OutboxStore,
+  handlers: () => Partial<Record<OutboxKind, ReplayHandler>>,
+): Promise<PassOutcome> {
+  return withCrossTabLock(FLUSH_LOCK, () => runPass(store, handlers()));
+}
+
 /** Replay every queued entry once, oldest first. An entry a handler doesn't
  *  recognise is left alone (forward compatibility), not discarded. A transport
- *  failure stops the pass and leaves the rest queued, in order. */
+ *  failure leaves that item's later entries queued, in order; other items
+ *  carry on, until `TRANSPORT_STREAK_LIMIT` failures in a row stop the pass. */
 export async function drain(
   store: OutboxStore,
   handlers: Partial<Record<OutboxKind, ReplayHandler>>,
 ): Promise<DrainResult> {
-  return (await runPass(store, handlers)).result;
+  return (await lockedPass(store, () => handlers)).result;
 }
 
 export interface Flusher {
   /** Run a pass now. Requested while one is running: exactly one more pass
    *  runs after it. Resolves when the queue has no more applicable work, or a
-   *  transport failure stopped it. Never rejects. */
+   *  transport-failure streak stopped it. Never rejects. */
   flush(): Promise<void>;
   /** Resolves once no flush is running. Never rejects. */
   idle(): Promise<void>;
@@ -497,9 +566,9 @@ export function createFlusher(
       let again = true;
       while (again) {
         requested = false;
-        const pass = await runPass(store, handlers());
+        const pass = await lockedPass(store, handlers);
         // Re-run for an entry that changed mid-apply, or for a request that
-        // arrived while this pass ran. A transport stop waits for the next
+        // arrived while this pass ran. A streak stop waits for the next
         // request (online, load) rather than spinning offline.
         again = pass.changed || requested;
       }
