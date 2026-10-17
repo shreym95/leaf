@@ -108,6 +108,17 @@ needed.
 Include: the contents popover tabs (`TocPopover.tsx`, now with a Group tab) use
 `role="tab"` without a `tabpanel` / `aria-controls` association (found in v1b QA).
 
+### Test suite audit — with the Notes cleanup migration
+
+Founder, 2026-10-17. After this version ships, Levi lists tests that cover removed or
+compatibility-only code (legacy bookmark/highlight db modules kept for outbox replay,
+`TocPopover`'s deprecated Bookmarks/Group tab props) or that pin copy rather than
+behaviour. The founder approves the list; the tests are deleted together with the code in
+the Phase 4 cleanup (`NOTES_PLAN.md`). Also give the live-database integration tests a
+longer per-test timeout in config: "leaving deletes that member's progress…" takes over
+5 s against the live project and times out though its assertions pass (measured with
+`--testTimeout=30000`).
+
 ## Dropped
 
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
