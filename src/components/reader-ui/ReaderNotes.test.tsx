@@ -120,10 +120,10 @@ describe("ReaderNotes — group gating", () => {
 
     expect(screen.getByRole("radio", { name: "Group" })).toBeTruthy();
     await waitFor(() =>
-      expect(listVisibleNotes).toHaveBeenCalledWith("read-1"),
+      expect(listVisibleNotes).toHaveBeenCalledWith("read-1", expect.objectContaining({ from: expect.any(Function) })),
     );
     await waitFor(() =>
-      expect(listSharedReads).toHaveBeenCalledWith("a1"),
+      expect(listSharedReads).toHaveBeenCalledWith("a1", expect.objectContaining({ from: expect.any(Function) })),
     );
   });
 });
@@ -157,6 +157,7 @@ describe("ReaderNotes — sharing any item", () => {
           readId: "read-1",
           position: { chapterIndex: 0, chapterFraction: 0.5 },
         }),
+        expect.objectContaining({ from: expect.any(Function) }),
       ),
     );
   });
@@ -171,6 +172,7 @@ describe("ReaderNotes — sharing any item", () => {
     await waitFor(() =>
       expect(shareAnnotation).toHaveBeenCalledWith(
         expect.objectContaining({ position: { chapterIndex: 0, chapterFraction: 1 } }),
+        expect.objectContaining({ from: expect.any(Function) }),
       ),
     );
   });

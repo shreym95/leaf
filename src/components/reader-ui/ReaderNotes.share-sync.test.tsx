@@ -121,6 +121,7 @@ describe("ReaderNotes — share waits for the annotation writer", () => {
     await waitFor(() => expect(shareAnnotation).toHaveBeenCalledTimes(1));
     expect(shareAnnotation).toHaveBeenCalledWith(
       expect.objectContaining({ annotation: range, readId: "read-1" }),
+      expect.objectContaining({ from: expect.any(Function) }),
     );
   });
 

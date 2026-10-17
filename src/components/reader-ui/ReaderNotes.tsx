@@ -8,6 +8,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { GROUPS_ENABLED } from "@/lib/groups/flag";
+import { createClient } from "@/lib/supabase/client";
+
+/** The browser client, or undefined where Supabase is not configured (tests, demo). */
+function browserClient() {
+  try {
+    return createClient();
+  } catch {
+    return undefined;
+  }
+}
 import {
   listSharedReads,
   listVisibleNotes,
@@ -58,7 +68,7 @@ async function fetchReadNotes(
   const results = await Promise.all(
     reads.map(async (read) => {
       try {
-        return [read.readId, await listVisibleNotes(read.readId)] as const;
+        return [read.readId, await listVisibleNotes(read.readId, browserClient())] as const;
       } catch {
         return null;
       }
@@ -100,7 +110,7 @@ export function ReaderNotes({
       const results = await Promise.all(
         mine.map(async (a) => {
           try {
-            const rows = await listSharedReads(a.id);
+            const rows = await listSharedReads(a.id, browserClient());
             return { id: a.id, readIds: rows.map((r) => r.read_id) };
           } catch {
             return null;
@@ -218,7 +228,7 @@ export function ReaderNotes({
         contentSha256: read.copySha256,
         prefix: "",
         suffix: "",
-      });
+      }, browserClient());
       setSharedReadIds((prev) => ({
         ...prev,
         [id]: [...new Set([...(prev[id] ?? []), readId])],
@@ -232,7 +242,7 @@ export function ReaderNotes({
 
   const unshare = async (id: string, readId: string) => {
     try {
-      await unshareAnnotation(id, readId);
+      await unshareAnnotation(id, readId, browserClient());
       setSharedReadIds((prev) => ({
         ...prev,
         [id]: (prev[id] ?? []).filter((r) => r !== readId),

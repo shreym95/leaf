@@ -35,6 +35,16 @@ import {
   type AnnotationManager,
 } from "@/reader/annotations";
 import { ANNOTATION_QUOTE_MAX, listAnnotationsWithCache } from "@/lib/db/annotations";
+import { createClient } from "@/lib/supabase/client";
+
+/** The browser client, or undefined where Supabase is not configured (tests, demo). */
+function browserClient() {
+  try {
+    return createClient();
+  } catch {
+    return undefined;
+  }
+}
 import { createAnnotationWriter } from "@/lib/db/annotation-writer";
 import type { Annotation } from "@/lib/types";
 import {
@@ -646,7 +656,7 @@ export function ReaderShell({
             controller,
             bookId,
             userId,
-            load: () => listAnnotationsWithCache(userId, bookId),
+            load: () => listAnnotationsWithCache(userId, bookId, browserClient()),
             writer: annotationWriter,
             stylesFor: () => highlightStyles("copper", themeRef.current),
             // The engine's highlight click also reaches the content-tap path, so
