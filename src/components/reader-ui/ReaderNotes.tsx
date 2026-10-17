@@ -14,6 +14,7 @@ import {
   shareAnnotation,
   unshareAnnotation,
 } from "@/lib/db/read-notes";
+import type { AnnotationWriter } from "@/lib/db/annotation-writer";
 import type { Annotation, VisibleReadNote } from "@/lib/types";
 import type { OutlinePosition } from "@/lib/groups/types";
 import type { LocatedCfi } from "@/reader/engine";
@@ -41,6 +42,11 @@ export interface ReaderNotesProps {
   onJump: (target: string) => void;
   onSaveNote: (id: string, note: string | null) => void;
   onRemove: (id: string) => void;
+  /**
+   * The annotation writer. Share waits for an item's pending write to settle and
+   * refuses while the item's create is still queued. Absent: share as before.
+   */
+  writer?: Pick<AnnotationWriter, "settled" | "isPending">;
 }
 
 const STATUS_CLASS = "font-mono [font-size:var(--leaf-text-3xs)]";
@@ -71,6 +77,7 @@ export function ReaderNotes({
   onJump,
   onSaveNote,
   onRemove,
+  writer,
 }: ReaderNotesProps) {
   const groupOn = GROUPS_ENABLED && groupReads !== null && !offline;
   const [notesByRead, setNotesByRead] = useState<Record<string, VisibleReadNote[]>>({});
@@ -184,6 +191,13 @@ export function ReaderNotes({
   };
 
   const share = async (id: string, readId: string) => {
+    if (writer) {
+      await writer.settled(id);
+      if (await writer.isPending(id)) {
+        setStatus("Still saving. Try again in a moment.");
+        return;
+      }
+    }
     const item = mine.find((a) => a.id === id);
     const read = readById(readId);
     if (!item || !read || !groupReads) return;
