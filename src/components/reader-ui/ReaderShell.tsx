@@ -1004,11 +1004,7 @@ export function ReaderShell({
           <ReaderNotes
             mine={annotationList}
             groupReads={groupReads}
-            place={{
-              cfi: here.cfi,
-              spineHref: here.spineHref,
-              sectionFraction: here.sectionFraction,
-            }}
+            locateCfi={(cfi) => controllerRef.current?.locateCfi(cfi) ?? null}
             offline={offline}
             onJump={(target) => {
               setDeckOpen(false);

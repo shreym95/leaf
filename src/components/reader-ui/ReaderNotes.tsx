@@ -15,12 +15,14 @@ import {
   unshareAnnotation,
 } from "@/lib/db/read-notes";
 import type { Annotation, VisibleReadNote } from "@/lib/types";
+import type { OutlinePosition } from "@/lib/groups/types";
+import type { LocatedCfi } from "@/reader/engine";
 import { AnnotationList } from "./AnnotationList";
 import type {
   AnnotationGroupContext,
   AnnotationListItem,
 } from "./annotation-list";
-import { chapterLabelOf, noteJump, outlinePositionFor, type PlaceInBook } from "./group-notes";
+import { chapterLabelOf, noteJump, outlinePositionFor } from "./group-notes";
 import type { GroupReadsState } from "./useGroupReads";
 
 export interface ReaderNotesProps {
@@ -28,8 +30,11 @@ export interface ReaderNotesProps {
   mine: Annotation[];
   /** The linked group reads, or null: no group requests, no Group filter. */
   groupReads: GroupReadsState | null;
-  /** The reader's current place. Sharing places an item from this, see `onShare`. */
-  place: PlaceInBook;
+  /**
+   * Locates any item's CFI in the book (`ReaderController.locateCfi`). Sharing
+   * places an item on a group read's outline from this, so every item can be shared.
+   */
+  locateCfi: (cfi: string) => LocatedCfi | null;
   /** Offline: group items and share/unshare are unavailable. */
   offline: boolean;
   /** Navigate to a CFI or href in the book (the reader closes its deck first). */
@@ -61,7 +66,7 @@ async function fetchReadNotes(
 export function ReaderNotes({
   mine,
   groupReads,
-  place,
+  locateCfi,
   offline,
   onJump,
   onSaveNote,
@@ -161,19 +166,30 @@ export function ReaderNotes({
     if (target) onJump(target.target);
   };
 
+  // An item's position on a group read's outline: where its CFI sits in my copy,
+  // mapped through the read's alignment. Null when either step cannot place it.
+  const placeIn = (cfi: string, readId: string): OutlinePosition | null => {
+    const read = readById(readId);
+    const located = read ? locateCfi(cfi) : null;
+    if (!read || !located) return null;
+    return outlinePositionFor(read, {
+      spineHref: located.spineHref,
+      sectionFraction: located.sectionFraction,
+    });
+  };
+
+  const canPlace = (id: string, readId: string): boolean => {
+    const item = mine.find((a) => a.id === id);
+    return item !== undefined && placeIn(item.cfi, readId) !== null;
+  };
+
   const share = async (id: string, readId: string) => {
     const item = mine.find((a) => a.id === id);
     const read = readById(readId);
     if (!item || !read || !groupReads) return;
-    // A share needs a position in the group's outline. The engine can place only the
-    // page on screen, so an item is shared from the page it sits on.
-    if (item.cfi !== place.cfi) {
-      setStatus("Open this page to share it.");
-      return;
-    }
-    const position = outlinePositionFor(read, place);
+    const position = placeIn(item.cfi, readId);
     if (!position) {
-      setStatus("This page can't be placed in the group read.");
+      setStatus("Can't place this item in the group's book.");
       return;
     }
     try {
@@ -232,6 +248,7 @@ export function ReaderNotes({
           });
           onRemove(id);
         }}
+        canPlace={canPlace}
         onShare={(id, readId) => void share(id, readId)}
         onUnshare={(id, readId) => void unshare(id, readId)}
         offline={offline}
