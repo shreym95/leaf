@@ -153,9 +153,14 @@ begin
 
   insert into public.annotations
     (id, user_id, book_id, kind, cfi, quote, note, label, percent, created_at, updated_at)
-  select h.id, h.user_id, h.book_id, 'range', h.cfi_range, h.text, h.note, null, null,
+  -- A legacy note that is empty or over 500 characters would fail the note check and
+  -- abort the whole copy. It is trimmed to 500 or nulled here; the legacy row keeps
+  -- the original until the cleanup migration. A highlight with no text is skipped.
+  select h.id, h.user_id, h.book_id, 'range', h.cfi_range, h.text,
+         nullif(left(h.note, 500), ''), null, null,
          h.created_at, h.created_at
   from public.highlights h
+  where coalesce(h.text, '') <> ''
   on conflict (id) do nothing;
   get diagnostics v_ranges = row_count;
 
@@ -246,6 +251,11 @@ create trigger annotations_sync_read_notes
 revoke all on function public.touch_annotation_updated_at()     from public, anon, authenticated;
 revoke all on function public.sync_read_notes_from_annotation() from public, anon, authenticated;
 revoke all on function public.copy_legacy_annotations()         from public, anon, authenticated;
+
+-- Only the note of an annotation can be changed by its owner: anchor, quote and
+-- kind are fixed at creation, so a shared copy can never drift from its source.
+revoke update on table public.annotations from authenticated;
+grant update (note) on table public.annotations to authenticated;
 
 revoke all on function public.visible_notes(uuid) from public, anon;
 grant execute on function public.visible_notes(uuid) to authenticated;
