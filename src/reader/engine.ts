@@ -929,7 +929,7 @@ export async function createReader(
           cfiRange,
           { id: opts.id },
           cb,
-          `leaf-hl leaf-hl-${opts.id}`,
+          `leaf-hl-${opts.id}`,
           opts.styles,
         );
       } catch {
