@@ -295,4 +295,98 @@ describe("ReaderShell — note card for a tapped highlight", () => {
     expect(within(card()!).getByRole("button", { name: "Edit note" })).toBeInTheDocument();
     expect(within(card()!).queryByRole("textbox")).toBeNull();
   });
+
+  it("Add note on a highlight without a note opens the card editor, empty and focused", async () => {
+    const user = userEvent.setup();
+    h.listAnnotations.mockImplementation(async () => [range()]);
+    renderShell();
+    await ready();
+    await tapHighlight();
+    expect(card()).toBeNull();
+    await user.click(within(bar("Highlight actions")!).getByRole("button", { name: "Add note" }));
+    const field = within(card()!).getByRole("textbox", { name: "Note" });
+    expect(field).toHaveValue("");
+    expect(field).toHaveFocus();
+    expect(bar("Highlight actions")).not.toBeNull();
+    await user.type(field, "a fresh thought");
+    await user.click(within(card()!).getByRole("button", { name: "Save" }));
+    expect(h.enqueueNote).toHaveBeenCalledWith("user-1", "a1", "a fresh thought");
+    expect(within(card()!).getByText("a fresh thought")).toBeInTheDocument();
+    expect(within(card()!).queryByRole("textbox")).toBeNull();
+  });
+
+  it("Cancel and Esc leave the note as it was and do not write", async () => {
+    const user = userEvent.setup();
+    h.listAnnotations.mockImplementation(async () => [range({ note: "first" })]);
+    renderShell();
+    await ready();
+    await tapHighlight();
+    await user.click(within(card()!).getByRole("button", { name: "Edit note" }));
+    await user.type(within(card()!).getByRole("textbox", { name: "Note" }), " draft");
+    await user.click(within(card()!).getByRole("button", { name: "Cancel" }));
+    expect(within(card()!).getByText("first")).toBeInTheDocument();
+    await user.click(within(card()!).getByRole("button", { name: "Edit note" }));
+    fireEvent.keyDown(within(card()!).getByRole("textbox", { name: "Note" }), { key: "Escape" });
+    expect(within(card()!).queryByRole("textbox")).toBeNull();
+    expect(card()).not.toBeNull();
+    expect(h.enqueueNote).not.toHaveBeenCalled();
+  });
+
+  it("the counter reads n/500 and Save is disabled over 500 characters", async () => {
+    const user = userEvent.setup();
+    h.listAnnotations.mockImplementation(async () => [range({ note: "first" })]);
+    renderShell();
+    await ready();
+    await tapHighlight();
+    await user.click(within(card()!).getByRole("button", { name: "Edit note" }));
+    const field = within(card()!).getByRole("textbox", { name: "Note" });
+    expect(within(card()!).getByText("5/500")).toBeInTheDocument();
+    fireEvent.change(field, { target: { value: "n".repeat(501) } });
+    expect(within(card()!).getByText("501/500")).toBeInTheDocument();
+    expect(within(card()!).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("a page tap with unsaved text keeps the editor open and turns nothing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      h.listAnnotations.mockImplementation(async () => [range({ note: "keep me" })]);
+      renderShell();
+      await ready();
+      await tapHighlight();
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      await user.click(within(card()!).getByRole("button", { name: "Edit note" }));
+      await user.type(within(card()!).getByRole("textbox", { name: "Note" }), " and more");
+      pageTap();
+      expect(within(card()!).getByRole("textbox", { name: "Note" })).toHaveValue("keep me and more");
+      expect(bar("Highlight actions")).not.toBeNull();
+      expect(h.next).not.toHaveBeenCalled();
+      expect(h.prev).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a page tap closes a clean editor, without turning the page", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      h.listAnnotations.mockImplementation(async () => [range({ note: "keep me" })]);
+      renderShell();
+      await ready();
+      await tapHighlight();
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      await user.click(within(card()!).getByRole("button", { name: "Edit note" }));
+      pageTap();
+      expect(card()).toBeNull();
+      expect(bar("Highlight actions")).toBeNull();
+      expect(h.next).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

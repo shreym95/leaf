@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { barEdgeStyle } from "./bar-styles";
 
 /**
  * ReaderTopBar — the reader's own top chrome (SPEC §8), replacing the app
@@ -102,8 +103,8 @@ export function ReaderTopBar({
           ? "1px solid var(--leaf-dock-border)"
           : undefined,
         paddingTop: `calc(var(--leaf-reader-bar-pad-y) + var(--leaf-safe-top))`,
-        paddingLeft: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-left))`,
-        paddingRight: `calc(var(--leaf-reader-bar-pad-x) + var(--leaf-safe-right))`,
+        // The horizontal inset is shared with the note card, so the two share one left edge.
+        ...barEdgeStyle,
       }}
     >
       {slot ? (

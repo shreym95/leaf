@@ -63,7 +63,6 @@ import { ReaderNotes } from "./ReaderNotes";
 import { SelectionBar, SelectionNotice } from "./SelectionBar";
 import { HighlightBar } from "./HighlightBar";
 import { BarPressHold } from "./BarPressHold";
-import { NoteField } from "./NoteField";
 import { HighlightNoteCard } from "./HighlightNoteCard";
 import { decideContentTap, HIGHLIGHT_TAP_GUARD_MS, isCoarsePointer } from "./tap-policy";
 import { EndOfBookPanel } from "./EndOfBookPanel";
@@ -351,12 +350,12 @@ export function ReaderShell({
   const [annotationList, setAnnotationList] = useState<Annotation[]>([]);
   const [annotationsReady, setAnnotationsReady] = useState(false);
   // ── Selection and highlight bar (NOTES_PLAN N3a / N3d) ─────────────────
-  // The top bar's slot shows, in priority order: the note field, the actions
-  // for a settled selection, or the actions for a tapped highlight. Refs
-  // mirror what the engine callbacks read, so those stay identity-stable.
-  // `selectionRef` is the one actionable selection: the action clears it, so a
-  // second press cannot act twice. `selection` only drives what is shown, and
-  // is kept for the collapse grace window.
+  // The top bar's slot shows, in priority order: the actions for a highlight
+  // whose note is being written, the actions for a settled selection, or the
+  // actions for a tapped highlight. Refs mirror what the engine callbacks read,
+  // so those stay identity-stable. `selectionRef` is the one actionable
+  // selection: the action clears it, so a second press cannot act twice.
+  // `selection` only drives what is shown, and is kept for the collapse grace window.
   const [selection, setSelection] = useState<{ cfiRange: string; text: string } | null>(
     null,
   );
@@ -364,13 +363,27 @@ export function ReaderShell({
   // Why the last Highlight or Note did not happen. "long" stays with the
   // selection in the bar; "failed" outlives it until dismissed.
   const [notice, setNotice] = useState<"long" | "failed" | null>(null);
-  const [barItem, setBarItem] = useState<{ kind: "note" | "highlight"; id: string } | null>(
-    null,
-  );
+  const [barItem, setBarItem] = useState<{ kind: "highlight"; id: string } | null>(null);
   const barItemRef = useRef(barItem);
   useEffect(() => {
     barItemRef.current = barItem;
   }, [barItem]);
+  // The note card's editor: the highlight it is for, and the draft. Null while
+  // the card only reads. The shell owns the draft so that opening the deck,
+  // which hides the card, does not lose unsaved text.
+  const [cardEdit, setCardEdit] = useState<{ id: string; draft: string } | null>(null);
+  const cardEditRef = useRef(cardEdit);
+  useEffect(() => {
+    cardEditRef.current = cardEdit;
+  }, [cardEdit]);
+  // Dismisses the highlight bar and its note card, and any unsaved draft with them.
+  const closeBar = useCallback(() => {
+    setBarItem(null);
+    setCardEdit(null);
+  }, []);
+  // Whether the note editor holds text that is not saved. Mirrored for the
+  // engine's tap callback and the keys: incidental page turns are absorbed then.
+  const cardUnsavedRef = useRef(false);
   // Whether the note card is up. Mirrored for the engine's tap callback, which
   // dismisses the card on a page tap rather than turning the page.
   const noteCardShownRef = useRef(false);
@@ -675,6 +688,9 @@ export function ReaderShell({
             // The engine's highlight click also reaches the content-tap path, so
             // the time of this tap is recorded and the tap policy ignores it.
             onHighlightTap: (a) => {
+              // Unsaved note text is not dropped by a tap on another highlight
+              // either; the content-tap path absorbs the same tap, so it turns nothing.
+              if (cardUnsavedRef.current) return;
               const at = Date.now();
               lastHighlightTapAt.current = at;
               tappedHighlightRef.current = { at, cfi: a.cfi };
@@ -691,6 +707,7 @@ export function ReaderShell({
                 controllerRef.current?.clearSelection();
               }
               setBarItem({ kind: "highlight", id: a.id });
+              setCardEdit(null);
             },
           });
           annotationsRef.current = annotations;
@@ -730,9 +747,9 @@ export function ReaderShell({
           setSelection(sel);
           setNotice(null);
           // A new selection replaces a highlight bar, so closing the selection
-          // never reveals that bar underneath. A note field is left alone: its
-          // unsaved text would be lost.
-          setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
+          // never reveals that bar underneath. A note being written is left alone:
+          // its unsaved text would be lost.
+          if (!cardEditRef.current) setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
         });
         unsubSelectionCleared = controller.onSelectionCleared(() => {
           lastCollapseAt.current = Date.now();
@@ -863,9 +880,10 @@ export function ReaderShell({
         return;
       }
       // A page turn clears the selection and any tapped-highlight actions: both
-      // belong to the page on screen.
+      // belong to the page on screen. Unsaved note text stays put (the deck's
+      // own turns come through here while the card is hidden).
       if (selectionRef.current) dropSelection();
-      setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
+      if (!cardUnsavedRef.current) closeBar();
       turnsSinceJump.current += 1;
       if (turnsSinceJump.current > 8) setReturnTo(null);
       turnsSinceSyncOffer.current += 1;
@@ -889,7 +907,7 @@ export function ReaderShell({
         },
       );
     },
-    [closeEndPanel, setEndPanelOpen, dropSelection],
+    [closeEndPanel, setEndPanelOpen, dropSelection, closeBar],
   );
 
   const markFinishedByHand = useCallback(() => {
@@ -932,7 +950,10 @@ export function ReaderShell({
         noteCardShownRef.current &&
         now - lastHighlightTapAt.current >= HIGHLIGHT_TAP_GUARD_MS
       ) {
-        setBarItem(null);
+        // Unsaved note text is never discarded by a tap: the tap is absorbed and
+        // the editor stays open. Save, Cancel or Esc decide what happens to it.
+        if (cardUnsavedRef.current) return;
+        closeBar();
         return;
       }
       const action = decideContentTap({
@@ -948,16 +969,17 @@ export function ReaderShell({
       }
       if (action === "prev" || action === "next") turnAndCloseDeck(action);
     };
-  }, [dropSelection, turnAndCloseDeck]);
+  }, [dropSelection, turnAndCloseDeck, closeBar]);
 
   // Opening the deck hides the bar, so its selection and highlight actions are
   // dropped here, on the open itself. A note being written is kept (it is only
-  // hidden, not discarded).
+  // hidden, not discarded): its draft and the highlight it belongs to stay, and
+  // the editor comes back with the deck closed.
   const setDeckOpenFromDock = useCallback(
     (open: boolean) => {
       if (open) {
         if (selectionRef.current) dropSelection();
-        setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
+        if (!cardEditRef.current) setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
       }
       setDeckOpen(open);
     },
@@ -1084,7 +1106,12 @@ export function ReaderShell({
         .highlight({ cfiRange: sel.cfiRange, quote: sel.text, label, percent })
         .then(
           (saved) => {
-            if (saved && then === "note") setBarItem({ kind: "note", id: saved.id });
+            // Note opens the card's editor on the highlight (empty, unless the
+            // range overlapped one that already has a note).
+            if (saved && then === "note") {
+              setBarItem({ kind: "highlight", id: saved.id });
+              setCardEdit({ id: saved.id, draft: saved.note ?? "" });
+            }
           },
           () => {
             // highlight() rejects on invalid input (it does not reach the write);
@@ -1096,27 +1123,20 @@ export function ReaderShell({
     [annotationsReady, dropSelection],
   );
 
-  const saveNoteFromBar = useCallback(
-    (id: string, note: string | null) => {
-      saveNote(id, note);
-      setBarItem(null);
-    },
-    [saveNote],
-  );
-
   const removeFromBar = useCallback(
     (id: string) => {
       removeAnnotation(id);
-      setBarItem(null);
+      closeBar();
     },
-    [removeAnnotation],
+    [removeAnnotation, closeBar],
   );
 
-  // The note card saves in place: unlike the slot's note field, it stays on the
-  // highlight, so the card returns to its read view with the new text.
+  // Save in the card writes the note and returns the card to its read view (or,
+  // for an emptied note, to the highlight's own bar, which offers Add note again).
   const saveNoteFromCard = useCallback(
     (id: string, note: string | null) => {
       saveNote(id, note);
+      setCardEdit(null);
     },
     [saveNote],
   );
@@ -1129,9 +1149,14 @@ export function ReaderShell({
 
       if (e.key === "Escape") {
         if (deckOpen) return; // ReaderDock owns Esc while the deck is open
-        // The bar goes first: the note field or the highlight sheet, then a selection.
+        // The bar goes first: an open note editor cancels its draft, then the
+        // highlight bar and its card, then a selection.
+        if (cardEditRef.current) {
+          setCardEdit(null);
+          return;
+        }
         if (barItemRef.current) {
-          setBarItem(null);
+          closeBar();
           return;
         }
         if (selectionRef.current) {
@@ -1148,10 +1173,10 @@ export function ReaderShell({
 
       if (isTypingTarget(e.target)) return;
 
-      if (e.key === "ArrowRight") {
-        turnAndCloseDeck("next");
-      } else if (e.key === "ArrowLeft") {
-        turnAndCloseDeck("prev");
+      // A page key is incidental: with unsaved note text it turns nothing.
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        if (cardUnsavedRef.current) return;
+        turnAndCloseDeck(e.key === "ArrowRight" ? "next" : "prev");
       } else if (key === "f") {
         toggleImmersive();
       }
@@ -1167,29 +1192,55 @@ export function ReaderShell({
     exitImmersive,
     toggleImmersive,
     dropSelection,
+    closeBar,
   ]);
 
   // The bar's content, in priority order. Nothing while the deck is open.
   let barNode: ReactNode = null;
-  // The highlight whose note card is up, if any.
-  let noteCard: Annotation | null = null;
-  if (!deckOpen) {
-    const activeNote =
-      barItem?.kind === "note" ? annotationList.find((a) => a.id === barItem.id) : undefined;
-    const activeHighlight =
-      barItem?.kind === "highlight"
-        ? annotationList.find((a) => a.id === barItem.id)
-        : undefined;
-    if (activeNote) {
+  // The note card under the bar, if any: the editor while it is open on the
+  // active highlight, else the read view of a highlight that has a note.
+  let cardNode: ReactNode = null;
+  const activeHighlight = barItem ? annotationList.find((a) => a.id === barItem.id) : undefined;
+  const editingDraft =
+    activeHighlight && cardEdit && cardEdit.id === activeHighlight.id ? cardEdit : null;
+  // Unsaved text is the one thing a dismissal must not discard. Mirrored for
+  // the tap and key paths, which read it through refs.
+  const cardDirty =
+    activeHighlight !== undefined &&
+    editingDraft !== null &&
+    editingDraft.draft !== (activeHighlight.note ?? "");
+  useEffect(() => {
+    cardUnsavedRef.current = cardDirty;
+  }, [cardDirty]);
+  const noteCardFor = (a: Annotation, draft: string | null) => (
+    <HighlightNoteCard
+      key={a.id}
+      note={a.note ?? ""}
+      editing={draft !== null}
+      draft={draft ?? ""}
+      onDraftChange={(next) => setCardEdit({ id: a.id, draft: next })}
+      onEdit={() => setCardEdit({ id: a.id, draft: a.note ?? "" })}
+      onSave={(note) => saveNoteFromCard(a.id, note)}
+      onCancel={() => setCardEdit(null)}
+      onRemove={() => removeFromBar(a.id)}
+    />
+  );
+  if (!deckOpen && activeHighlight) {
+    if (editingDraft) {
       barNode = (
-        <NoteField
-          key={activeNote.id}
-          initial={activeNote.note ?? ""}
-          onSave={(note) => saveNoteFromBar(activeNote.id, note)}
-          onCancel={() => setBarItem(null)}
+        <HighlightBar
+          note={activeHighlight.note}
+          editing
+          onNote={() => setCardEdit({ id: activeHighlight.id, draft: "" })}
+          onRemove={() => removeFromBar(activeHighlight.id)}
+          onClose={closeBar}
         />
       );
-    } else if (selection) {
+      cardNode = noteCardFor(activeHighlight, editingDraft.draft);
+    }
+  }
+  if (!deckOpen && !editingDraft) {
+    if (selection) {
       barNode = (
         <SelectionBar
           text={selection.text}
@@ -1207,16 +1258,15 @@ export function ReaderShell({
       barNode = (
         <HighlightBar
           note={activeHighlight.note}
-          onNote={() => setBarItem({ kind: "note", id: activeHighlight.id })}
+          onNote={() => setCardEdit({ id: activeHighlight.id, draft: "" })}
           onRemove={() => removeFromBar(activeHighlight.id)}
-          onClose={() => setBarItem(null)}
+          onClose={closeBar}
         />
       );
-      if (activeHighlight.note) noteCard = activeHighlight;
+      if (activeHighlight.note) cardNode = noteCardFor(activeHighlight, null);
     }
   }
-  const cardItem: Annotation | null = noteCard;
-  const noteCardShown = cardItem !== null;
+  const noteCardShown = cardNode !== null;
   useEffect(() => {
     noteCardShownRef.current = noteCardShown;
   }, [noteCardShown]);
@@ -1237,16 +1287,7 @@ export function ReaderShell({
             hidden={immersive && !deckOpen && shown === null}
             onToggleImmersive={toggleImmersive}
             slot={shown ?? undefined}
-            card={
-              cardItem?.note ? (
-                <HighlightNoteCard
-                  key={cardItem.id}
-                  note={cardItem.note}
-                  onSave={(note) => saveNoteFromCard(cardItem.id, note)}
-                  onRemove={() => removeFromBar(cardItem.id)}
-                />
-              ) : undefined
-            }
+            card={cardNode}
           />
         )}
       </BarPressHold>

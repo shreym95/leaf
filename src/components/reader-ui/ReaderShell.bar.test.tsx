@@ -237,7 +237,7 @@ describe("ReaderShell — selection bar in the top bar slot", () => {
     );
   });
 
-  it("Note opens the note field, and Save writes the note", async () => {
+  it("Note opens the card editor, and Save writes the note", async () => {
     const user = userEvent.setup();
     renderShell();
     await ready();
@@ -248,17 +248,22 @@ describe("ReaderShell — selection bar in the top bar slot", () => {
     );
     // The finger lifts: the hold releases one frame later.
     fireEvent.pointerUp(window, { button: 0 });
-    const field = await screen.findByRole("textbox", { name: "Note" });
+    // The editor lives in the note card under the bar, never in the bar's slot.
+    const card = await screen.findByRole("region", { name: "Note" });
+    const field = within(card).getByRole("textbox", { name: "Note" });
     expect(field).toHaveFocus();
+    expect(bar("Selected text actions")).toBeNull();
     await user.type(field, "remember this");
-    expect(screen.getByText("13/500")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(within(card).getByText("13/500")).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Save" }));
     expect(h.enqueueNote).toHaveBeenCalledWith(
       "user-1",
       expect.any(String),
       "remember this",
     );
     expect(screen.queryByRole("textbox", { name: "Note" })).toBeNull();
+    const saved = screen.getByRole("region", { name: "Note" });
+    expect(within(saved).getByText("remember this")).toBeInTheDocument();
     expect(bar("Selected text actions")).toBeNull();
   });
 
