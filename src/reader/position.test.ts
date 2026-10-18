@@ -440,7 +440,7 @@ describe("restore merges local + server (defect: offline restore lost position)"
     vi.useRealTimers();
   });
 
-  it("offers, but does NOT apply, a server position that is further along than the local cache", async () => {
+  it("offers, but does NOT apply, a server position that is newer and further along than the local cache", async () => {
     // Corrected behaviour: a silent second `goTo` for a server position
     // nobody asked for is a destructive, reader-initiated-by-nobody jump
     // (docs/REVISED_PLAN.md §8(c) — a passive prompt, never silent
@@ -451,7 +451,7 @@ describe("restore merges local + server (defect: offline restore lost position)"
       user_id: "u1",
       cfi: "server-cfi",
       percent: 0.9,
-      updated_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
     });
     writeCachedPosition("book1", {
       cfi: "local-cfi",

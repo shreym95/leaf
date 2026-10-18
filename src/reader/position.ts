@@ -145,6 +145,33 @@ export function isMeaningfullyAhead(
 }
 
 /**
+ * Whether the server's row should be OFFERED to a reader sitting at `local`
+ * (sync-offer rule, replacing furthest-wins for the offer only).
+ *
+ * Newest-write-wins, matching the write path (`readingStateHandler` in
+ * `src/lib/offline/outbox.ts`): the server row is offered only when it was
+ * written AFTER the local cache entry, so a deliberate backwards move that has
+ * not synced yet is never offered back to a further page, and a newer
+ * backwards position from another device IS offered. Positions must also
+ * differ by more than the float32 margin in either direction, and the same CFI
+ * never qualifies.
+ *
+ * Clock skew between devices is accepted: both timestamps are client clocks.
+ */
+function shouldOfferServer(
+  local: CachedPosition,
+  server: CachedPosition,
+): boolean {
+  if (local.cfi === server.cfi) return false;
+  if (
+    Math.abs(server.percent - local.percent) <= SYNC_OFFER_MIN_PERCENT_AHEAD
+  ) {
+    return false;
+  }
+  return Date.parse(server.updatedAt) > Date.parse(local.updatedAt);
+}
+
+/**
  * `navigator.onLine` is asymmetric (see `OfflineIndicator`'s own comment,
  * `src/components/reader-ui/OfflineIndicator.tsx`): a browser only ever
  * reports `false` when it's SURE there's no link at all, so that side is
@@ -430,23 +457,24 @@ export function trackPosition(
             // delegates to `isFurtherAlong`'s STRICT percent comparison —
             // exactly what a float32-rounded server percent trips on same-
             // device (see `SYNC_OFFER_MIN_PERCENT_AHEAD`'s comment).
-            // `isMeaningfullyAhead` is deliberately NOT `isFurtherAlong`:
+            // `shouldOfferServer` is deliberately NOT `isFurtherAlong`:
             // that function stays untouched (it also governs outbox conflict
             // resolution, where a float32-equal position being "not further"
-            // is harmless — same place either way) and this is a stricter,
-            // sync-offer-only bar: same CFI never qualifies, and otherwise
-            // the server must lead by a real margin, not a rounding artifact.
-            if (!isMeaningfullyAhead(local, server)) return;
+            // is harmless — same place either way). The offer rule is
+            // newest-write-wins: same CFI never qualifies, positions must
+            // differ by a real margin in either direction, and the server
+            // row must be newer than the local cache entry.
+            if (!shouldOfferServer(local, server)) return;
 
             // The reader may have kept reading (their own page turns) while
-            // this was in flight. If they've already reached or passed the
-            // offered position under their own steam — within the same
-            // tolerance — offering it now would be presenting stale,
-            // redundant, possibly-backwards-looking "news" — suppress rather
-            // than interrupt.
+            // this was in flight. If they've already reached the offered
+            // position under their own steam — within the same tolerance,
+            // in either direction — offering it now would be presenting
+            // stale, redundant "news" — suppress rather than interrupt.
             if (
               lastKnownPercent !== undefined &&
-              !isMeaningfullyAheadPercent(lastKnownPercent, server.percent)
+              Math.abs(server.percent - lastKnownPercent) <=
+                SYNC_OFFER_MIN_PERCENT_AHEAD
             ) {
               return;
             }
