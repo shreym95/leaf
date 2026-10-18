@@ -18,6 +18,8 @@ import type { ThemeName } from "@/lib/types";
 import { chapterLabelForHref, flattenToc } from "./navigation";
 import { isDragGesture, selectionHasText, watchIframeDocument } from "./selection";
 import type { Point } from "./selection";
+import { createScrollLock } from "./scroll-lock";
+import type { ScrollLock } from "./scroll-lock";
 export type { ReaderTocEntry } from "./navigation";
 import type { ReaderTocEntry } from "./navigation";
 
@@ -315,6 +317,14 @@ function sectionIndexOf(rendition: unknown): number | undefined {
   }
 }
 
+/** The element epub.js scrolls to turn pages (`manager.container`), if built yet. */
+function scrollerOf(rendition: unknown): HTMLElement | undefined {
+  const container = (
+    rendition as { manager?: { container?: HTMLElement } } | undefined
+  )?.manager?.container;
+  return container ?? undefined;
+}
+
 /**
  * The CFI at the start of what is on screen right now, or undefined when
  * epub.js cannot say (it throws mid-transition).
@@ -555,6 +565,7 @@ export async function createReader(
   let rendition: Rendition | undefined;
   let containerEl: HTMLElement | undefined;
   let contentPipeline: ReturnType<typeof registerContentPipeline> | undefined;
+  let scrollLock: ScrollLock | undefined;
   let locationsReady = false;
   let currentSpread: "always" | "none" = "none";
   let relayoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -703,6 +714,7 @@ export async function createReader(
       | undefined;
     const doc = holder?.document ?? holder?.contents?.document;
     if (!doc) return;
+    scrollLock?.watchDocument(doc);
     for (const [known, detach] of watchedDocs) {
       if (known.defaultView) continue;
       detach();
@@ -811,6 +823,7 @@ export async function createReader(
   // generating): it is always `"other"` and must leave `pending` alone, because
   // it did not come from the navigation `pending` is waiting on.
   function handleRelocated(raw: unknown, synthetic = false): void {
+    scrollLock?.onRelocated();
     const loc = raw as {
       start?: {
         cfi?: string;
@@ -915,7 +928,17 @@ export async function createReader(
     redisplayTimer = setTimeout(() => {
       redisplayTimer = undefined;
       const cfi = currentCfi();
-      if (rendition && cfi) void Promise.resolve(rendition.display(cfi)).catch(() => {});
+      if (rendition && cfi) {
+        const end = scrollLock?.beginMove();
+        try {
+          void Promise.resolve(rendition.display(cfi))
+            .catch(() => {})
+            .finally(() => end?.());
+        } catch (err) {
+          end?.();
+          throw err;
+        }
+      }
     }, 90);
   }
 
@@ -939,6 +962,13 @@ export async function createReader(
         () => currentSettings,
       );
 
+      // Keeps the page view still while the reader selects text (scroll-lock.ts).
+      // The scroller is resolved on use: epub.js builds it asynchronously.
+      scrollLock = createScrollLock({
+        scroller: () => scrollerOf(rendition),
+        host: container,
+      });
+      rendition.on("removed", () => scrollLock?.prune());
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
       rendition.on("click", handleContentClick);
@@ -1010,6 +1040,7 @@ export async function createReader(
 
     async next(): Promise<ReaderTurnResult> {
       const nav = beginNav("next");
+      const move = scrollLock?.beginMove();
       let ok = false;
       try {
         undriftForNextPage(rendition);
@@ -1032,44 +1063,53 @@ export async function createReader(
         return { moved, atEnd: false };
       } finally {
         endNav(nav, ok);
+        move?.();
       }
     },
 
     async prev(): Promise<void> {
       const from = sectionIndexOf(rendition);
       const nav = beginNav("prev");
-      let ok = false;
+      // Held across the snap-back below too: that frame is part of this turn.
+      const move = scrollLock?.beginMove();
       try {
-        await rendition?.prev();
-        ok = true;
-      } finally {
-        // Settled as soon as epub.js is done — NOT after the snap-back frame
-        // below, which can itself provoke a scroll-settle relocation that must
-        // not be mistaken for a second turn.
-        endNav(nav, ok);
-      }
-      // epub.js scrolls to the chapter end itself; re-assert it from geometry
-      // because that scroll can run against an unsettled width (D6). A frame
-      // later the prepended view has its final size.
-      await new Promise<void>((resolve) => {
-        if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(() => resolve());
-        } else {
-          resolve();
+        let ok = false;
+        try {
+          await rendition?.prev();
+          ok = true;
+        } finally {
+          // Settled as soon as epub.js is done — NOT after the snap-back frame
+          // below, which can itself provoke a scroll-settle relocation that must
+          // not be mistaken for a second turn.
+          endNav(nav, ok);
         }
-      });
-      snapBackToChapterEnd(rendition, from);
+        // epub.js scrolls to the chapter end itself; re-assert it from geometry
+        // because that scroll can run against an unsettled width (D6). A frame
+        // later the prepended view has its final size.
+        await new Promise<void>((resolve) => {
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => resolve());
+          } else {
+            resolve();
+          }
+        });
+        snapBackToChapterEnd(rendition, from);
+      } finally {
+        move?.();
+      }
     },
 
     async goTo(target: string): Promise<void> {
       // `display` accepts a CFI or a spine href.
       const nav = beginNav("jump");
+      const move = scrollLock?.beginMove();
       let ok = false;
       try {
         await rendition?.display(target);
         ok = true;
       } finally {
         endNav(nav, ok);
+        move?.();
       }
     },
 
@@ -1139,29 +1179,36 @@ export async function createReader(
         if (!rendition) return;
         const next = spreadFor(viewportWidth(containerEl));
         currentSpread = next;
-        // Let epub.js recompute columns/clip for the new spread.
-        rendition.spread(next);
-        // epub.js measures the container once and caches the pixel size, so a
-        // container that changed height without a window resize (entering or
-        // leaving immersive) keeps the old page height until it re-measures.
+        // The spread and the re-measure both move the scroller; they are one
+        // engine move, so neither is mistaken for a selection drift.
+        const move = scrollLock?.beginMove();
         try {
-          // The CONTENT box, not the border box: any padding on the container
-          // is outside the iframe, so measuring it tells epub.js the page is
-          // bigger than it is and the columns stop matching what's visible.
-          const box = contentBox(containerEl);
-          if (box && box.width > 0 && box.height > 0) {
-            // epub.js accepts a CFI as a third argument to hold the reader's
-            // place across the re-measure; its own types stop at two.
-            (
-              rendition.resize as unknown as (
-                w: number,
-                h: number,
-                cfi?: string,
-              ) => void
-            )(box.width, box.height, currentCfi());
+          // Let epub.js recompute columns/clip for the new spread.
+          rendition.spread(next);
+          // epub.js measures the container once and caches the pixel size, so a
+          // container that changed height without a window resize (entering or
+          // leaving immersive) keeps the old page height until it re-measures.
+          try {
+            // The CONTENT box, not the border box: any padding on the container
+            // is outside the iframe, so measuring it tells epub.js the page is
+            // bigger than it is and the columns stop matching what's visible.
+            const box = contentBox(containerEl);
+            if (box && box.width > 0 && box.height > 0) {
+              // epub.js accepts a CFI as a third argument to hold the reader's
+              // place across the re-measure; its own types stop at two.
+              (
+                rendition.resize as unknown as (
+                  w: number,
+                  h: number,
+                  cfi?: string,
+                ) => void
+              )(box.width, box.height, currentCfi());
+            }
+          } catch {
+            // Mid-transition measurement — the next relayout will catch it.
           }
-        } catch {
-          // Mid-transition measurement — the next relayout will catch it.
+        } finally {
+          move?.();
         }
       }, 150);
     },
@@ -1290,6 +1337,8 @@ export async function createReader(
         }
       }
       watchedDocs.clear();
+      scrollLock?.destroy();
+      scrollLock = undefined;
       lastPointerDown = undefined;
       highlightRegistry.clear();
       try {
