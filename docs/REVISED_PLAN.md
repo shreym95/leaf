@@ -329,6 +329,7 @@ Worth agreeing before building — "guaranteed" is not one thing:
   conflict rule. The honest default for a reader is **furthest-position-wins**, not
   last-write-wins — a reader almost never wants to be pulled backwards. Requires comparing CFIs
   (epub.js `EpubCFI.compare`), or `percent` as a cheap proxy, plus an `updated_at` tiebreak.
+  *Superseded 2026-10-18: replay is newest-write-wins, not furthest-position-wins. See CHANGELOG, 2026-10-18 in the top entry.*
 - **(c) Live.** Device B follows device A while both are open. Supabase Realtime on
   `reading_state` makes this small to build, but it raises a product question: should the page
   you are reading *move under you*? Probably not — the right shape is a passive prompt
@@ -338,6 +339,8 @@ Worth agreeing before building — "guaranteed" is not one thing:
 
 (a) durability → (b) convergence with furthest-wins → (c) a resume prompt rather than live
 following. (c) is the only part that changes what a reader sees, so it wants a design pass.
+
+*Superseded 2026-10-18: (b) is newest-write-wins for replay, not furthest-wins. See CHANGELOG, 2026-10-18.*
 
 ### Interactions
 

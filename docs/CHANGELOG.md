@@ -132,6 +132,65 @@ page marks, highlights and notes. Each item can be shared to a group read on its
   on a keyboard turn is `focusIsOnBars` (`ReaderShell.tsx:183`). A redesigned top bar and
   dock must carry the show and hide rules with them.
 
+### 2026-10-18 — reader selection, tap and position sync fixes
+
+- **Touch to Search workaround (not device-verified).** A reported tap calls
+  `preventDefault` on the iframe click and sets `data-leaf-tap` on the iframe
+  `documentElement` (`src/reader/engine.ts:811-819`, `handleContentClick`). The aim is that
+  Chrome Android's Touch to Search treats the tap as handled and does not select the word
+  under the finger. The basis is Chrome's 2015 tap-to-search documentation and an older Blink
+  heuristic; neither was re-checked against current Chrome. Status: not yet verified on a
+  device. Decision: if a device test shows Touch to Search still selects on tap, remove the
+  workaround. Covered by `src/reader/engine.tap-handled.test.ts`.
+- **Selection scroll lock.** `src/reader/scroll-lock.ts`, wired in `src/reader/engine.ts`.
+  While a selection holds text or a pointer is down, scrolls of the paginated container that
+  the engine did not start are reverted to the offset recorded at the last settled move.
+  Reason: epub.js's paginated container is already `overflow: hidden`, and the browser still
+  auto-scrolls it to follow selection handles, so nothing in epub.js stops the view moving.
+  - Engine-started moves are bracketed with `beginMove()` (`src/reader/engine.ts:1103`,
+    `:1134`, `:1165`, `:1244`).
+  - Moves the engine does not start, such as epub.js re-displaying on resize or an in-book
+    link tap, are bracketed by wrapping `rendition.manager.display`
+    (`bracketManagerDisplay`, `src/reader/engine.ts:339-346`). This is an epub.js 0.3.93
+    internal (`package.json`: `"epubjs": "^0.3.93"`). An epub.js upgrade must re-check it.
+  - Each bracket is capped at 5000 ms (`MOVE_CAP_MS`, `src/reader/scroll-lock.ts:36`).
+  - Resize, `fullscreenchange`, `orientationchange` and `screen.orientation` change release
+    the lock until the next relocation. The offset epub.js lands on becomes the page held
+    (`src/reader/scroll-lock.ts:184-191`).
+  - Selections may extend past the page edge. Drag-to-edge page turning is not built
+    (`src/reader/scroll-lock.ts:11-12`).
+- **Reading position sync.**
+  - **Replay is newest-write-wins.** A queued reading-state write is skipped only when the
+    server row's `updated_at` is later than the entry's time (`isQueuedWriteStale`,
+    `src/lib/offline/outbox.ts:254`, applied at `:901`). The position is not compared, so a
+    deliberate backwards move still lands. This replaces furthest-position-wins (§8(b), see
+    the superseded note there). Replays stamp `updated_at` with the queued entry's time
+    (`src/lib/offline/outbox.ts:904-909`, `updatedAt` in `src/lib/db/reading-state.ts:49-66`).
+  - **The "Continue at …" offer is narrower.** `shouldOfferServer`
+    (`src/reader/position.ts:165-176`) offers the server position only when its row is newer
+    than the local cache entry and the two percents differ by more than 0.5% in either
+    direction (`SYNC_OFFER_MIN_PERCENT_AHEAD`, `src/reader/position.ts:125`). The same CFI
+    never qualifies.
+  - **Opening writes nothing.** A book opened without a navigation writes no position. The
+    write gate (`src/reader/position.ts:297-339`, checked at `:438`) opens on the reader's
+    own navigation: a "next" or "prev", or a "jump" that is not restore's own. Restore's
+    landing and epub.js "other" relocations are not written.
+  - **Bug fixed (founder report, 2026-10-18).** Paging back and leaving quickly produced a
+    false "Continue at Ch. 1" offer to the further page.
+  - **Accepted debt** (also in `docs/BACKLOG.md`):
+    - Both timestamps are client clocks, so cross-device clock skew affects the comparison.
+    - Reading the server row and upserting it are not atomic. A server-side conditional
+      upsert is the later fix.
+    - A cache or queue timestamp can lag the read by up to the 1500 ms debounce
+      (`DEFAULT_DEBOUNCE_MS`, `src/reader/position.ts:86`).
+    - If restore's landing is reported before display settles, the reader's first jump after
+      opening (TOC, notes, bookmark, return chip, or accepting the offer) is not saved. The
+      next page turn saves (`src/reader/position.ts:305-311`).
+    - Dismissing the offer is not remembered, so it can reappear on the next open until the
+      reader turns a page.
+    - `pickFurthestPosition` (`src/reader/position.ts:268`) and `isMeaningfullyAhead`
+      (`src/reader/position.ts:143`) have no production callers.
+
 ## Feature — reading groups v1a (Claude, 2026-10-17)
 
 Readers had no way to read the same book together or see where the others were.
@@ -284,7 +343,7 @@ indefinitely — there was no bound on that leg at all).
   replaced, and `docs/REVISED_PLAN.md` §8(c) already calls for a passive
   prompt on cross-device sync, never silent convergence. Instead, a new
   `PositionTracker.onSyncOffer` fires once when the server is strictly
-  further along (`pickFurthestPosition`, unchanged), so the reader chrome can
+  further along (`pickFurthestPosition`, unchanged; superseded 2026-10-18: the offer now uses `shouldOfferServer`, newest wins), so the reader chrome can
   OFFER it. Suppressed if the tracker has since `stop()`-ped (reader tore
   down or navigated away) or if the reader's own reading has already reached
   or passed the offered position by the time the server answers.
@@ -346,7 +405,7 @@ reader document at all, and an offline reopen always lost the reader's place.
   the existing server write (including the outbox-queued offline path).
   `restore()` now reads local + server, uses `getSession()` (not `getUser()`)
   for identity so it resolves with no network, and takes the **furthest**
-  of the two via `pickFurthestPosition`, which reuses
+  of the two via `pickFurthestPosition` (superseded 2026-10-18: newest wins), which reuses
   `isFurtherAlong` (`lib/offline/outbox.ts`, §8(b)) rather than a second copy
   of the rule — so neither a stale server row nor a stale local entry can
   drag a reader backwards, offline or on.
@@ -482,7 +541,7 @@ device?" prompt — is still unscheduled.
   `transport` (re-queued) or `rejected` (discarded, never retried forever) by
   whether the error carries a structured Postgrest `code` — see the module
   header for the reasoning and its limits.
-- **§8(b) furthest-position-wins.** Reading-position replay compares the
+- **§8(b) furthest-position-wins.** *Superseded 2026-10-18: replay is now newest-write-wins; see "Reading position sync" under 2026-10-18 in the top entry.* Reading-position replay compares the
   queued `percent` against the row's *current* `percent` (not against other
   queued entries) and only overwrites when the queue is further along, with
   `updated_at` as a tiebreak — a write queued an hour ago can no longer drag a

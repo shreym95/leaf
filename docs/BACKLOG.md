@@ -119,6 +119,39 @@ longer per-test timeout in config: "leaving deletes that member's progress…" t
 5 s against the live project and times out though its assertions pass (measured with
 `--testTimeout=30000`).
 
+## Reader and sync — accepted debt, 2026-10-18
+
+Accepted with the 2026-10-18 changes (see CHANGELOG, 2026-10-18). Each is a decision to revisit.
+
+- **Touch to Search workaround is not device-verified.** `src/reader/engine.ts:811-819`
+  marks reported taps so Chrome Android's Touch to Search does not select on tap. Basis: Chrome's
+  2015 tap-to-search doc and an older Blink heuristic. Decision: remove it if a device test
+  shows Touch to Search still selects on tap.
+- **Scroll lock depends on an epub.js internal.** `bracketManagerDisplay`
+  (`src/reader/engine.ts:339-346`) wraps `rendition.manager.display` in epub.js 0.3.93. Re-check
+  on any epub.js upgrade.
+- **No drag-to-edge page turning.** Selections may extend past the page edge
+  (`src/reader/scroll-lock.ts:11-12`).
+- **Cross-device clock skew.** Both sides of the newest-write comparison use client clocks
+  (`src/lib/offline/outbox.ts:254`, `src/reader/position.ts:165-176`).
+- **Read-then-upsert is not atomic.** `src/lib/offline/outbox.ts:900-911`. A server-side
+  conditional upsert is the later fix.
+- **Position timestamp lag.** A cache or queue timestamp can lag the read by up to the 1500 ms
+  debounce (`src/reader/position.ts:86`).
+- **First jump after opening can go unsaved.** If restore's landing is reported before display
+  settles, the reader's first jump after opening is not saved; the next page turn saves
+  (`src/reader/position.ts:305-311`).
+- **Dismissed offer is not remembered.** The offer can reappear on the next open until the reader
+  turns a page.
+- **Unused helpers.** `pickFurthestPosition` (`src/reader/position.ts:268`) and
+  `isMeaningfullyAhead` (`src/reader/position.ts:143`) have no production callers.
+- **Test: closed write gate on pagehide and stop.** Add a test asserting that a closed write gate
+  writes nothing on `pagehide` and on `stop()` (`src/reader/position.ts:297-339`, `:424-440`).
+- **Flaky focus assertion under parallel runs.** `src/components/reader-ui/ReaderShell.bar.test.tsx:254`
+  (`toHaveFocus` in the Note editor test) fails intermittently under parallel runs.
+- **Duplicated iframe pointer and selection tracking.** `src/reader/engine.ts:781`,
+  `src/reader/selection.ts:75-76` and `src/reader/scroll-lock.ts:207-210` each track it. Merge them.
+
 ## Dropped
 
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
