@@ -105,6 +105,32 @@ page marks, highlights and notes. Each item can be shared to a group read on its
   opening the deck keeps the draft). The tap policy is in
   `src/components/reader-ui/tap-policy.ts`, also UI. The engine supplies the raw inputs:
   `xFraction` and `selectionActive` (`src/reader/engine.ts:747`).
+- **Touch bars show and hide (2026-10-18).** Reason: a persistent dock made the reader
+  look like a video player (founder feedback). This supersedes the 35% split under
+  "Touch page turns" above.
+  - **Zones.** Coarse pointers only: left 30% back, middle 30% shows or hides the bars,
+    right 40% forward (`PREV_ZONE_FRACTION`, `NEXT_ZONE_FRACTION` in
+    `src/components/reader-ui/tap-policy.ts`). Fine pointers unchanged.
+  - **Show and hide.** The top bar and dock hide and show together; the offline
+    indicator follows the top bar. Shown when the book opens. A page turn by tap or
+    keyboard hides them; the dock's own `‹` and `›` do not. A keyboard turn with focus
+    on a bar leaves them shown. A middle tap toggles them; with the deck open it closes
+    the deck and shows them. Opening or closing the deck shows them
+    (`ReaderShell.tsx:955-968`, `:1002-1011`, `:1020-1032`).
+  - **Still shown while hidden.** Selection bar, highlight bar and note card. The top bar
+    comes up with them (`ReaderShell.tsx:1344`).
+  - **Overlay.** On coarse pointers the top bar and dock float over the page, so hiding
+    never repaginates (`ReaderShell.tsx:1343`, `:1411`; `ReaderDock.tsx` `overlay`).
+  - **Inert.** Hidden bars are `inert` and `aria-hidden`. Focus moving into a bar shows
+    them (`ReaderShell.tsx:1036-1043`).
+  - **Known gap.** Keyboard-only readers on a touch device can lose the bars after a
+    keyboard turn; a middle tap recovers them (`docs/BACKLOG.md`).
+- **Logic/presentation coupling (touch bars).** For the redesign: bar visibility is view
+  state owned by `ReaderShell` (`useBarsVisibility` and `touchBarsHidden`,
+  `ReaderShell.tsx:355-361`), not `src/reader` or `src/lib`. The hook is
+  `src/components/reader-ui/useBarsVisibility.ts`. The focus check that keeps the bars up
+  on a keyboard turn is `focusIsOnBars` (`ReaderShell.tsx:183`). A redesigned top bar and
+  dock must carry the show and hide rules with them.
 
 ## Feature — reading groups v1a (Claude, 2026-10-17)
 

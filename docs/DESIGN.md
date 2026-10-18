@@ -439,7 +439,29 @@ its own padding.
 **Touch page turns.** These apply to coarse pointers only (`tap-policy.ts`). Fine
 pointers keep the edge buttons. A tap with text selected only clears the selection. A
 tap that lands within the guard after a selection collapse or a highlight tap turns
-nothing. Otherwise the left 35% of the frame goes back and the rest goes forward.
+nothing. Otherwise the zones split the frame 30 / 30 / 40: the left 30% goes back
+(`PREV_ZONE_FRACTION`), the middle 30% shows or hides the bars (`NEXT_ZONE_FRACTION`
+is the 60% edge), and the right 40% goes forward.
+
+**Touch bars: show and hide.** Coarse pointers only. Fine pointers never read this
+state.
+
+- The top bar and the dock hide and show together. The offline indicator follows the
+  top bar.
+- Shown when the book opens.
+- Hidden by a page turn from the page or the keyboard. The dock's own `‹` and `›`
+  buttons do not hide them. A keyboard turn leaves them shown while focus is on a bar.
+- A middle tap toggles them. With the deck open, a middle tap closes the deck and
+  shows the bars.
+- Opening or closing the deck shows them.
+- While hidden, the selection bar, the highlight bar and the note card still appear.
+  The top bar comes up with them.
+- On coarse pointers the top bar and the dock float over the page, so hiding them
+  never repaginates the book.
+- Hidden bars are `inert` and `aria-hidden`. Focus moving into a bar shows them.
+- The fade uses `--leaf-dur-ui`, which reduced motion zeroes, so the fade goes with it.
+- **Accepted gap:** a keyboard-only reader on a touch device can lose the bars after a
+  keyboard turn. A middle tap brings them back (`docs/BACKLOG.md`).
 
 **Motion and focus.** The card fades in on the UI duration (`--leaf-dur-ui`, at 40%).
 Reduced motion zeroes that token, so the fade goes with it. Controls use
