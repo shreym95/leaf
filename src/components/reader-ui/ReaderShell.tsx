@@ -170,7 +170,7 @@ const SELECTION_GRACE_MS = 400;
 // word). Past this window it is a deliberate selection.
 const HIGHLIGHT_TAP_SELECTION_MS = 1000;
 
-// Keys typed into a field (the note field, a select or search) must not page
+// Keys typed into a field (the note editor, a select or search) must not page
 // the book: the arrow keys and letters belong to the field.
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

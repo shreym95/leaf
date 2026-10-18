@@ -50,13 +50,61 @@ page marks, highlights and notes. Each item can be shared to a group read on its
     which fires after `hooks.content` (`src/reader/engine.ts:593-596`).
   - The annotation list sorts by position with epub.js `EpubCFI.compare`
     (`src/reader/annotations.ts:103-113`).
-- **Not done.** The selection bar and touch page-turning are in progress (Phase 3,
-  `docs/NOTES_PLAN.md`).
+- **Reader top bar (Phase 3).** The selection, highlight and note actions live in the top bar.
+  - **Selection bar.** Highlight · Note · Define sits at the top of the screen, not the
+    bottom, because Android Chrome's own define/Touch-to-Search panel covers the bottom
+    (`src/components/reader-ui/SelectionBar.tsx`).
+  - **One bar per tap on a highlight.** Only the top bar shows. With a note, it shows a
+    "Note" label and ✕, and the note card hangs under it. Without one, it shows Add note ·
+    Remove (`src/components/reader-ui/HighlightBar.tsx`).
+  - **Note card.** The note is set in the reader's serif, at the reader's size and leading.
+    It shows up to 4 lines, then scrolls, with Edit note · Remove
+    (`src/components/reader-ui/HighlightNoteCard.tsx`, `NOTE_CARD_MAX_LINES`).
+  - **Editor in the same card.** Textarea, `n/500` counter, Save · Cancel. Note from a
+    selection and Add note open this same editor (`ReaderShell.tsx` `actOnSelection`,
+    `HighlightBar.tsx`). Save trims the text; an empty note saves as null, which removes it.
+  - **Unsaved draft.** ✕ and Esc discard unsaved note text without asking. A page tap, an
+    arrow-key turn or a tap on another highlight leaves the editor open. Opening the deck
+    hides the card and keeps the draft (`ReaderShell.tsx`: `cardEdit`, `cardUnsavedRef`,
+    `closeBar`, `setDeckOpenFromDock`).
+  - **One left edge.** The bar row, note text, editor and action labels share the top bar's
+    padding (`barEdgeStyle`, `src/components/reader-ui/bar-styles.ts`).
+  - **Touch page turns** (coarse pointers only, `src/components/reader-ui/tap-policy.ts`).
+    Taps left of 35% of the frame go back, the rest forward. A tap while text is selected
+    only clears the selection. A 300 ms guard follows a selection collapse
+    (`COLLAPSE_GRACE_MS`) and a highlight tap (`HIGHLIGHT_TAP_GUARD_MS`). A selection that
+    settles on the tapped highlight within 1000 ms is dropped (`HIGHLIGHT_TAP_SELECTION_MS`,
+    `ReaderShell.tsx:171`). Fine pointers keep the edge buttons.
+  - **BarPressHold** (`src/components/reader-ui/BarPressHold.tsx`). The bar stays mounted
+    while a finger that pressed it is down, so the lifted finger's click cannot land on the
+    Library link under it. It releases one frame after that click, or after every armed
+    pointer is up. A hold with no pointer ever seen down is capped at `PRESS_HOLD_CAP_MS`
+    (10000 ms).
+- **Decisions.**
+  - Bookmarks, highlights and notes are one concept, "Notes", shown in the Notes tab.
+  - The selection bar sits at the top of the screen (see above).
+  - Tapping a highlight shows one bar only, with the note card in the top bar.
+  - Notes are written in the same card as they are read. The one-line note field is gone.
+  - Unsaved note text is discarded only by ✕ or Esc.
+  - Label, note text, editor and action row share one left edge.
+  - Touch page turns are inside the frame and for coarse pointers only.
+  - BarPressHold keeps the bar mounted while the pressing finger is down.
+- **Known gaps.**
+  - Two tabs open on the same book can overlap a flush if one tab hangs, because the
+    cross-tab lock covers only live tabs. The item-level rev check prevents data loss.
+  - A second finger on the held bar can keep it held until that finger lifts.
 - **Logic/presentation coupling.** For the redesign: share and position logic is in
   `src/components/reader-ui/ReaderNotes.tsx` and `src/components/reader-ui/group-notes.ts`.
   The group note row is written twice: `GroupRow` in `src/components/reader-ui/AnnotationList.tsx`
   and inline markup in `src/components/groups-ui/NotesList.tsx`. Masking and copy are in
   `src/components/groups-ui/readModel.ts`.
+- **Logic/presentation coupling (reader top bar).** For the redesign: the unsaved note
+  draft is owned by `ReaderShell` (`cardEdit`, `cardUnsavedRef`), which is presentation
+  code, not `src/reader` or `src/lib`. A redesigned card must carry the draft rule with it
+  (✕ and Esc discard; page tap, arrow key and other-highlight tap leave the editor open;
+  opening the deck keeps the draft). The tap policy is in
+  `src/components/reader-ui/tap-policy.ts`, also UI. The engine supplies the raw inputs:
+  `xFraction` and `selectionActive` (`src/reader/engine.ts:747`).
 
 ## Feature — reading groups v1a (Claude, 2026-10-17)
 

@@ -244,6 +244,9 @@ when full-bleed so the cutout area does not read as a band above the book.
   2px offset, globally in `globals.css`.
 - Interactive groups follow WAI-ARIA APG patterns (the theme picker is a proper
   radiogroup with roving tabindex, not three buttons).
+- The top-bar actions (§11c) are a `role="toolbar"` each. Esc dismisses them from any
+  control. Esc in the note editor cancels the draft and stops there. Notices use
+  `role="status"`. The note card is `aria-label="Note"`.
 
 Check contrast **before** proposing a colour. A value that fails is not a taste
 disagreement, it is a bug.
@@ -402,6 +405,45 @@ dock was built** and nobody noticed: `color-mix()` serialises as `oklab()`, so
 these values cannot be read off the stylesheet, and every earlier figure in this
 document was an estimate. If the palette moves, re-run it — the ratios are
 relative to `--leaf-page` and `--leaf-ink`.
+
+---
+
+## 11c. The reader's top bar: selection, note card, edge and touch
+
+The top bar (`src/components/reader-ui/ReaderTopBar.tsx`) carries one slot. It holds the
+selection bar, the highlight bar or a status notice, and at most one card hangs under it.
+Only one of these shows at a time.
+
+**Selection bar.** Highlight · Note · Define sits in the slot at the top of the screen,
+not at the bottom. Android Chrome's own define panel covers the bottom
+(`SelectionBar.tsx`).
+
+**Highlight bar.** A tap on a painted highlight shows one bar. With a note, the slot
+shows a quiet "Note" label and ✕. Without one, it shows Add note · Remove
+(`HighlightBar.tsx`).
+
+**Note card.** `HighlightNoteCard.tsx` hangs under the top bar, so opening it moves
+nothing on the page. The note is set in the reader's own face and size:
+`font-reader-serif`, `--leaf-reader-font-size` and `--leaf-reader-leading`, at full
+`text-ink`. The card shows up to `NOTE_CARD_MAX_LINES` (4) lines, then scrolls. Read view
+has Edit note · Remove. Editing swaps the text for a textarea in the same type. It has
+Save · Cancel and an `n/500` counter. Note from a selection and Add note open this same
+editor.
+
+**One left edge.** The bar row, the note text, the editor and the action labels all
+start from `barEdgeStyle` (`bar-styles.ts`), which is the bar's own horizontal padding:
+`--leaf-reader-bar-pad-x`, plus the safe-area insets. A row of buttons pulls back by
+`barRowClass` so its labels land on the same edge. Keep text on that edge, and do not add
+its own padding.
+
+**Touch page turns.** These apply to coarse pointers only (`tap-policy.ts`). Fine
+pointers keep the edge buttons. A tap with text selected only clears the selection. A
+tap that lands within the guard after a selection collapse or a highlight tap turns
+nothing. Otherwise the left 35% of the frame goes back and the rest goes forward.
+
+**Motion and focus.** The card fades in on the UI duration (`--leaf-dur-ui`, at 40%).
+Reduced motion zeroes that token, so the fade goes with it. Controls use
+`--leaf-shadow-focus` on `:focus-visible`.
 
 ---
 

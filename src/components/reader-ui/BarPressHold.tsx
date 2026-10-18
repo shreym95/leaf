@@ -19,7 +19,7 @@ import {
  * (the Library link) may be under the finger. So the hold keeps the bar's last
  * shown content mounted, frozen, with a transparent catcher over it. The click
  * lands on the catcher, not on the row. Whatever the action renders next (the
- * note field) mounts only once the hold releases.
+ * note card editor) mounts only once the hold releases.
  *
  * The hold releases one frame after the press's `click`, or one frame after every
  * armed pointer is up (`pointerup`, `pointercancel` or `lostpointercapture`). A
