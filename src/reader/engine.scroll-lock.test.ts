@@ -141,12 +141,26 @@ function handler(name: string): (...args: unknown[]) => void {
 
 const readers: ReaderController[] = [];
 let scroller: HTMLElement;
+// epub.js's page-move entry point. Every display (engine, link tap, resize) ends here.
+let managerDisplay: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   scroller = makeScroller();
-  rendition.manager = { container: scroller, layout: { delta: PAGE } };
+  managerDisplay = vi.fn(async (_target?: string) => {});
+  rendition.manager = {
+    container: scroller,
+    layout: { delta: PAGE },
+    display: managerDisplay,
+  };
 });
+
+// A move epub.js starts itself: it reaches the manager, not the engine's API.
+function epubMoves(target: string): Promise<unknown> {
+  return (
+    rendition.manager as { display: (t: string) => Promise<unknown> }
+  ).display(target);
+}
 
 afterEach(() => {
   for (const r of readers.splice(0)) r.destroy();
@@ -213,6 +227,52 @@ describe("engine selection scroll lock", () => {
 
     scrollTo(scroller, 5 * PAGE + 200);
     expect(scroller.scrollLeft).toBe(5 * PAGE);
+  });
+
+  it("does not revert a display() epub.js starts itself while a selection is active", async () => {
+    await readerAttached();
+    const { doc, select } = makeChapterDocument();
+    handler("rendered")(null, { document: doc });
+    select("a passage");
+
+    let finish!: () => void;
+    managerDisplay.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    // Not the engine: a link tap or epub.js's re-display on resize goes to the manager.
+    const pending = epubMoves("text/part0009.html");
+    scrollTo(scroller, 4 * PAGE); // the view moves while the display is in flight
+    expect(scroller.scrollLeft).toBe(4 * PAGE);
+
+    finish();
+    await pending;
+    expect(scroller.scrollLeft).toBe(4 * PAGE); // not reverted at release
+
+    scrollTo(scroller, 4 * PAGE + 200); // a later drift is held to the landing
+    expect(scroller.scrollLeft).toBe(4 * PAGE);
+  });
+
+  it("releases a display() that never settles after 5000 ms", async () => {
+    await readerAttached();
+    const { doc, select } = makeChapterDocument();
+    handler("rendered")(null, { document: doc });
+    select("a passage");
+
+    vi.useFakeTimers();
+    try {
+      managerDisplay.mockImplementationOnce(() => new Promise<void>(() => {}));
+      void epubMoves("text/part0009.html");
+      scrollTo(scroller, 4 * PAGE);
+
+      vi.advanceTimersByTime(5000); // the bracket's safety cap
+      scrollTo(scroller, 4 * PAGE + 200); // no move is in flight any more
+      expect(scroller.scrollLeft).toBe(4 * PAGE);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("locks the view for a selection made in a rendered chapter", async () => {

@@ -326,6 +326,56 @@ function scrollerOf(rendition: unknown): HTMLElement | undefined {
 }
 
 /**
+ * Brackets every epub.js page move as a scroll-lock move, from the call to the
+ * settle (or the lock's safety cap). Every display ends in
+ * `rendition.manager.display`: `rendition.display` queues `_display`, which
+ * calls it, and epub.js's re-display on resize and in-book link taps reach it
+ * the same way. Wrapping the manager instance therefore covers the engine's
+ * own moves and epub.js's internal ones, which otherwise look like unrequested
+ * scrolls. The manager is created when epub.js starts the rendition, so the
+ * caller installs this again on `started`. Returns the function that puts the
+ * original back, or undefined when there is no manager display to wrap.
+ */
+function bracketManagerDisplay(
+  rendition: unknown,
+  lock: () => ScrollLock | undefined,
+): (() => void) | undefined {
+  const manager = (rendition as { manager?: unknown } | undefined)?.manager as
+    | { display?: (...args: unknown[]) => unknown }
+    | undefined;
+  if (!manager || typeof manager.display !== "function") return undefined;
+  const target = manager as { display: (...args: unknown[]) => unknown };
+  const original = target.display;
+  // The display is usually inherited from the manager's class. Restoring must
+  // remove the own property again, not leave a copy of the method behind.
+  const ownBefore = Object.prototype.hasOwnProperty.call(manager, "display");
+  target.display = (...args: unknown[]): Promise<unknown> => {
+    const end = lock()?.beginMove();
+    let pending: Promise<unknown>;
+    try {
+      pending = Promise.resolve(original.apply(manager, args));
+    } catch (err) {
+      end?.();
+      throw err;
+    }
+    return pending.then(
+      (value) => {
+        end?.();
+        return value;
+      },
+      (err: unknown) => {
+        end?.();
+        throw err;
+      },
+    );
+  };
+  return () => {
+    if (ownBefore) target.display = original;
+    else delete (manager as { display?: unknown }).display;
+  };
+}
+
+/**
  * The CFI at the start of what is on screen right now, or undefined when
  * epub.js cannot say (it throws mid-transition).
  */
@@ -566,6 +616,8 @@ export async function createReader(
   let containerEl: HTMLElement | undefined;
   let contentPipeline: ReturnType<typeof registerContentPipeline> | undefined;
   let scrollLock: ScrollLock | undefined;
+  // Puts epub.js's manager `display` back (see bracketManagerDisplay).
+  let restoreDisplay: (() => void) | undefined;
   let locationsReady = false;
   let currentSpread: "always" | "none" = "none";
   let relayoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -928,18 +980,21 @@ export async function createReader(
     redisplayTimer = setTimeout(() => {
       redisplayTimer = undefined;
       const cfi = currentCfi();
+      // The display is a scroll-lock move: bracketed at the manager display
+      // (see bracketPageMoves).
       if (rendition && cfi) {
-        const end = scrollLock?.beginMove();
-        try {
-          void Promise.resolve(rendition.display(cfi))
-            .catch(() => {})
-            .finally(() => end?.());
-        } catch (err) {
-          end?.();
-          throw err;
-        }
+        void Promise.resolve(rendition.display(cfi)).catch(() => {});
       }
     }, 90);
+  }
+
+  // Wraps epub.js's manager display as a scroll-lock move (bracketManagerDisplay).
+  // Idempotent: the previous wrapper is restored first, so calls never stack.
+  function bracketPageMoves(): void {
+    restoreDisplay?.();
+    restoreDisplay = rendition
+      ? bracketManagerDisplay(rendition, () => scrollLock)
+      : undefined;
   }
 
   const controller: ReaderController = {
@@ -968,6 +1023,11 @@ export async function createReader(
         scroller: () => scrollerOf(rendition),
         host: container,
       });
+      // Every page move is a scroll-lock move, whoever starts it. The manager
+      // exists only once epub.js starts the rendition, so it is bracketed here
+      // if already built, and again on `started` (see bracketManagerDisplay).
+      bracketPageMoves();
+      rendition.on("started", bracketPageMoves);
       rendition.on("removed", () => scrollLock?.prune());
       rendition.on("relocated", handleRelocated);
       rendition.on("selected", handleSelected);
@@ -1337,6 +1397,8 @@ export async function createReader(
         }
       }
       watchedDocs.clear();
+      restoreDisplay?.();
+      restoreDisplay = undefined;
       scrollLock?.destroy();
       scrollLock = undefined;
       lastPointerDown = undefined;
