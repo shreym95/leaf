@@ -671,6 +671,8 @@ export async function createReader(
   // Where the last pointer went down inside a book iframe. Lets a click that
   // ends a drag-selection be told apart from a tap. Consumed by the next click.
   let lastPointerDown: Point | undefined;
+  // Counts reported taps; written to the tapped iframe document (see below).
+  let tapMarkCount = 0;
 
   function subscribeSelection(
     cb: (sel: { cfiRange: string; text: string }) => void,
@@ -742,6 +744,15 @@ export async function createReader(
       }
       // The click that ends a drag-selection is not a tap.
       if (down && isDragGesture(down, { x: ev.clientX, y: ev.clientY })) return;
+      // Chrome's Touch to Search shows its word lookup for a tap on text only
+      // when the click is unhandled and the tapped document is unchanged. A
+      // reported tap is handled here (preventDefault) and marks the tapped
+      // iframe document so its DOM version changes, so a single tap does not
+      // select the word under the finger.
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      tapMarkCount += 1;
+      const tappedRoot = win?.document?.documentElement;
+      tappedRoot?.setAttribute("data-leaf-tap", String(tapMarkCount));
       const ifr = iframe.getBoundingClientRect();
       const tap: ReaderContentTap = {
         xFraction: (ifr.left + ev.clientX - frame.left) / frame.width,
