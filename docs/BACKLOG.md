@@ -124,3 +124,6 @@ longer per-test timeout in config: "leaving deletes that member's progress…" t
 - Highlight creation and the highlights list were dropped on 2026-10-02 and will be redesigned from scratch later. Existing highlights in books are still rendered, and `ReaderShell` still runs `manageHighlights` — only the UI to create new ones from a selection was disabled.
 - Highlight creation is being rebuilt in `NOTES_PLAN.md` (2026-10-17). The mode in `REVISED_PLAN.md` §4C is reversed there: highlights use a selection bar on any selection.
 - Custom domain was dropped on 2026-10-02; Leaf stays on `leaf-black.vercel.app`. Google's sign-in consent screen continues to show the Supabase project host rather than a Leaf domain.
+
+- **Touch bars, keyboard on a touch device (accepted gap, 2026-10-18).** On a coarse pointer, a keyboard page turn with focus on the page hides the bars; inert bars cannot be reached by Tab, so a keyboard-only reader recovers them only with a middle tap. Fix: show the bars on Tab when they are hidden. Related: a touch page tap or middle-tap deck close drops focus to body (`ReaderShell.tsx:964-965`, `:1005-1006`).
+- **Layer rule breach (pre-existing).** `src/reader/content-hook.ts:38` imports `@/design/themes`; `src/reader` must not import from design. Pass the theme values in from the UI layer instead.
