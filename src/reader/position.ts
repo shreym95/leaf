@@ -290,6 +290,13 @@ export function trackPosition(
   // server answered", without duplicating page-turn bookkeeping that
   // `ReaderShell` already owns for its own chrome concerns.
   let lastKnownPercent: number | undefined;
+  // The CFI `restore()` itself navigated to (local cache or server). A
+  // relocation that lands on exactly this CFI is the restore's own landing, not
+  // a reader move, so it is not written — writing it would stamp the restored
+  // position as newer than whatever another device last saved. Cleared by the
+  // first relocation to a DIFFERENT CFI (a page turn, a jump, or accepting a
+  // sync offer), which then writes as normal.
+  let restoreLandingCfi: string | undefined;
   const syncOfferListeners = new Set<(offer: SyncOffer) => void>();
 
   async function flush(): Promise<void> {
@@ -389,6 +396,10 @@ export function trackPosition(
   const unsubscribe = controller.onRelocated((loc: ReaderLocation) => {
     if (stopped || !loc.cfi) return;
     lastKnownPercent = loc.percent;
+    if (restoreLandingCfi !== undefined) {
+      if (loc.cfi === restoreLandingCfi) return;
+      restoreLandingCfi = undefined;
+    }
     pending = { cfi: loc.cfi, percent: loc.percent };
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
@@ -425,6 +436,7 @@ export function trackPosition(
         // reconcile below could otherwise run its "has the reader already
         // caught up" check before that event lands.
         lastKnownPercent = local.percent;
+        restoreLandingCfi = local.cfi;
         let applied = true;
         try {
           await controller.goTo(local.cfi);
@@ -497,6 +509,7 @@ export function trackPosition(
         undefined,
       );
       if (!server) return false;
+      restoreLandingCfi = server.cfi;
       try {
         await controller.goTo(server.cfi);
         return true;
