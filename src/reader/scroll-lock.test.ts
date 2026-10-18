@@ -216,6 +216,37 @@ describe("selection scroll lock", () => {
     expect(scroller.scrollLeft).toBe(2 * PAGE + 200);
   });
 
+  it("ends a held selection on window resize and records the offset it lands on", () => {
+    const { scroller, lock, doc, select, pointerDown } = setup();
+    lock.watchDocument(doc);
+    scrollTo(scroller, 2 * PAGE);
+    lock.onRelocated();
+    select("a passage");
+    pointerDown();
+
+    window.dispatchEvent(new Event("resize")); // rotate: epub.js re-displays the page
+    scrollTo(scroller, 4 * PAGE); // the re-layout lands on another offset
+    expect(scroller.scrollLeft).toBe(4 * PAGE);
+
+    lock.onRelocated(); // epub.js reports where it landed
+    scrollTo(scroller, 4 * PAGE + 200); // a drift from the new page is held
+    expect(scroller.scrollLeft).toBe(4 * PAGE);
+  });
+
+  it("releases the pointer when the document holding it is pruned", () => {
+    const { scroller, lock, doc, pointerDown } = setup();
+    lock.watchDocument(doc);
+    scrollTo(scroller, 2 * PAGE);
+    lock.onRelocated();
+
+    pointerDown(); // the pointer goes down in a chapter that is then removed
+    Object.defineProperty(doc, "defaultView", { value: null, configurable: true });
+    lock.prune(); // its pointerup can never arrive
+    scrollTo(scroller, 2 * PAGE + 200);
+
+    expect(scroller.scrollLeft).toBe(2 * PAGE + 200);
+  });
+
   it("forgets a book document whose window is gone", () => {
     const { scroller, lock, doc, select } = setup();
     lock.watchDocument(doc);
