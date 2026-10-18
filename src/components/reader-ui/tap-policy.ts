@@ -5,10 +5,12 @@
 export const COLLAPSE_GRACE_MS = 300;
 /** A tap on a painted highlight also reaches the content tap; this window swallows it. */
 export const HIGHLIGHT_TAP_GUARD_MS = 300;
-/** Taps left of this fraction of the frame go back; the rest go forward. */
-export const PREV_ZONE_FRACTION = 0.35;
+/** Taps left of this fraction of the frame go back. */
+export const PREV_ZONE_FRACTION = 0.3;
+/** Taps from PREV_ZONE_FRACTION up to this fraction toggle the bars; taps at or past it go forward. */
+export const NEXT_ZONE_FRACTION = 0.6;
 
-export type ContentTapAction = "clear-selection" | "ignore" | "prev" | "next";
+export type ContentTapAction = "clear-selection" | "ignore" | "prev" | "next" | "toggle-bars";
 
 export interface ContentTapInput {
   /** True when the primary pointer is coarse (touch). Fine pointers use the edge buttons. */
@@ -28,7 +30,9 @@ export function decideContentTap(input: ContentTapInput): ContentTapAction {
   if (input.selectionActive) return "clear-selection";
   if (input.msSinceCollapse < COLLAPSE_GRACE_MS) return "ignore";
   if (input.msSinceHighlightTap < HIGHLIGHT_TAP_GUARD_MS) return "ignore";
-  return input.xFraction < PREV_ZONE_FRACTION ? "prev" : "next";
+  if (input.xFraction < PREV_ZONE_FRACTION) return "prev";
+  if (input.xFraction < NEXT_ZONE_FRACTION) return "toggle-bars";
+  return "next";
 }
 
 /** True for a touch-first pointer. False when `matchMedia` is unavailable (jsdom). */

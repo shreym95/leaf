@@ -95,6 +95,16 @@ export interface ReaderDockProps {
   notesPanel?: ReactNode;
   /** @deprecated Legacy Group tab body; only read when `notesPanel` is absent. */
   groupPanel?: ReactNode;
+  /**
+   * Fade the resting dock out: inert and hidden from assistive tech. Ignored
+   * while the deck is open, which is the same exception the top bar makes.
+   */
+  hidden?: boolean;
+  /**
+   * Float over the page instead of taking layout height. Touch readers float
+   * the dock so showing or hiding it never repaginates the book.
+   */
+  overlay?: boolean;
 }
 
 // ── Icons — flat vector line SVGs, no emoji (handoff §4) ──────────────────
@@ -390,8 +400,12 @@ export function ReaderDock({
   markers,
   notesPanel,
   groupPanel,
+  hidden = false,
+  overlay = false,
 }: ReaderDockProps) {
   const pct = Math.round(clamp(percent, 0, 1) * 100);
+  // The deck is the one way out of a hidden dock, so it is never faded under the reader.
+  const faded = hidden && !open;
   const hasMarkers = markers !== undefined && markers.length > 0;
 
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -497,10 +511,19 @@ export function ReaderDock({
 
   return (
     <div
-      className="pointer-events-none relative z-30 flex flex-none items-end justify-center px-[var(--leaf-reader-bar-pad-x)]"
+      data-reader-dock=""
+      // Faded out: inert and hidden from assistive tech, like the top bar when it is hidden.
+      inert={faded}
+      aria-hidden={faded || undefined}
+      className={
+        "pointer-events-none z-30 flex items-end justify-center px-[var(--leaf-reader-bar-pad-x)] " +
+        "[transition:opacity_var(--leaf-dur-ui)_var(--leaf-ease)] " +
+        (overlay ? "absolute inset-x-0 bottom-0" : "relative flex-none")
+      }
       style={{
         height:
           "calc(var(--leaf-dock-h) + var(--leaf-dock-bottom) + var(--leaf-reader-bar-pad-y))",
+        opacity: faded ? 0 : 1,
       }}
     >
       {/* ── State A — resting dock ───────────────────────────────────────── */}
