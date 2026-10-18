@@ -29,7 +29,11 @@ import {
   writeCachedPosition,
   type CachedPosition,
 } from "./position-cache";
-import type { ReaderController, ReaderLocation } from "./engine";
+import type {
+  ReaderController,
+  ReaderLocation,
+  ReaderLocationCause,
+} from "./engine";
 
 /** What `onSyncOffer` hands the reader chrome — enough to render a chip and
  *  act on it, nothing this module isn't itself style-agnostic about. */
@@ -290,14 +294,49 @@ export function trackPosition(
   // server answered", without duplicating page-turn bookkeeping that
   // `ReaderShell` already owns for its own chrome concerns.
   let lastKnownPercent: number | undefined;
-  // The CFI `restore()` itself navigated to (local cache or server). A
-  // relocation that lands on exactly this CFI is the restore's own landing, not
-  // a reader move, so it is not written — writing it would stamp the restored
-  // position as newer than whatever another device last saved. Cleared by the
-  // first relocation to a DIFFERENT CFI (a page turn, a jump, or accepting a
-  // sync offer), which then writes as normal.
-  let restoreLandingCfi: string | undefined;
+  // Navigation guard. Opening a book must never write a position until the
+  // reader actually navigates. This is decided by the relocation's `cause`,
+  // never by its CFI: epub.js reports `mapping.start` as the landing, and that
+  // differs from the cached CFI whenever the layout changed (rotation, font
+  // size, another device's viewport), so comparing CFIs let the restored
+  // position overwrite a newer server row.
+  //   - `restoreArmed`: set when `restore()` starts. Before that, every
+  //     relocation writes, as it always has.
+  //   - `restoreLandingOwed`: set just before restore's own `goTo`. The engine
+  //     tags a `goTo` landing relocation "jump" only when it arrives after
+  //     `display()` has settled (`handleRelocated`, src/reader/engine.ts:925-929,
+  //     and `beginNav`/`endNav` :710-721); the first "jump" after that is
+  //     restore's landing. A landing that arrived before settle is "other" and
+  //     leaves this owed, so a later "jump" would be treated as restore's — the
+  //     accepted cost: that one relocation is not written; the next page turn is.
+  //     Cleared by a rejected `goTo` (`endNav` drops the pending nav, so no
+  //     landing is owed) or by that first "jump".
+  //   - `readerNavigated`: set by the first reader navigation — a "next" or
+  //     "prev", or a "jump" that is not restore's own. From then on every
+  //     relocation writes, "other" included, as before.
+  let restoreArmed = false;
+  let restoreLandingOwed = false;
+  let readerNavigated = false;
   const syncOfferListeners = new Set<(offer: SyncOffer) => void>();
+
+  /** Whether a relocation with this `cause` may be written (see the guard above). */
+  function writeGateOpen(cause: ReaderLocationCause | undefined): boolean {
+    if (!restoreArmed || readerNavigated) return true;
+    if (cause === "next" || cause === "prev") {
+      readerNavigated = true;
+      return true;
+    }
+    if (cause === "jump") {
+      if (restoreLandingOwed) {
+        restoreLandingOwed = false;
+        return false;
+      }
+      readerNavigated = true;
+      return true;
+    }
+    // "other", or no cause at all: not a reader navigation.
+    return false;
+  }
 
   async function flush(): Promise<void> {
     if (!pending) return;
@@ -396,10 +435,7 @@ export function trackPosition(
   const unsubscribe = controller.onRelocated((loc: ReaderLocation) => {
     if (stopped || !loc.cfi) return;
     lastKnownPercent = loc.percent;
-    if (restoreLandingCfi !== undefined) {
-      if (loc.cfi === restoreLandingCfi) return;
-      restoreLandingCfi = undefined;
-    }
+    if (!writeGateOpen(loc.cause)) return;
     pending = { cfi: loc.cfi, percent: loc.percent };
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
@@ -410,15 +446,18 @@ export function trackPosition(
 
   return {
     async restore(): Promise<boolean> {
+      restoreArmed = true;
       if (IS_DEMO) {
         const saved = readDemoJSON<{ cfi: string; percent: number }>(
           demoPositionKey(bookId),
         );
         if (!saved?.cfi) return false;
+        restoreLandingOwed = true;
         try {
           await controller.goTo(saved.cfi);
           return true;
         } catch {
+          restoreLandingOwed = false;
           return false;
         }
       }
@@ -436,12 +475,13 @@ export function trackPosition(
         // reconcile below could otherwise run its "has the reader already
         // caught up" check before that event lands.
         lastKnownPercent = local.percent;
-        restoreLandingCfi = local.cfi;
+        restoreLandingOwed = true;
         let applied = true;
         try {
           await controller.goTo(local.cfi);
         } catch {
           applied = false;
+          restoreLandingOwed = false;
         }
 
         // BACKGROUND: reconcile with the server, but never navigate for it —
@@ -477,7 +517,6 @@ export function trackPosition(
             // differ by a real margin in either direction, and the server
             // row must be newer than the local cache entry.
             if (!shouldOfferServer(local, server)) return;
-
             // The reader may have kept reading (their own page turns) while
             // this was in flight. If they've already reached the offered
             // position under their own steam — within the same tolerance,
@@ -509,11 +548,12 @@ export function trackPosition(
         undefined,
       );
       if (!server) return false;
-      restoreLandingCfi = server.cfi;
+      restoreLandingOwed = true;
       try {
         await controller.goTo(server.cfi);
         return true;
       } catch {
+        restoreLandingOwed = false;
         return false;
       }
     },
