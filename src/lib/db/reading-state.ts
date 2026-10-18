@@ -45,11 +45,15 @@ export async function getReadingState(
  * `(book_id, user_id)` — the latest write wins, which is exactly the
  * cross-device behaviour we want (SPEC §8: reopening on device B lands on
  * device A's last CFI).
+ *
+ * `updatedAt` stamps the row's `updated_at`. It defaults to the current time;
+ * the outbox replay passes the time the position was read so that queued
+ * writes order by when they happened, not by when they were replayed.
  */
 export async function upsertReadingState(
   userId: string,
   bookId: string,
-  patch: { cfi: string; percent: number },
+  patch: { cfi: string; percent: number; updatedAt?: string },
   client?: SupabaseClient,
 ): Promise<void> {
   const supabase = await resolveClient(client);
@@ -59,7 +63,7 @@ export async function upsertReadingState(
       book_id: bookId,
       cfi: patch.cfi,
       percent: patch.percent,
-      updated_at: new Date().toISOString(),
+      updated_at: patch.updatedAt ?? new Date().toISOString(),
     },
     { onConflict: "book_id,user_id" },
   );
