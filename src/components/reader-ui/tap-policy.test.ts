@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COLLAPSE_GRACE_MS,
   HIGHLIGHT_TAP_GUARD_MS,
+  NEXT_ZONE_FRACTION,
+  PREV_ZONE_FRACTION,
   decideContentTap,
   isCoarsePointer,
   type ContentTapInput,
@@ -49,11 +51,35 @@ describe("decideContentTap", () => {
     ).toBe("ignore");
   });
 
-  it("turns back for taps left of 35% and forward for the rest", () => {
+  it("turns back for taps left of 30%, toggles the bars for 30-60%, and turns forward from 60%", () => {
     expect(decideContentTap({ ...TOUCH, xFraction: 0 })).toBe("prev");
-    expect(decideContentTap({ ...TOUCH, xFraction: 0.349 })).toBe("prev");
-    expect(decideContentTap({ ...TOUCH, xFraction: 0.35 })).toBe("next");
+    expect(decideContentTap({ ...TOUCH, xFraction: 0.299 })).toBe("prev");
+    expect(decideContentTap({ ...TOUCH, xFraction: 0.3 })).toBe("toggle-bars");
+    expect(decideContentTap({ ...TOUCH, xFraction: 0.5 })).toBe("toggle-bars");
+    expect(decideContentTap({ ...TOUCH, xFraction: 0.599 })).toBe("toggle-bars");
+    expect(decideContentTap({ ...TOUCH, xFraction: 0.6 })).toBe("next");
     expect(decideContentTap({ ...TOUCH, xFraction: 0.999 })).toBe("next");
+  });
+
+  it("uses the 30 / 30 / 40 zone constants", () => {
+    expect(PREV_ZONE_FRACTION).toBe(0.3);
+    expect(NEXT_ZONE_FRACTION).toBe(0.6);
+  });
+
+  it("keeps the guards ahead of the bar toggle", () => {
+    expect(
+      decideContentTap({ ...TOUCH, msSinceCollapse: COLLAPSE_GRACE_MS - 1, xFraction: 0.5 }),
+    ).toBe("ignore");
+    expect(
+      decideContentTap({ ...TOUCH, msSinceHighlightTap: HIGHLIGHT_TAP_GUARD_MS - 1, xFraction: 0.5 }),
+    ).toBe("ignore");
+    expect(decideContentTap({ ...TOUCH, selectionActive: true, xFraction: 0.5 })).toBe(
+      "clear-selection",
+    );
+  });
+
+  it("never toggles the bars from a fine pointer", () => {
+    expect(decideContentTap({ ...TOUCH, coarse: false, xFraction: 0.5 })).toBe("ignore");
   });
 
   it("a selection clear wins over the grace windows", () => {

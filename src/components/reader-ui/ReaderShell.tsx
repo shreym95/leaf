@@ -72,6 +72,7 @@ import { OfflineIndicator } from "./OfflineIndicator";
 import { formatChapterLabel } from "./chapter-label";
 import { SpreadFrame } from "./SpreadFrame";
 import { useImmersive } from "./useImmersive";
+import { useBarsVisibility, useCoarsePointer } from "./useBarsVisibility";
 
 // Statuses for a Highlight or Note the shell could not make.
 const NOTICE_TEXT = {
@@ -339,6 +340,20 @@ export function ReaderShell({
   // The reader dock's expanded deck. Lifted here because a page turn and the
   // SpreadFrame centre-tap band both close/toggle it.
   const [deckOpen, setDeckOpen] = useState(false);
+
+  // ── Touch bars (phone/tablet only) ────────────────────────────────────
+  // The top bar and dock hide and show together. Shown when the book opens;
+  // hidden by a page turn made from the page or the keyboard (not the dock's
+  // own buttons); toggled by a middle tap. Fine pointers never read it, and
+  // the deck, the selection bar and the note card always show their bars.
+  const coarse = useCoarsePointer();
+  const {
+    visible: barsVisible,
+    show: showBars,
+    hide: hideBars,
+    toggle: toggleBars,
+  } = useBarsVisibility();
+  const touchBarsHidden = coarse && !barsVisible && !deckOpen;
 
   // ── Notes (NOTES_PLAN N2c) ────────────────────────────────────────────
   // One annotation manager per open book: page marks and quoted ranges. It
@@ -927,12 +942,15 @@ export function ReaderShell({
   // A page turn from OUTSIDE the deck (tap zones, arrow keys) collapses it —
   // "closes on … a page turn". The deck's own `‹` / `›` call `turn` directly so
   // a keyboard user can page through with the deck up (decision 2).
+  // A page turn from the page or the keyboard also hides the touch bars. The
+  // dock's own buttons call `turn` directly, so they leave the bars where they are.
   const turnAndCloseDeck = useCallback(
     (dir: "next" | "prev") => {
       turn(dir);
       setDeckOpen(false);
+      if (isCoarsePointer()) hideBars();
     },
-    [turn],
+    [turn, hideBars],
   );
 
   // ── Touch page turns (NOTES_PLAN N3d) ───────────────────────────────────
@@ -967,9 +985,13 @@ export function ReaderShell({
         dropSelection();
         return;
       }
+      if (action === "toggle-bars") {
+        toggleBars();
+        return;
+      }
       if (action === "prev" || action === "next") turnAndCloseDeck(action);
     };
-  }, [dropSelection, turnAndCloseDeck, closeBar]);
+  }, [dropSelection, turnAndCloseDeck, closeBar, toggleBars]);
 
   // Opening the deck hides the bar, so its selection and highlight actions are
   // dropped here, on the open itself. A note being written is kept (it is only
@@ -980,11 +1002,24 @@ export function ReaderShell({
       if (open) {
         if (selectionRef.current) dropSelection();
         if (!cardEditRef.current) setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
+        // Opening the deck brings the touch bars back, so they are there when it closes.
+        showBars();
       }
       setDeckOpen(open);
     },
-    [dropSelection],
+    [dropSelection, showBars],
   );
+
+  // Focus moving into the bars shows them (keyboard reach, Tab). While hidden
+  // they are inert, so this mainly covers focus that lands on them by script.
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      if (!(e.target instanceof Element)) return;
+      if (e.target.closest("[data-reader-chrome], [data-reader-dock]") !== null) showBars();
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, [showBars]);
 
   // ── Jump-back ─────────────────────────────────────────────────────────
   // Every non-linear move is destructive: tap a chapter or a bookmark and the
@@ -1282,9 +1317,10 @@ export function ReaderShell({
             // Fullscreen gives the page the browser's chrome; keeping ours in the
             // flow would hand the space straight back. So in fullscreen the bar
             // floats instead of occupying height, and merely fades — opening the
-            // deck must not move the prose or force a repagination.
-            overlay={immersive}
-            hidden={immersive && !deckOpen && shown === null}
+            // deck must not move the prose or force a repagination. Touch readers
+            // float it for the same reason: toggling the bars must not repaginate.
+            overlay={immersive || coarse}
+            hidden={(immersive || touchBarsHidden) && !deckOpen && shown === null}
             onToggleImmersive={toggleImmersive}
             slot={shown ?? undefined}
             card={cardNode}
@@ -1295,7 +1331,7 @@ export function ReaderShell({
       {/* Stage 4 part 3 — quiet, non-modal connectivity signal. Fades with
           the top bar in fullscreen (same `hidden` condition) rather than
           floating over the reclaimed screen. */}
-      <OfflineIndicator hidden={immersive && !deckOpen} />
+      <OfflineIndicator hidden={(immersive || touchBarsHidden) && !deckOpen} />
 
       <SpreadFrame
         viewerRef={viewerRef}
@@ -1350,6 +1386,9 @@ export function ReaderShell({
       <ReaderDock
         open={deckOpen}
         onOpenChange={setDeckOpenFromDock}
+        // Touch readers float the dock (it takes no layout height), and fade it with the top bar.
+        overlay={coarse}
+        hidden={touchBarsHidden}
         percent={percent}
         markers={groupMarkers}
         chapterLabel={chapterLabel}
