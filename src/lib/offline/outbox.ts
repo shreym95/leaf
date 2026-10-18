@@ -243,6 +243,18 @@ export function isFurtherAlong(
   return queued.updatedAt >= current.updatedAt;
 }
 
+/**
+ * Newest-write-wins for a queued reading-state replay. The queued write is
+ * stale only when the server row was written AFTER the entry was created
+ * (`serverUpdatedAt > queuedTs`); an equal timestamp applies. The position
+ * is deliberately not compared, so a backwards move the reader made on
+ * purpose still lands. An hour-old offline queue still loses to a newer write
+ * from another device, because that device's row is newer than the entry.
+ */
+export function isQueuedWriteStale(serverUpdatedAt: string, queuedTs: number): boolean {
+  return Date.parse(serverUpdatedAt) > queuedTs;
+}
+
 // ---------------------------------------------------------------------------
 // Failure classification — transport (retry) vs. rejection (discard).
 // ---------------------------------------------------------------------------
@@ -886,18 +898,8 @@ function readingStateHandler(): ReplayHandler {
     try {
       const supabase = createClient();
       const current = await getReadingState(p.userId, p.bookId, supabase);
-      const queued: PositionSnapshot = {
-        percent: p.percent,
-        updatedAt: new Date(entry.ts).toISOString(),
-      };
-      if (
-        current &&
-        !isFurtherAlong(
-          { percent: current.percent, updatedAt: current.updated_at },
-          queued,
-        )
-      ) {
-        return "skipped"; // stale — a further position already landed
+      if (current && isQueuedWriteStale(current.updated_at, entry.ts)) {
+        return "skipped"; // stale — the server row was written after this entry
       }
       await upsertReadingState(p.userId, p.bookId, { cfi: p.cfi, percent: p.percent }, supabase);
       return "applied";
