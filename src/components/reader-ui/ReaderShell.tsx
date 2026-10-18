@@ -179,6 +179,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
+/** True when keyboard focus sits inside the top bar or the dock. */
+function focusIsOnBars(): boolean {
+  return document.activeElement?.closest("[data-reader-chrome], [data-reader-dock]") != null;
+}
+
 function subscribeConnectivity(onChange: () => void): () => void {
   window.addEventListener("online", onChange);
   window.addEventListener("offline", onChange);
@@ -944,13 +949,22 @@ export function ReaderShell({
   // a keyboard user can page through with the deck up (decision 2).
   // A page turn from the page or the keyboard also hides the touch bars. The
   // dock's own buttons call `turn` directly, so they leave the bars where they are.
+  // Closing the deck always leaves the bars up: the dock's focus returns to its
+  // trigger on close, and an inert trigger cannot take focus. A keyboard turn
+  // also leaves them up while focus sits on them, so no focused button goes inert.
   const turnAndCloseDeck = useCallback(
-    (dir: "next" | "prev") => {
+    (dir: "next" | "prev", keyboard = false) => {
       turn(dir);
       setDeckOpen(false);
-      if (isCoarsePointer()) hideBars();
+      if (deckOpen) {
+        showBars();
+        return;
+      }
+      if (!isCoarsePointer()) return;
+      if (keyboard && focusIsOnBars()) return;
+      hideBars();
     },
-    [turn, hideBars],
+    [turn, hideBars, showBars, deckOpen],
   );
 
   // ── Touch page turns (NOTES_PLAN N3d) ───────────────────────────────────
@@ -986,12 +1000,18 @@ export function ReaderShell({
         return;
       }
       if (action === "toggle-bars") {
-        toggleBars();
+        // With the deck open, the middle tap closes it and the bars stay up.
+        if (deckOpen) {
+          setDeckOpen(false);
+          showBars();
+        } else {
+          toggleBars();
+        }
         return;
       }
       if (action === "prev" || action === "next") turnAndCloseDeck(action);
     };
-  }, [dropSelection, turnAndCloseDeck, closeBar, toggleBars]);
+  }, [dropSelection, turnAndCloseDeck, closeBar, toggleBars, showBars, deckOpen]);
 
   // Opening the deck hides the bar, so its selection and highlight actions are
   // dropped here, on the open itself. A note being written is kept (it is only
@@ -1002,9 +1022,10 @@ export function ReaderShell({
       if (open) {
         if (selectionRef.current) dropSelection();
         if (!cardEditRef.current) setBarItem((prev) => (prev?.kind === "highlight" ? null : prev));
-        // Opening the deck brings the touch bars back, so they are there when it closes.
-        showBars();
       }
+      // Opening or closing the deck brings the touch bars up, in the same commit as
+      // the deck: the dock's focus returns to its trigger on close, which must not be inert.
+      showBars();
       setDeckOpen(open);
     },
     [dropSelection, showBars],
@@ -1211,7 +1232,7 @@ export function ReaderShell({
       // A page key is incidental: with unsaved note text it turns nothing.
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         if (cardUnsavedRef.current) return;
-        turnAndCloseDeck(e.key === "ArrowRight" ? "next" : "prev");
+        turnAndCloseDeck(e.key === "ArrowRight" ? "next" : "prev", true);
       } else if (key === "f") {
         toggleImmersive();
       }
@@ -1414,6 +1435,7 @@ export function ReaderShell({
             offline={offline}
             onJump={(target) => {
               setDeckOpen(false);
+              showBars();
               jumpTo(target);
             }}
             onSaveNote={saveNote}

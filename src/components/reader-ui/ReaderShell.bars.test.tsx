@@ -172,6 +172,27 @@ function barsShown(): boolean {
   return !topBar().hasAttribute("inert") && !dock().hasAttribute("inert");
 }
 
+/** The open-deck trigger. It is only reachable while the deck is closed. */
+function openDeckButton(): HTMLElement {
+  return screen.getByRole("button", { name: /open reading controls/i });
+}
+
+// jsdom focuses inert elements; browsers do not. The deck-close tests turn this
+// on so a focus() into an inert bar fails the way it does in a real browser.
+let restoreInertFocus: (() => void) | undefined;
+
+function emulateInertFocus() {
+  const original = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+    if (this.closest("[inert]") !== null) return;
+    original.call(this, options);
+  };
+  restoreInertFocus = () => {
+    HTMLElement.prototype.focus = original;
+    restoreInertFocus = undefined;
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   h.selectionCb = undefined;
@@ -186,6 +207,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  restoreInertFocus?.();
   vi.unstubAllGlobals();
   // @ts-expect-error — remove the stub so other suites see the jsdom default
   delete window.matchMedia;
@@ -244,13 +266,14 @@ describe("ReaderShell — touch bars (top bar and dock hide and show together)",
   });
 
   it("closing the deck returns focus to the dock, which shows the bars again", async () => {
+    emulateInertFocus();
     const user = userEvent.setup();
     renderShell();
     await ready();
-    await user.click(screen.getByRole("button", { name: /open reading controls/i }));
-    tapAt(0.45);
+    await user.click(openDeckButton());
     await user.click(screen.getByRole("button", { name: /close reading controls/i }));
     expect(barsShown()).toBe(true);
+    expect(document.activeElement).toBe(openDeckButton());
   });
 
   it("the selection bar still shows in the top bar while the bars are hidden", async () => {
@@ -273,6 +296,66 @@ describe("ReaderShell — touch bars (top bar and dock hide and show together)",
     expect(barsShown()).toBe(false);
     act(() => dock().querySelector<HTMLElement>("button")?.focus());
     expect(barsShown()).toBe(true);
+  });
+
+  it("a middle tap with the deck open closes the deck and leaves the bars shown", async () => {
+    emulateInertFocus();
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await user.click(openDeckButton());
+    tapAt(0.45);
+    expect(openDeckButton()).toBeInTheDocument();
+    expect(barsShown()).toBe(true);
+    expect(h.next).not.toHaveBeenCalled();
+  });
+
+  it("a middle tap with the deck open, then Esc, leaves the bars shown", async () => {
+    emulateInertFocus();
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await user.click(openDeckButton());
+    tapAt(0.45);
+    await user.keyboard("{Escape}");
+    expect(openDeckButton()).toBeInTheDocument();
+    expect(barsShown()).toBe(true);
+  });
+
+  it("a page tap with the deck open closes it and leaves the bars shown", async () => {
+    emulateInertFocus();
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    await user.click(openDeckButton());
+    tapAt(0.8);
+    await waitFor(() => expect(h.next).toHaveBeenCalledTimes(1));
+    expect(openDeckButton()).toBeInTheDocument();
+    expect(barsShown()).toBe(true);
+  });
+
+  it("an arrow-key turn with focus on the top bar keeps the bars and the focus", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    const button = topBar().querySelector<HTMLElement>("button");
+    if (!button) throw new Error("top bar has no button");
+    act(() => button.focus());
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => expect(h.next).toHaveBeenCalledTimes(1));
+    expect(barsShown()).toBe(true);
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("an arrow-key turn with focus on the page hides the bars", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await ready();
+    (document.activeElement as HTMLElement | null)?.blur();
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => expect(h.next).toHaveBeenCalledTimes(1));
+    expect(topBar()).toHaveAttribute("inert");
+    expect(dock()).toHaveAttribute("inert");
   });
 
   it("a fine pointer never hides or toggles the bars", async () => {
