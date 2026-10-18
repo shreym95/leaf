@@ -901,7 +901,14 @@ function readingStateHandler(): ReplayHandler {
       if (current && isQueuedWriteStale(current.updated_at, entry.ts)) {
         return "skipped"; // stale — the server row was written after this entry
       }
-      await upsertReadingState(p.userId, p.bookId, { cfi: p.cfi, percent: p.percent }, supabase);
+      // Stamp the row with when the reader was at this position, so a later
+      // queued entry is compared against the right time, not the replay time.
+      await upsertReadingState(
+        p.userId,
+        p.bookId,
+        { cfi: p.cfi, percent: p.percent, updatedAt: new Date(entry.ts).toISOString() },
+        supabase,
+      );
       return "applied";
     } catch (err) {
       return classifyWriteFailure(err);
