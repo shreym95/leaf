@@ -260,4 +260,65 @@ describe("selection scroll lock", () => {
 
     expect(scroller.scrollLeft).toBe(2 * PAGE + 200);
   });
+
+  it("holds a selection across orientationchange, as it does across resize", () => {
+    const { scroller, lock, doc, select } = setup();
+    lock.watchDocument(doc);
+    scrollTo(scroller, 2 * PAGE);
+    lock.onRelocated();
+    select("a passage");
+
+    window.dispatchEvent(new Event("orientationchange")); // rotate: epub.js resize() runs
+    scrollTo(scroller, 0); // clear() inside epub.js resets the scroller to 0
+
+    expect(scroller.scrollLeft).toBe(0);
+
+    lock.onRelocated(); // epub.js reports where it landed
+    scrollTo(scroller, 200); // a drift from the new page is held
+    expect(scroller.scrollLeft).toBe(0);
+  });
+
+  it("holds a selection across a screen.orientation change", () => {
+    const orientation = new EventTarget();
+    Object.defineProperty(window.screen, "orientation", {
+      value: orientation,
+      configurable: true,
+    });
+    try {
+      const { scroller, lock, doc, select } = setup();
+      lock.watchDocument(doc);
+      scrollTo(scroller, 2 * PAGE);
+      lock.onRelocated();
+      select("a passage");
+
+      orientation.dispatchEvent(new Event("change")); // rotate: epub.js resize() runs
+      scrollTo(scroller, 0); // clear() inside epub.js resets the scroller to 0
+
+      expect(scroller.scrollLeft).toBe(0);
+
+      lock.onRelocated(); // epub.js reports where it landed
+      scrollTo(scroller, 200); // a drift from the new page is held
+      expect(scroller.scrollLeft).toBe(0);
+    } finally {
+      delete (window.screen as { orientation?: unknown }).orientation;
+    }
+  });
+
+  it("counts nothing for a move whose end() arrives after destroy", () => {
+    const { scroller, lock, doc, win, select, scrollWindow } = setup();
+    const end = lock.beginMove();
+    lock.destroy();
+    end();
+
+    // Reusing the lock after destroy observes the move count only: a leaked -1
+    // would make onRelocated() skip its record, leaving the window baseline at 0.
+    lock.watchDocument(doc);
+    scrollWindow(0, 300);
+    lock.onRelocated(); // unlocked: records the window offset (0, 300)
+    select("a passage");
+    scrollWindow(0, 320);
+
+    expect(win.scrollTo).toHaveBeenLastCalledWith(0, 300);
+    expect(scroller.scrollLeft).toBe(0);
+  });
 });

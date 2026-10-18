@@ -275,6 +275,34 @@ describe("engine selection scroll lock", () => {
     }
   });
 
+  it("records the landing of a display that settles after the 5000 ms cap", async () => {
+    await readerAttached();
+    const { doc, select } = makeChapterDocument();
+    handler("rendered")(null, { document: doc });
+    select("a passage");
+
+    let finish!: () => void;
+    vi.useFakeTimers();
+    try {
+      managerDisplay.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const pending = epubMoves("text/part0009.html");
+      vi.advanceTimersByTime(5000); // the cap releases the bracket first
+      scroller.scrollLeft = 4 * PAGE; // the display lands late, not yet a reported scroll
+      finish();
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    scrollTo(scroller, 4 * PAGE + 200); // a drift from the late landing is held
+    expect(scroller.scrollLeft).toBe(4 * PAGE);
+  });
+
   it("locks the view for a selection made in a rendered chapter", async () => {
     await readerAttached();
     const { doc, select } = makeChapterDocument();

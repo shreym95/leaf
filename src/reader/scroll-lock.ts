@@ -14,9 +14,9 @@
 // Moves the engine does not start itself (epub.js re-displaying on resize, an
 // in-book link tap) are bracketed where the engine wraps epub.js's manager
 // display (`rendition.manager.display`), which every page move goes through.
-// A viewport change (window resize, fullscreen) ends any held pointer, and the
-// view is treated as moving until epub.js relocates it: the offset it lands on
-// becomes the page to hold.
+// A viewport change (window resize, fullscreen, orientation change) ends any
+// held pointer, and the view is treated as moving until epub.js relocates it:
+// the offset it lands on becomes the page to hold.
 //
 // Style-agnostic, no design or component imports (ESLint seam rule).
 
@@ -81,6 +81,9 @@ export function createScrollLock(opts: ScrollLockOptions): ScrollLock {
   let moves = 0;
   // Safety-cap timers of the moves in flight, cleared on destroy.
   const moveTimers = new Set<ReturnType<typeof setTimeout>>();
+  // Bumped on destroy. A move begun before destroy must not touch the count
+  // afterwards, so its end() is a no-op once the generation has moved on.
+  let generation = 0;
   // A viewport change happened and epub.js has not relocated since. Its
   // re-layout scrolls are not drift, so nothing is reverted until it relocates.
   let awaitingRelocation = false;
@@ -164,9 +167,9 @@ export function createScrollLock(opts: ScrollLockOptions): ScrollLock {
     settle();
   }
 
-  // A resize or fullscreen change makes epub.js re-display and the browser
-  // re-lay out the page, and the pointer that was down may have been lost with
-  // the layout change. Hold nothing until epub.js relocates.
+  // A resize, fullscreen or orientation change makes epub.js re-display and the
+  // browser re-lay out the page, and the pointer that was down may have been
+  // lost with the layout change. Hold nothing until epub.js relocates.
   function onViewportChange(): void {
     pointerDown = false;
     pointerHolder = undefined;
@@ -181,6 +184,12 @@ export function createScrollLock(opts: ScrollLockOptions): ScrollLock {
   parentDoc.addEventListener("fullscreenchange", onViewportChange, { passive: true });
   const parentWin = parentDoc.defaultView;
   parentWin?.addEventListener("resize", onViewportChange, { passive: true });
+  // epub.js resizes on `orientationchange` synchronously, and its clear() resets
+  // the scroller before any `resize` the browser may or may not send.
+  parentWin?.addEventListener("orientationchange", onViewportChange, { passive: true });
+  // The Screen Orientation API reports the same rotation where it exists.
+  const screenOrientation: ScreenOrientation | undefined = parentWin?.screen.orientation;
+  screenOrientation?.addEventListener("change", onViewportChange, { passive: true });
   opts.host.addEventListener("scroll", onHostScroll, { capture: true, passive: true });
 
   function watchDocument(doc: Document): void {
@@ -234,6 +243,7 @@ export function createScrollLock(opts: ScrollLockOptions): ScrollLock {
       // the caller's end() arrives, and that later end must not count it twice.
       let counted = true;
       let ended = false;
+      const begunIn = generation;
       const uncount = (): void => {
         if (!counted) return;
         counted = false;
@@ -251,7 +261,7 @@ export function createScrollLock(opts: ScrollLockOptions): ScrollLock {
       }, MOVE_CAP_MS);
       moveTimers.add(timer);
       return (): void => {
-        if (ended) return;
+        if (ended || begunIn !== generation) return;
         ended = true;
         clearTimeout(timer);
         moveTimers.delete(timer);
@@ -280,11 +290,14 @@ export function createScrollLock(opts: ScrollLockOptions): ScrollLock {
       parentDoc.removeEventListener("pointercancel", onPointerUp);
       parentDoc.removeEventListener("fullscreenchange", onViewportChange);
       parentWin?.removeEventListener("resize", onViewportChange);
+      parentWin?.removeEventListener("orientationchange", onViewportChange);
+      screenOrientation?.removeEventListener("change", onViewportChange);
       for (const detach of docs.values()) detach();
       docs.clear();
       baselines.clear();
       for (const timer of moveTimers) clearTimeout(timer);
       moveTimers.clear();
+      generation += 1;
       moves = 0;
       pointerDown = false;
       pointerHolder = undefined;
