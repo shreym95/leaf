@@ -30,7 +30,7 @@
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "clsx": "^2.1.1",
-    "epubjs": "^0.4.2",
+    "epubjs": "^0.3.93",
     "fast-xml-parser": "^5.11.1",
     "jszip": "^3.10.1",
     "next": "16.4.2",
@@ -58,5 +58,8 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.8.15"
   }
 }
