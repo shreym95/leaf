@@ -114,6 +114,7 @@ export async function addRead(
  * Give the caller their own copy of a read. Without `bookId` a catalog read is
  * imported (or linked) for the caller; an uploaded read needs `bookId`.
  * Resolves with the alignment confidence, or null when there is no alignment.
+ * Any failure throws the server's message or the plain one.
  */
 export async function addMyCopy(
   groupId: string,
@@ -148,6 +149,41 @@ export async function removeGroupRead(
     throw new Error(REMOVE_READ_ERROR);
   }
   if (!res.ok) throw new Error(REMOVE_READ_ERROR);
+}
+
+const REMOVE_COPY_ERROR = "Couldn't remove your copy. Try again.";
+
+/**
+ * Unlink the caller's own copy of a read. The group progress is kept and the book
+ * stays in the library. Resolves on success (204); any failure throws the same message.
+ */
+export async function removeMyCopy(groupId: string, readId: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `/api/groups/${encodeURIComponent(groupId)}/reads/${encodeURIComponent(readId)}/copy`,
+      { method: "DELETE" },
+    );
+  } catch {
+    throw new Error(REMOVE_COPY_ERROR);
+  }
+  if (!res.ok) throw new Error(REMOVE_COPY_ERROR);
+}
+
+const DELETE_BOOK_ERROR = "Couldn't delete the book from your library.";
+
+/**
+ * Delete one of the caller's own books (file, highlights, and any group copy links).
+ * Resolves on success; any failure throws the same message.
+ */
+export async function deleteOwnBook(bookId: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/books/${encodeURIComponent(bookId)}`, { method: "DELETE" });
+  } catch {
+    throw new Error(DELETE_BOOK_ERROR);
+  }
+  if (!res.ok) throw new Error(DELETE_BOOK_ERROR);
 }
 
 const SCHEDULE_ERROR = "Couldn't save. Try again.";

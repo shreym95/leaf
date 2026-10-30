@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +23,20 @@ export const metadata: Metadata = {
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The linked book's title; null when the lookup fails or finds no row. */
+async function linkedBookTitle(
+  supabase: SupabaseClient,
+  bookId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("books")
+    .select("title")
+    .eq("id", bookId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return typeof data.title === "string" ? data.title : null;
+}
 
 export default async function GroupReadPage({
   params,
@@ -50,6 +65,10 @@ export default async function GroupReadPage({
     listVisibleNotes(readId, supabase).catch(() => null),
   ]);
 
+  const copyTitle = copy
+    ? await linkedBookTitle(supabase, copy.bookId).catch(() => null)
+    : null;
+
   // Owner first, then by join order.
   const members = [...detail.members].sort((a, b) => {
     if (a.role !== b.role) return a.role === "owner" ? -1 : 1;
@@ -75,7 +94,11 @@ export default async function GroupReadPage({
       milestones={milestones}
       copy={
         copy
-          ? { bookId: copy.bookId, confidence: copy.alignment?.confidence ?? null }
+          ? {
+              bookId: copy.bookId,
+              confidence: copy.alignment?.confidence ?? null,
+              title: copyTitle,
+            }
           : null
       }
       notes={notes}

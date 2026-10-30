@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/primitives";
-import { createClient } from "@/lib/supabase/client";
+import { trackUpload } from "@/lib/analytics";
 import { setManualProgress } from "@/lib/db/groups";
 import { deleteReadNote } from "@/lib/db/read-notes";
+import { createClient } from "@/lib/supabase/client";
+import { uploadEpub } from "@/lib/upload-client";
 import type { ScheduleCheckpoint } from "@/lib/groups/schedule";
 import type { Outline } from "@/lib/groups/types";
 import type {
@@ -16,9 +18,15 @@ import type {
   ReadProgress,
   VisibleReadNote,
 } from "@/lib/types";
-import { addMyCopy, canRemoveRead, removeGroupRead } from "./actions";
+import {
+  addMyCopy,
+  canRemoveRead,
+  deleteOwnBook,
+  removeGroupRead,
+  removeMyCopy,
+} from "./actions";
 import { BookPickerDialog } from "./BookPickerDialog";
-import { CopyPanel, type CopyPanelState } from "./CopyPanel";
+import { CopyPanel, type CopyPanelState, RemoveCopyDialog } from "./CopyPanel";
 import { ManualProgress } from "./ManualProgress";
 import { MilestoneFeed } from "./MilestoneFeed";
 import { NotesList } from "./NotesList";
@@ -55,13 +63,21 @@ export interface ReadScreenProps {
   progress: ReadProgress[];
   milestones: ReadMilestone[];
   /** The caller's own copy, or null when they have none. */
-  copy: { bookId: string; confidence: number | null } | null;
+  copy: {
+    bookId: string;
+    confidence: number | null;
+    /** Title of the linked copy, when the page loader supplies it. */
+    title?: string | null;
+  } | null;
   /**
    * Visible marks and notes (`visible_notes`, already gated by the server). Null or
    * absent when they could not be loaded: the section is then hidden.
    */
   notes?: VisibleReadNote[] | null;
 }
+
+const UPLOADED_NOT_LINKED =
+  "Uploaded to your library, but couldn't link it. Choose it from your books to try again.";
 
 export function ReadScreen({
   groupId,
@@ -79,9 +95,17 @@ export function ReadScreen({
   const [pending, setPending] = useState(false);
   const [added, setAdded] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeCopyOpen, setRemoveCopyOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const ownBooks = useOwnBooks(currentUserId, chooseOpen);
+  // The linked book captured when the Remove copy dialog opens; confirm never reads the prop.
+  const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
+  // Per remove-dialog session: the unlink already succeeded, and the page needs a refresh.
+  const removeUnlinkedRef = useRef(false);
+  const removeRefreshDueRef = useRef(false);
+  // Bumped when the picker must re-fetch the list (an upload landed but did not link).
+  const [booksVersion, setBooksVersion] = useState(0);
+  const ownBooks = useOwnBooks(currentUserId, chooseOpen, booksVersion);
 
   const isOwner = members.some(
     (m) => m.user_id === currentUserId && m.role === "owner",
@@ -109,7 +133,13 @@ export function ReadScreen({
   const mine = progress.find((p) => p.user_id === currentUserId);
 
   const copyState: CopyPanelState = copy
-    ? { kind: "have", bookId: copy.bookId, confidence: copy.confidence }
+    ? {
+        kind: "have",
+        bookId: copy.bookId,
+        confidence: copy.confidence,
+        title: copy.title ?? null,
+        readTitle: read.title,
+      }
     : read.source === "upload"
       ? { kind: "upload" }
       : { kind: "catalog" };
@@ -133,6 +163,51 @@ export function ReadScreen({
     await addMyCopy(groupId, read.id, book.id);
     setAdded(true);
     router.refresh();
+  }
+
+  async function handleUploadCopy(file: File) {
+    const book = await uploadEpub(file);
+    // Bare count — no file name or metadata (SPEC §9 M4).
+    trackUpload();
+    try {
+      await addMyCopy(groupId, read.id, book.id);
+    } catch {
+      // The upload is in the library but unlinked: reload the list so it can be picked.
+      setBooksVersion((v) => v + 1);
+      throw new Error(UPLOADED_NOT_LINKED);
+    }
+    setAdded(true);
+    router.refresh();
+  }
+
+  function openRemoveCopy() {
+    if (!copy) return;
+    setRemoveTargetId(copy.bookId);
+    removeUnlinkedRef.current = false;
+    removeRefreshDueRef.current = false;
+    setRemoveCopyOpen(true);
+  }
+
+  function handleRemoveCopyOpenChange(next: boolean) {
+    setRemoveCopyOpen(next);
+    // Refresh once the session ends: after a successful confirm, or on cancel when the
+    // unlink already went through. Never mid-session, so a retry keeps its captured id.
+    if (!next && removeRefreshDueRef.current) {
+      removeRefreshDueRef.current = false;
+      router.refresh();
+    }
+  }
+
+  async function handleRemoveCopy(deleteBook: boolean) {
+    const bookId = removeTargetId;
+    if (!bookId) throw new Error("Couldn't find your copy. Close and try again.");
+    if (!removeUnlinkedRef.current) {
+      await removeMyCopy(groupId, read.id);
+      removeUnlinkedRef.current = true;
+      removeRefreshDueRef.current = true;
+      setAdded(false);
+    }
+    if (deleteBook) await deleteOwnBook(bookId);
   }
 
   async function handleRemove() {
@@ -186,6 +261,8 @@ export function ReadScreen({
           error={copyError}
           onAddCatalog={handleAddCatalog}
           onChoose={() => setChooseOpen(true)}
+          onChange={() => setChooseOpen(true)}
+          onRemove={openRemoveCopy}
         />
       </section>
 
@@ -274,10 +351,19 @@ export function ReadScreen({
       <BookPickerDialog
         open={chooseOpen}
         onOpenChange={setChooseOpen}
-        title="Choose your copy"
+        title={copy ? "Change your copy" : "Choose your copy"}
         description="Each member uses their own copy."
         books={ownBooks}
         onPick={handleChoose}
+        onUpload={handleUploadCopy}
+        excludeBookId={copy?.bookId}
+        matchTitle={read.title}
+      />
+
+      <RemoveCopyDialog
+        open={removeCopyOpen}
+        onOpenChange={handleRemoveCopyOpenChange}
+        onConfirm={handleRemoveCopy}
       />
     </main>
   );

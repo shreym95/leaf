@@ -28,9 +28,14 @@ interface Row {
 
 /**
  * The caller's visible books (title, author, source), fetched once each time
- * `enabled` turns on. Idle until then, so a closed dialog costs nothing.
+ * `enabled` turns on. Idle until then, so a closed dialog costs nothing. Changing
+ * `refreshKey` while enabled fetches the list again.
  */
-export function useOwnBooks(userId: string, enabled: boolean): OwnBooksState {
+export function useOwnBooks(
+  userId: string,
+  enabled: boolean,
+  refreshKey = 0,
+): OwnBooksState {
   const [state, setState] = useState<OwnBooksState>({ kind: "idle" });
 
   useEffect(() => {
@@ -63,7 +68,7 @@ export function useOwnBooks(userId: string, enabled: boolean): OwnBooksState {
     return () => {
       cancelled = true;
     };
-  }, [userId, enabled]);
+  }, [userId, enabled, refreshKey]);
 
   return state;
 }

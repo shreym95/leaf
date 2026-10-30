@@ -42,7 +42,7 @@ vi.mock("@/lib/import/standard-ebooks", () => ({
 }));
 vi.mock("@/lib/import/gutendex", () => ({ fetchGutenbergEpub: h.fetchPg }));
 
-import { POST } from "./route";
+import { DELETE, POST } from "./route";
 
 const bundled = (name: string) => readFileSync(`public/bundled/${name}.epub`);
 const FRANKENSTEIN = bundled("frankenstein");
@@ -307,5 +307,80 @@ describe("POST /api/groups/:groupId/reads/:readId/copy", () => {
   it("uses the session user, not a body field", async () => {
     await post({ userId: OTHER, user_id: OTHER });
     expect(copies().every((c) => c.user_id === ME)).toBe(true);
+  });
+});
+
+describe("DELETE /api/groups/:groupId/reads/:readId/copy", () => {
+  const del = (ids: { groupId?: string; readId?: string } = {}) => {
+    const groupId = ids.groupId ?? GROUP;
+    const readId = ids.readId ?? READ;
+    return DELETE(
+      new Request(`http://localhost/api/groups/${groupId}/reads/${readId}/copy`, {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ groupId, readId }) },
+    );
+  };
+
+  beforeEach(() => {
+    db.seed(
+      "read_copies",
+      { read_id: READ, user_id: ME, book_id: MY_BOOK, content_sha256: "mine", alignment: { confidence: 1 } },
+      { read_id: READ, user_id: OTHER, book_id: THEIR_BOOK, content_sha256: "theirs", alignment: null },
+      { read_id: UPLOAD_READ, user_id: ME, book_id: MY_OTHER_BOOK, content_sha256: "other-read", alignment: null },
+    );
+  });
+
+  it("204s and deletes only the caller's copy of that read", async () => {
+    const res = await del();
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe("");
+    expect(copies()).toHaveLength(2);
+    expect(copies().find((c) => c.read_id === READ && c.user_id === ME)).toBeUndefined();
+    expect(copies()).toContainEqual(expect.objectContaining({ read_id: READ, user_id: OTHER, book_id: THEIR_BOOK }));
+    expect(copies()).toContainEqual(expect.objectContaining({ read_id: UPLOAD_READ, user_id: ME, book_id: MY_OTHER_BOOK }));
+  });
+
+  it("keeps the book in the caller's library and the caller's read progress", async () => {
+    db.seed("read_progress", { read_id: READ, user_id: ME, chapter_index: 2, chapter_fraction: 0.5, percent: 0.4, finished_at: null, manual: false });
+    const booksBefore = structuredClone(db.rows("books"));
+    const res = await del();
+    expect(res.status).toBe(204);
+    expect(db.rows("books")).toEqual(booksBefore);
+    expect(db.rows("read_progress")).toEqual([
+      { read_id: READ, user_id: ME, chapter_index: 2, chapter_fraction: 0.5, percent: 0.4, finished_at: null, manual: false },
+    ]);
+  });
+
+  it("204s and changes nothing when no copy is linked (idempotent)", async () => {
+    await del();
+    const after = structuredClone(copies());
+    const res = await del();
+    expect(res.status).toBe(204);
+    expect(copies()).toEqual(after);
+  });
+
+  it("404s for a read in another group and removes nothing", async () => {
+    db.rows("group_reads")[0].group_id = OTHER_GROUP;
+    const before = structuredClone(copies());
+    expect((await del()).status).toBe(404);
+    expect(copies()).toEqual(before);
+  });
+
+  it("404s for a read id that is not a uuid", async () => {
+    expect((await del({ readId: "nope" })).status).toBe(404);
+    expect(copies()).toHaveLength(3);
+  });
+
+  it("403s for a non-member and removes nothing", async () => {
+    h.getUser.mockResolvedValue({ id: STRANGER });
+    expect((await del()).status).toBe(403);
+    expect(copies()).toHaveLength(3);
+  });
+
+  it("401s when signed out", async () => {
+    h.getUser.mockResolvedValue(null);
+    expect((await del()).status).toBe(401);
+    expect(copies()).toHaveLength(3);
   });
 });

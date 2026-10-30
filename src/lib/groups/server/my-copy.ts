@@ -148,3 +148,32 @@ export async function getMyCopy(
       : null,
   };
 }
+
+/**
+ * Unlink the caller's copy from a read. Only the `read_copies` row goes: the
+ * book stays in the caller's library and `read_progress` is kept. Repeating
+ * the call, or calling it with no copy linked, is safe.
+ */
+export async function removeMyCopy(
+  admin: SupabaseClient,
+  userId: string,
+  groupId: string,
+  readId: string,
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  const { data: readRow, error: readError } = await admin
+    .from("group_reads")
+    .select("id")
+    .eq("id", readId)
+    .eq("group_id", groupId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!readRow) return { ok: false, status: 404, message: "Read not found." };
+
+  const { error } = await admin
+    .from("read_copies")
+    .delete()
+    .eq("read_id", readId)
+    .eq("user_id", userId);
+  if (error) throw error;
+  return { ok: true };
+}
