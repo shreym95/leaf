@@ -33,7 +33,7 @@
     "epubjs": "^0.3.93",
     "fast-xml-parser": "^5.11.1",
     "jszip": "^3.10.1",
-    "next": "16.4.2",
+    "next": "16.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "^5.0.15"
